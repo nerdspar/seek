@@ -2,8 +2,14 @@
 	import { goto } from '$app/navigation';
 	import WatchRow from '$lib/components/WatchRow.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
+	import SettingsSheet from '$lib/components/SettingsSheet.svelte';
 	import { haptic } from '$lib/haptics';
-	import { load as loadSettings, save as saveSettings, type Settings } from '$lib/settings';
+	import {
+		load as loadSettings,
+		save as saveSettings,
+		type MarkDirection,
+		type Settings
+	} from '$lib/settings';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -25,10 +31,14 @@
 		settings = loadSettings();
 	});
 
+	/* Anime is deliberately NOT a segment. Floppy files it inside the TV library,
+	   so a third tab would either sit empty or split the list on a distinction
+	   the user does not want while marking. It belongs with the filters (§4.6),
+	   alongside status and platform — pending the bucket migration that gives it
+	   something to filter on. */
 	const SEGMENTS: { id: MediaType; label: string }[] = [
 		{ id: 'tv', label: 'TV Shows' },
-		{ id: 'movie', label: 'Movies' },
-		{ id: 'anime', label: 'Anime' }
+		{ id: 'movie', label: 'Movies' }
 	];
 
 	const key = (r: WatchlistRow) => `${r.source}:${r.mediaId}`;
@@ -158,10 +168,11 @@
 		goto(`/?type=${id}`, { noScroll: true });
 	}
 
-	function toggleDirection() {
-		settings = { ...settings, markDirection: settings.markDirection === 'rtl' ? 'ltr' : 'rtl' };
+	let settingsOpen = $state(false);
+
+	function setDirection(markDirection: MarkDirection) {
+		settings = { ...settings, markDirection };
 		saveSettings(settings);
-		note = `Swipe to mark: ${settings.markDirection === 'rtl' ? 'right-to-left' : 'left-to-right'}`;
 	}
 
 	const notBuilt = (what: string) => () => (note = `${what} — not built yet (build order §13).`);
@@ -180,17 +191,6 @@
 			{/each}
 		</div>
 
-		<!-- Sort and filter are §4.5/§4.6, step 4+. The direction toggle is here
-		     because it is the one setting worth changing mid-evaluation. -->
-		<button class="icon" onclick={toggleDirection} aria-label="Swipe direction" title="Swipe direction">
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
-				{#if settings.markDirection === 'rtl'}
-					<path d="M20 12H4m0 0 5-5m-5 5 5 5" />
-				{:else}
-					<path d="M4 12h16m0 0-5-5m5 5-5 5" />
-				{/if}
-			</svg>
-		</button>
 	</header>
 
 	<main>
@@ -204,11 +204,6 @@
 				<h2>Nothing here</h2>
 				{#if data.mediaType === 'movie'}
 					<p>Your Floppy movie library is empty — 0 movies tracked under any status.</p>
-				{:else if data.mediaType === 'anime'}
-					<p>
-						Floppy's <code>anime_library_mode</code> is <code>tv</code>, so anime is filed in the TV
-						library and this list is empty by design. Your anime is on the TV Shows segment.
-					</p>
 				{:else}
 					<p>No shows in progress with an unwatched episode.</p>
 				{/if}
@@ -237,13 +232,31 @@
 	</button>
 
 	<nav class="tabbar">
-		{#each [{ id: 'watchlist', label: 'Watchlist', on: true }, { id: 'upcoming', label: 'Upcoming', on: false }, { id: 'discover', label: 'Discover', on: false }, { id: 'profile', label: 'Profile', on: false }] as tab (tab.id)}
-			<button class:active={tab.on} disabled={!tab.on} onclick={notBuilt(tab.label)}>
+		<button class="active" onclick={() => {}}>
+			<span class="dot"></span>
+			Watchlist
+		</button>
+		{#each [{ id: 'upcoming', label: 'Upcoming' }, { id: 'discover', label: 'Discover' }] as tab (tab.id)}
+			<button disabled onclick={notBuilt(tab.label)}>
 				<span class="dot"></span>
 				{tab.label}
 			</button>
 		{/each}
+		<!-- Settings live under Profile (§7/§8). Only the swipe direction exists
+		     so far, but it belongs here rather than cluttering the watchlist. -->
+		<button onclick={() => (settingsOpen = true)}>
+			<span class="dot"></span>
+			Profile
+		</button>
 	</nav>
+
+	{#if settingsOpen}
+		<SettingsSheet
+			markDirection={settings.markDirection}
+			onchange={setDirection}
+			onclose={() => (settingsOpen = false)}
+		/>
+	{/if}
 
 	{#if toast}
 		<UndoToast
@@ -273,7 +286,6 @@
 		z-index: 20;
 		display: flex;
 		align-items: center;
-		gap: 10px;
 		padding: 8px var(--gutter);
 		padding-top: calc(8px + var(--safe-t));
 		margin-top: calc(-1 * var(--safe-t));
@@ -301,16 +313,6 @@
 	.segments button.active {
 		background: var(--surface-raised);
 		color: var(--text);
-	}
-
-	.icon {
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: var(--tap);
-		height: var(--tap);
-		border-radius: 11px;
-		color: var(--text-dim);
 	}
 
 	main {
@@ -348,13 +350,6 @@
 		line-height: 1.5;
 		color: var(--text-dim);
 	}
-	.empty code {
-		font-size: 12.5px;
-		padding: 1px 5px;
-		border-radius: 5px;
-		background: var(--surface-raised);
-	}
-
 	.fab {
 		position: fixed;
 		right: var(--gutter);
