@@ -71,6 +71,38 @@ daily.
 | Undocumented endpoints | `GET /api/v1/home/` (returns `groups`), `GET /api/v1/media/` (all types at once), and `POST\|DELETE /api/v1/media/movie/{source}/{media_id}/watch/` (`MediaMovieWatchView` — mirrors episode watch semantics, optional `external_id` for idempotency). |
 | Never POST anime with `source=tmdb` | `POST /api/v1/media/anime/` skips the tracking-type resolver and creates an item that GET/PATCH/DELETE then reject. Grouped anime is `media_type=tv` + `library_media_type=anime`. See below. |
 
+### Calendar feed (§5.1) — verified
+
+```
+GET {FLOPPY_URL}/calendar/download/{token}?media_types=tv&media_types=season&media_types=movie&media_types=anime
+```
+
+The token is the **path segment only** — everything after `?` is filtering. The
+token is itself the credential: the feed returns 200 with no API key, so treat
+the URL as a secret and regenerate it in Floppy if it leaks.
+
+Confirmed against the live feed: 200 `text/calendar`, 163 `VEVENT`s, and the
+`media_types` filters are honoured (`media_types=movie` correctly returns 0 for a
+library with no movies). Still absent from `/api/v1/`, so §5.1's plan of fetching
+and parsing this server-side stands.
+
+**Air times are real for only about a third of events — this changes §5.2.**
+Every event carries a full timestamp (none are `VALUE=DATE`), but the values are:
+
+| DTSTART | Count | Meaning |
+|---|---|---|
+| `11:59:59Z` | 97 of 163 | Placeholder — a date with no known time |
+| Genuine times (`01:00`, `03:00`, `14:00`, `19:00`, `21:00`, `03:29`…) | 57 | Real air times |
+| `00:00:00Z` | 9 | Ambiguous; can be a genuine 8pm ET slot |
+
+This matches what `next_episode.air_date` returns from the API, so the feed is not
+a better source of *times* — its value is covering every upcoming episode rather
+than only next-up.
+
+So Upcoming must **render a time only when one is known**, and fall back to a
+date otherwise. Displaying the placeholder as "11:59 PM" would be wrong for 60% of
+rows. Detect it on `11:59:59` exactly; do not treat `00:00:00` as a placeholder.
+
 ### Anime: how it actually works
 
 Corrected after a first pass got this wrong. Floppy does support native anime for
