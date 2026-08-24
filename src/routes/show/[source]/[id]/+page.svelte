@@ -244,6 +244,7 @@
 		list-style: none;
 		overflow-x: auto;
 		scroll-snap-type: x proximity;
+		scroll-padding-left: var(--gutter);
 	}
 	.cast li {
 		flex: none;

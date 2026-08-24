@@ -207,3 +207,15 @@ export type UpcomingItem = {
 	mediaId: string | null;
 	source: string | null;
 };
+
+/* ── Mood search (§6.2) ────────────────────────────────────────────────── */
+
+export type TmdbResult = {
+	mediaId: string;
+	source: 'tmdb';
+	mediaType: 'tv' | 'movie';
+	title: string;
+	poster: string | null;
+	year: number | null;
+	rating: number | null;
+};
