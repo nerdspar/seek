@@ -31,7 +31,20 @@
 	let el: HTMLElement | undefined = $state();
 	let dx = $state(0);
 	let dragging = $state(false);
-	let committing = $state(false);
+
+	/* Commit is a two-beat animation, not a snap-back. The row finishes the
+	   direction the thumb was already going and leaves the screen, which is what
+	   makes the gesture read as "consumed" rather than "did that register?".
+	   Then it returns from the same edge carrying the next episode.
+
+	   'exiting'   — sliding off under its own power
+	   'returning' — sliding back in with the row's new contents
+	   Re-sorting to a new list position is still to come (see BACKLOG.md). */
+	let phase = $state<'idle' | 'exiting' | 'returning'>('idle');
+	const committing = $derived(phase !== 'idle');
+	let timers: ReturnType<typeof setTimeout>[] = [];
+
+	$effect(() => () => timers.forEach(clearTimeout));
 
 	let startX = 0;
 	let startY = 0;
@@ -40,6 +53,11 @@
 	let activePointer: number | null = null;
 
 	const markSign = $derived(markDirection === 'rtl' ? -1 : 1);
+
+	/** Leaving is quicker than arriving — the exit should feel like follow-through
+	 *  on the thumb, the return like the next episode settling into place. */
+	const EXIT_MS = 190;
+	const RETURN_MS = 300;
 
 	/** Distance that commits the mark. Proportional, but bounded so it stays
 	 *  reachable with one thumb on a large phone. */
@@ -60,7 +78,7 @@
 	}
 
 	function onpointerdown(e: PointerEvent) {
-		if (committing || activePointer !== null) return;
+		if (phase !== 'idle' || activePointer !== null) return;
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
 		activePointer = e.pointerId;
 		startX = e.clientX;
@@ -142,15 +160,37 @@
 	}
 
 	function commit() {
-		committing = true;
 		dragging = false;
 		axis = 'undecided';
 		activePointer = null;
-		// Snap home immediately: the row stays put in the list and the progress
-		// bar advancing is the confirmation, so there is nothing to wait for.
-		dx = 0;
+
+		const width = el?.offsetWidth ?? 360;
+		const reduced =
+			typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		// Fire the write immediately — the animation is feedback, never a gate.
 		onmark(row);
-		setTimeout(() => (committing = false), 220);
+
+		if (reduced) {
+			dx = 0;
+			phase = 'idle';
+			return;
+		}
+
+		phase = 'exiting';
+		dx = width * markSign;
+
+		timers.forEach(clearTimeout);
+		timers = [
+			// Off screen: hand the row back to its resting position, which the
+			// 'returning' transition animates. By now the optimistic counts have
+			// already moved, and the real next episode lands when the write returns.
+			setTimeout(() => {
+				phase = 'returning';
+				dx = 0;
+			}, EXIT_MS),
+			setTimeout(() => (phase = 'idle'), EXIT_MS + RETURN_MS)
+		];
 	}
 
 	function onkeydown(e: KeyboardEvent) {
@@ -174,11 +214,13 @@
 
 <li class="row" class:pending>
 	<!-- Reveal sits behind the content and is only visible through the gap the
-	     content leaves as it slides. -->
+	     content leaves as it slides. While dragging it holds a floor so the
+	     intent is legible early; on commit it simply tracks the row, so it is
+	     full-strength as the row clears the screen and fades as it returns. -->
 	<div
 		class="reveal"
 		class:rtl={markDirection === 'rtl'}
-		style:opacity={dragging || committing ? Math.max(0.35, armed) : 0}
+		style:opacity={dragging ? Math.max(0.35, armed) : committing ? armed : 0}
 		aria-hidden="true"
 	>
 		<div class="reveal-inner" style:transform={`scale(${0.9 + armed * 0.1})`}>
@@ -192,7 +234,9 @@
 
 	<div
 		class="content"
-		class:sliding={!dragging}
+		class:sliding={!dragging && phase === 'idle'}
+		class:exiting={phase === 'exiting'}
+		class:returning={phase === 'returning'}
 		bind:this={el}
 		style:transform={`translate3d(${dx}px,0,0)`}
 		role="button"
@@ -304,6 +348,14 @@
 	}
 	.content.sliding {
 		transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+	/* Accelerating out — it is leaving, not settling. */
+	.content.exiting {
+		transition: transform 190ms cubic-bezier(0.4, 0, 1, 1);
+	}
+	/* Decelerating in, slower, so the new episode reads as arriving. */
+	.content.returning {
+		transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
 	.poster {
