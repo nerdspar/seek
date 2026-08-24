@@ -1,0 +1,92 @@
+# =============================================================================
+# Seek — self-hosted PWA front-ending Floppy for fast episode marking.
+# The image is built by GitHub Actions and pulled from GHCR; TrueNAS just runs
+# it. There is no .env file — paste your secrets directly below.
+#
+# ── 1. Create the storage folder on your NAS ─────────────────────────────
+#        mkdir -p /mnt/NAS/Data/seek
+#        chown -R 1000:1000 /mnt/NAS/Data/seek
+#      (The container runs as the `node` user, uid 1000.)
+#      This holds Seek's own preferences ONLY. Floppy remains the single
+#      source of truth for all watch state — nothing here is precious.
+#
+# ── 2. Generate the session secret ───────────────────────────────────────
+#        openssl rand -hex 32
+#
+# ── 3. Paste your values at the ⬅ markers below ──────────────────────────
+#      FLOPPY_TOKEN          Floppy → Settings → Integrations → API Token
+#      SEEK_SESSION_SECRET   the value from step 2
+#      FLOPPY_URL            see the note on that line
+#
+# ── 4. Log in to GHCR once (private image) and launch ────────────────────
+#        docker login ghcr.io -u nerdspar     # paste a read:packages PAT
+#        docker compose up -d
+#      Then on the iPhone: http://<nas-ip>:8100 → Share → Add to Home Screen.
+#      See DEPLOY.md for the GHCR token, updates, and troubleshooting.
+# =============================================================================
+
+services:
+  seek:
+    # Image built by .github/workflows/docker-publish.yml. To build on the box
+    # instead, comment out `image:` and uncomment `build: .`.
+    image: ghcr.io/nerdspar/seek:latest
+    # build: .
+    container_name: seek
+    restart: unless-stopped
+    environment:
+      TZ: "America/New_York"
+
+      # Where Floppy lives.
+      #  • Floppy on this same Docker host: use its container name and INTERNAL
+      #    port, e.g. http://floppy:8000, and uncomment the two `networks:`
+      #    blocks at the bottom of this file. Preferred — it keeps the traffic
+      #    off the LAN.
+      #  • Floppy anywhere else: use its LAN address, as below.
+      FLOPPY_URL: "http://10.0.1.14:8007" # ⬅ FLOPPY_URL
+
+      # Floppy → Settings → Integrations → API Token.
+      FLOPPY_TOKEN: "PASTE_FLOPPY_TOKEN_HERE" # ⬅ FLOPPY_TOKEN
+
+      # openssl rand -hex 32
+      SEEK_SESSION_SECRET: "PASTE_SESSION_SECRET_HERE" # ⬅ SEEK_SESSION_SECRET
+
+      # Shared household passphrase. Leave EMPTY on a trusted LAN and Seek is
+      # ungated. Set it before exposing Seek through a reverse proxy or tunnel —
+      # it holds the Floppy API token, so anyone who reaches it controls your
+      # library.
+      SEEK_PASSPHRASE: "" # ⬅ SEEK_PASSPHRASE (optional)
+
+      # Not used yet — both are for build steps that aren't written.
+      # Calendar token (Upcoming, step 6): Floppy's calendar page, the token in
+      # the .ics feed URL. TMDB key (search/discovery, steps 5 and 7).
+      FLOPPY_CALENDAR_TOKEN: "" # ⬅ FLOPPY_CALENDAR_TOKEN (later)
+      TMDB_API_KEY: "" # ⬅ TMDB_API_KEY (later)
+
+    ports:
+      # host:container — the app listens on 8100 inside the container. Change
+      # the LEFT number if 8100 is already taken on your NAS.
+      - "8100:8100"
+
+    volumes:
+      - /mnt/NAS/Data/seek:/data
+
+    healthcheck:
+      # Reports unhealthy if Floppy is unreachable or the API token is rejected,
+      # so a bad token shows up in `docker ps` rather than as a blank screen.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    # ── Floppy on this same Docker host ──────────────────────────────────────
+    # Uncomment BOTH this block and the top-level `networks:` below, and set
+    # FLOPPY_URL above to http://floppy:8000 (check the real container name with
+    # `docker ps` — it may not be "floppy").
+    #
+    # networks:
+    #   - floppy-net
+
+# networks:
+#   floppy-net:
+#     external: true
