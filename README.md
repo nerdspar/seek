@@ -108,6 +108,31 @@ Two things gate a working setup:
 Imports are dispatchable via `POST /api/v1/imports/{service}/` (free-form body,
 returns a `task_id` pollable at `GET /api/v1/tasks/{task_id}/`).
 
+**None of the self-hosted importers classify anime.** Sonarr does not read its own
+`seriesType`; Floppy's Jellyfin importer has no section-name logic. Only Plex does,
+via section title. So for a self-hosted setup the bucket has to be set directly
+rather than imported — see the migration below.
+
+### Anime bucket migration
+
+`scripts/anime-list.mjs` (read-only) regenerates `anime-list.txt`, the reviewable
+list of shows to move. `scripts/anime-migration-sql.mjs` turns that list into
+`migrate-anime.sql`. **The generator never connects to a database and runs
+nothing**; the SQL ends in `ROLLBACK` until deliberately changed to `COMMIT`.
+
+One `UPDATE` per show is sufficient: a show, its seasons and its episodes are all
+`app_item` rows sharing `(source, media_id)`, and Floppy's `_child_bucket` rule is
+that children follow the show's bucket, so they move together.
+
+The update is collision-free only while there are no existing anime-bucket rows —
+every `app_item` uniqueness constraint includes `library_media_type`. The generated
+SQL checks for that first and expects 0 rows.
+
+`anime_library_mode` must be set to `both` (or `anime`) for any of this to be
+visible. Floppy's own CSV export/import also round-trips `library_media_type`, but
+the importer's lookup includes the bucket, so an edited CSV adds a second copy
+rather than moving the item.
+
 Because `Item` is unique on `(media_id, source, media_type, library_media_type)`,
 the same show can legitimately exist in both the tv and anime buckets — see
 `imports/helpers.py:find_item_across_buckets`. Re-importing anime without removing
