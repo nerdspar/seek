@@ -46,10 +46,16 @@ The settings sheet currently holds only the swipe direction. §8 also calls for
 theme, default tab, default sort, subscribed streaming services, and a link out
 to Floppy's own settings.
 
-That link needs a **browser-reachable** Floppy URL, which is not the same as
-`FLOPPY_URL` when Seek reaches Floppy by container name (`http://floppy:8000`
-does not resolve from a phone). Add a separate `FLOPPY_PUBLIC_URL` env var, and
-omit the link when it is unset.
+One wrinkle, and it applies **only** to that outbound link. Every other Floppy
+call is proxied server-side, so `FLOPPY_URL=http://floppy:8000` is correct and
+the browser never resolves it — verified: nothing served to the client mentions
+the Floppy host, port, or API key, and the only external host the page loads is
+`image.tmdb.org` for posters.
+
+A settings link is different, because it makes the *phone* navigate to Floppy
+directly, and `floppy:8000` does not resolve outside Docker. So that one link
+needs a separate LAN-reachable address — add a `FLOPPY_PUBLIC_URL` env var
+(e.g. `http://10.0.1.14:8007`) and omit the link when it is unset.
 
 ## Smaller items
 
