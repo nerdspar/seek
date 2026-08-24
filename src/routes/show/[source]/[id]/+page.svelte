@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Poster from '$lib/components/Poster.svelte';
 	import { formatAirDate, formatRuntime } from '$lib/format';
 	import type { PageData } from './$types';
 
@@ -30,11 +31,7 @@
 
 <main>
 	<section class="hero">
-		{#if show.poster}
-			<img class="poster" src={show.poster} alt="" />
-		{:else}
-			<div class="poster placeholder"></div>
-		{/if}
+		<Poster src={show.poster} width={104} height={156} radius={10} eager />
 		<div class="facts">
 			<h1>{show.title}</h1>
 			<p class="chips tnum">
@@ -64,11 +61,7 @@
 			{#each seasons as s (s.seasonNumber)}
 				<li>
 					<a href="/show/{show.source}/{show.mediaId}/{s.seasonNumber}">
-						{#if s.poster}
-							<img class="thumb" src={s.poster} alt="" loading="lazy" />
-						{:else}
-							<div class="thumb placeholder"></div>
-						{/if}
+						<Poster src={s.poster} width={44} height={44} />
 						<div class="s-meta">
 							<span class="s-title">{s.seasonNumber === 0 ? 'Specials' : `Season ${s.seasonNumber}`}</span>
 							<div class="s-progress">
@@ -103,11 +96,7 @@
 			<ul class="cast">
 				{#each show.cast as person (person.name + (person.role ?? ''))}
 					<li>
-						{#if person.image}
-							<img src={person.image} alt="" loading="lazy" />
-						{:else}
-							<div class="avatar placeholder"></div>
-						{/if}
+						<Poster src={person.image} width={78} height={78} radius={39} />
 						<span class="name">{person.name}</span>
 						{#if person.role}<span class="role">{person.role}</span>{/if}
 					</li>
@@ -131,16 +120,6 @@
 		grid-template-columns: 104px 1fr;
 		gap: 14px;
 		margin: 8px 0 16px;
-	}
-	.poster {
-		width: 104px;
-		height: 156px;
-		object-fit: cover;
-		border-radius: 10px;
-		background: var(--surface-raised);
-	}
-	.placeholder {
-		background: var(--surface-raised);
 	}
 
 	.facts {
@@ -230,12 +209,6 @@
 		border-radius: var(--radius);
 		background: var(--surface);
 	}
-	.thumb {
-		width: 44px;
-		height: 44px;
-		object-fit: cover;
-		border-radius: 8px;
-	}
 	.s-meta {
 		display: flex;
 		flex-direction: column;
@@ -277,12 +250,8 @@
 		width: 78px;
 		scroll-snap-align: start;
 	}
-	.cast img,
-	.cast .avatar {
-		width: 78px;
-		height: 78px;
-		object-fit: cover;
-		border-radius: 50%;
+	.cast :global(img),
+	.cast :global(.ph) {
 		margin-bottom: 6px;
 	}
 	.name {

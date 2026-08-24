@@ -177,3 +177,17 @@ export type EpisodeDetail = EpisodeRow & {
 	source: string;
 	showTitle: string | null;
 };
+
+/* ── Search and add (§6.4) ─────────────────────────────────────────────── */
+
+export type SearchResult = {
+	mediaId: string;
+	source: string;
+	mediaType: MediaType;
+	title: string;
+	poster: string | null;
+	year: number | null;
+	/** Whether it is already in the Floppy library. The search endpoint does not
+	 *  report this, so it is cross-referenced against the local list. */
+	tracked: boolean;
+};

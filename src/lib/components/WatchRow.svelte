@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { WatchlistRow } from '$lib/types';
+	import Poster from './Poster.svelte';
 	import type { MarkDirection } from '$lib/settings';
 
 	type Props = {
@@ -248,11 +249,7 @@
 		onpointercancel={oncancel}
 		{onkeydown}
 	>
-		{#if row.poster}
-			<img class="poster" src={row.poster} alt="" loading="lazy" decoding="async" />
-		{:else}
-			<div class="poster placeholder"></div>
-		{/if}
+		<Poster src={row.poster} width={68} height={102} />
 
 		<div class="meta">
 			<h3 class="title">{row.title}</h3>
@@ -358,19 +355,6 @@
 		transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
-	.poster {
-		width: 68px;
-		height: 102px;
-		object-fit: cover;
-		border-radius: 8px;
-		background: var(--surface-raised);
-	}
-	.placeholder {
-		width: 68px;
-		height: 102px;
-		border-radius: 8px;
-		background: var(--surface-raised);
-	}
 
 	.meta {
 		display: flex;

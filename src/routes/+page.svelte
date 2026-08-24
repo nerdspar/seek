@@ -245,7 +245,7 @@
 		{/if}
 	</main>
 
-	<button class="fab" onclick={notBuilt('Search')} aria-label="Search">
+	<button class="fab" onclick={() => goto('/search')} aria-label="Search">
 		<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2">
 			<path d="M12 5v14M5 12h14" stroke-linecap="round" />
 		</svg>
