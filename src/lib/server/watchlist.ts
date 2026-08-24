@@ -35,6 +35,39 @@ type ListResponse = {
 /** Episode titles are immutable once aired; a long TTL is safe. */
 const titleCache = new TTLCache<string | null>(24 * 60 * 60 * 1000, 5000);
 
+/** Episode totals do change as shows air, so this expires far sooner. */
+const maxProgressCache = new TTLCache<number | null>(6 * 60 * 60 * 1000, 2000);
+
+/**
+ * Recover a show's episode total when the list row omits it.
+ *
+ * Shows tracked with season-scoped progress come back with
+ * `item.number_of_pages: null` — 25 of 88 rows in this library (Big Sky,
+ * Peacemaker, Shameless…). They are ordinary shows with a valid `next_episode`,
+ * not season fragments and not duplicates of anything else in the list, so they
+ * must not be filtered out. Without a total they would render an empty progress
+ * bar and no "N left", which is most of what the row is for.
+ *
+ * Show detail carries `max_progress` for every one of them, so this fills the
+ * gap. It is an extra call per affected row on first load only, then cached.
+ */
+async function maxProgressFor(source: string, mediaId: string): Promise<number | null> {
+	const key = `${source}:${mediaId}`;
+	const hit = maxProgressCache.get(key);
+	if (hit !== undefined) return hit;
+
+	try {
+		const detail = await floppy<{ max_progress: number | null }>(
+			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/`
+		);
+		const max = typeof detail?.max_progress === 'number' ? detail.max_progress : null;
+		maxProgressCache.set(key, max);
+		return max;
+	} catch {
+		return null;
+	}
+}
+
 export async function episodeTitle(
 	source: string,
 	mediaId: string,
@@ -80,10 +113,25 @@ function mapRow(r: TrackedMedia, mediaType: MediaType): WatchlistRow {
 	};
 }
 
-async function withEpisodeTitle(row: WatchlistRow): Promise<WatchlistRow> {
-	if (!row.next || !row.mediaId) return row;
-	const title = await episodeTitle(row.source, row.mediaId, row.next.season, row.next.episode);
-	return title ? { ...row, next: { ...row.next, title } } : row;
+/** Fills in whatever the list row could not supply: episode title, and the
+ *  episode total for season-scoped shows. Both lookups run concurrently. */
+async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
+	if (!row.mediaId) return row;
+
+	const [title, max] = await Promise.all([
+		row.next
+			? episodeTitle(row.source, row.mediaId, row.next.season, row.next.episode)
+			: Promise.resolve(null),
+		row.maxProgress === null ? maxProgressFor(row.source, row.mediaId) : Promise.resolve(row.maxProgress)
+	]);
+
+	const out: WatchlistRow = { ...row };
+	if (title && out.next) out.next = { ...out.next, title };
+	if (max !== null && out.maxProgress === null) {
+		out.maxProgress = max;
+		out.left = Math.max(0, max - out.progress);
+	}
+	return out;
 }
 
 export type WatchlistPage = { rows: WatchlistRow[]; total: number; hasMore: boolean };
@@ -104,7 +152,7 @@ export async function getWatchlist(
 	});
 
 	// Titles resolve in parallel; one slow lookup does not hold up the page.
-	const rows = await Promise.all((res.results ?? []).map((r) => withEpisodeTitle(mapRow(r, mediaType))));
+	const rows = await Promise.all((res.results ?? []).map((r) => enrich(mapRow(r, mediaType))));
 
 	const p = res.pagination;
 	return { rows, total: p?.total ?? rows.length, hasMore: Boolean(p?.next) };
@@ -143,5 +191,5 @@ export async function getRow(
 	);
 	if (!hit) return null;
 
-	return withEpisodeTitle(mapRow(hit, mediaType));
+	return enrich(mapRow(hit, mediaType));
 }
