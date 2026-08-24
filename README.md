@@ -38,17 +38,27 @@ and whether the API token is accepted.
 
 ## What is built
 
-- **Watchlist** (§4.1) — TV/Movies/Anime segments, poster, title, episode pill,
-  gradient progress bar, "N left". Server-rendered.
-- **Swipe to mark** (§4.2) — right-to-left by default, direction configurable via
-  the header toggle. Reveal shows the eye icon and "Mark as Watched" on the signal
-  gradient.
-- **Undo** (§4.3) — 6s toast; removes the most recent play.
-- **Session gate** (§2) — off unless `SEEK_PASSPHRASE` is set.
+All eight steps of §13.
 
-Not built yet: episode sheet, show page, season list, search/add, Upcoming,
-Discover, Profile, sort/filter. Those affordances are present but inert and say so
-when tapped — the layout needs to be real for the ergonomics to be judged fairly.
+- **Watchlist** (§4) — segments, poster, episode pill, gradient progress, "N left".
+  Swipe to mark with the row sliding fully off and returning with the next
+  episode; 6s undo toast. Direction configurable.
+- **Show page / season list / episode sheet** (§4.4, §6.1) — seasons with
+  per-season progress and completion checks, cast, episode list with real air
+  times, toggle-to-watch, mark-all. The sheet opens over the list, never as a
+  navigation.
+- **Search and add** (§6.4) — live 1s-debounced provider search, Best Match / TV /
+  Movies, inline add showing what is already tracked.
+- **Upcoming** (§5) — server-fetched iCal feed, cached 45 min, gradient rail
+  grouped by day with absolute air times where Floppy knows them.
+- **Discover** (§6) — Floppy's own personalised rows with their `why` and
+  `match_signal`, plus TMDB mood/theme search with preset chips and free text.
+- **Profile** (§7) — range-scoped stats read entirely from Floppy, binge rhythm,
+  streaks, most watched, genres, networks, and the diary.
+- **Deployment** — GHCR image built by CI, TrueNAS compose, optional passphrase gate.
+
+Not built: filters (§4.6), sort (§4.5), the joint/solo tag (§11), and the
+watchlist re-sort after marking. See [BACKLOG.md](BACKLOG.md).
 
 ## API findings
 

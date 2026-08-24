@@ -57,12 +57,28 @@ directly, and `floppy:8000` does not resolve outside Docker. So that one link
 needs a separate LAN-reachable address — add a `FLOPPY_PUBLIC_URL` env var
 (e.g. `http://10.0.1.14:8007`) and omit the link when it is unset.
 
+## Not yet built from the spec
+
+- **Sort control** (§4.5) — Recently watched / Newest / Oldest / Alphabetical /
+  Total episodes / Episodes left. Maps to the `sort` and `direction` params;
+  note `sort` is a closed enum and there is no `progressed_at`.
+- **Filters** (§4.6) — status and platform, plus the anime chip once the bucket
+  migration lands.
+- **Joint/solo tag** (§11) — `tag[]`/`tag_mode` on the list endpoint and
+  `PUT .../tags/` already support it; the payload is the Solo/Joint/All filter.
+- **Collection rows** (§7.2) — My TV Shows / My Movies / Archive with View All.
+  Profile currently links only to the Diary.
+
 ## Smaller items
 
 - Confirmation-toast setting for actions that have no undo of their own
   (mark-all-season, add show). Marking already toasts because undo needs it.
   Raised because iOS Safari has no Vibration API, so §4.2's haptic cannot fire —
   see `src/lib/haptics.ts`.
+- The statistics endpoint ignores `range=` and `period=`; only explicit
+  `start_date`/`end_date` narrow the window. §7.1 guessed that binge rhythm,
+  streaks and finish rate would be missing — they are not, Floppy reports all of
+  them, so they ship.
 - Movies use a different watch endpoint:
   `POST|DELETE /api/v1/media/movie/{source}/{media_id}/watch/`, undocumented but
   mirroring episode semantics with an optional `external_id`. Wire it up when the

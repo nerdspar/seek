@@ -2,16 +2,10 @@
 	import { goto } from '$app/navigation';
 	import WatchRow from '$lib/components/WatchRow.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
-	import SettingsSheet from '$lib/components/SettingsSheet.svelte';
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { haptic } from '$lib/haptics';
-	import {
-		load as loadSettings,
-		save as saveSettings,
-		type MarkDirection,
-		type Settings
-	} from '$lib/settings';
+	import { load as loadSettings, type Settings } from '$lib/settings';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -170,12 +164,7 @@
 		goto(`/?type=${id}`, { noScroll: true });
 	}
 
-	let settingsOpen = $state(false);
 
-	function setDirection(markDirection: MarkDirection) {
-		settings = { ...settings, markDirection };
-		saveSettings(settings);
-	}
 
 	const notBuilt = (what: string) => () => (note = `${what} — not built yet (build order §13).`);
 
@@ -252,7 +241,7 @@
 		</svg>
 	</button>
 
-	<TabBar current="watchlist" onprofile={() => (settingsOpen = true)} onunbuilt={(l) => (note = `${l} — not built yet (build order §13).`)} />
+	<TabBar current="watchlist" />
 
 	{#if sheetRow?.next}
 		<EpisodeSheet
@@ -264,14 +253,6 @@
 			marking={inFlight.has(key(sheetRow))}
 			onmark={markFromSheet}
 			onclose={() => (sheetRow = null)}
-		/>
-	{/if}
-
-	{#if settingsOpen}
-		<SettingsSheet
-			markDirection={settings.markDirection}
-			onchange={setDirection}
-			onclose={() => (settingsOpen = false)}
 		/>
 	{/if}
 

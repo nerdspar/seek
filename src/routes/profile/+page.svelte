@@ -1,0 +1,215 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import Poster from '$lib/components/Poster.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
+	import SettingsSheet from '$lib/components/SettingsSheet.svelte';
+	import { load as loadSettings, save as saveSettings, type MarkDirection, type Settings } from '$lib/settings';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+
+	let settings = $state<Settings>({ markDirection: 'rtl' });
+	let settingsOpen = $state(false);
+	$effect(() => {
+		settings = loadSettings();
+	});
+
+	function setDirection(markDirection: MarkDirection) {
+		settings = { ...settings, markDirection };
+		saveSettings(settings);
+	}
+
+	const RANGES = [
+		{ id: 'this_month', label: 'This month' },
+		{ id: 'this_year', label: 'This year' },
+		{ id: 'last_year', label: 'Last year' },
+		{ id: 'all_time', label: 'All time' }
+	];
+
+	const stats = $derived(data.stats);
+	const peak = $derived(Math.max(1, ...(stats?.weekday ?? []).map((d) => d.hours)));
+	const fmt = (n: number) => n.toLocaleString();
+</script>
+
+<div class="app">
+	<header>
+		<h1>Profile</h1>
+		<div class="chips">
+			{#each RANGES as r (r.id)}
+				<button
+					class:on={data.range === r.id}
+					onclick={() => goto(`/profile?range=${r.id}`, { noScroll: true })}
+				>{r.label}</button>
+			{/each}
+		</div>
+	</header>
+
+	<main>
+		{#if data.error || !stats}
+			<div class="empty"><h2>Can't load stats</h2><p>{data.error}</p></div>
+		{:else}
+			<!-- §7.1: every number below is read from Floppy's overview endpoint.
+			     Seek computes nothing except the date window. -->
+			<section class="headline">
+				<span class="big tnum">{fmt(stats.hours)}</span>
+				<span class="unit">hours logged · {stats.rangeLabel}</span>
+			</section>
+
+			<ul class="tiles">
+				<li><span class="n tnum">{fmt(stats.plays)}</span><span class="l">Plays</span></li>
+				<li><span class="n tnum">{fmt(stats.counts.tv)}</span><span class="l">Shows</span></li>
+				<li><span class="n tnum">{fmt(stats.counts.movie)}</span><span class="l">Movies</span></li>
+				<li><span class="n tnum">{fmt(stats.completed)}</span><span class="l">Completed</span></li>
+			</ul>
+
+			{#if stats.weekday.length}
+				<section>
+					<h2>Binge rhythm</h2>
+					{#if stats.mostActiveDay}
+						<p class="sub">
+							{stats.mostActiveDay} is your heaviest day{stats.mostActiveDayPct ? ` — ${stats.mostActiveDayPct}% of everything` : ''}.
+						</p>
+					{/if}
+					<div class="bars">
+						{#each stats.weekday as d (d.label)}
+							<div class="bar">
+								<div class="col"><div class="fill" style:height={`${Math.max(2, (d.hours / peak) * 100)}%`}></div></div>
+								<span class="lab">{d.label}</span>
+							</div>
+						{/each}
+					</div>
+				</section>
+			{/if}
+
+			<section class="streaks">
+				<div><span class="n tnum">{stats.currentStreak}</span><span class="l">Current streak</span></div>
+				<div><span class="n tnum">{stats.longestStreak}</span><span class="l">Longest streak</span></div>
+			</section>
+
+			{#if stats.topTitles.length}
+				<section>
+					<h2>Most watched</h2>
+					<ul class="rail">
+						{#each stats.topTitles as t (t.mediaId)}
+							<li>
+								<button onclick={() => goto(`/show/${t.source}/${t.mediaId}`)}>
+									<Poster src={t.poster} width={92} height={138} radius={9} />
+									<span class="cap">{t.title}</span>
+									<span class="sub2 tnum">{t.duration}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
+			{#if stats.topGenres.length}
+				<section>
+					<h2>Favourite genres</h2>
+					<ul class="list">
+						{#each stats.topGenres as g (g.name)}
+							<li><span>{g.name}</span><span class="dim tnum">{g.duration}</span></li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
+			{#if stats.topStudios.length}
+				<section>
+					<h2>Top networks</h2>
+					<ul class="list">
+						{#each stats.topStudios as s (s.name)}
+							<li><span>{s.name}</span><span class="dim tnum">{s.watched}</span></li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
+			<section>
+				<h2>Collection</h2>
+				<ul class="links">
+					<li><button onclick={() => goto('/profile/diary')}><span>Diary</span><span class="chev">›</span></button></li>
+					<li><button onclick={() => (settingsOpen = true)}><span>Settings</span><span class="chev">›</span></button></li>
+				</ul>
+			</section>
+		{/if}
+	</main>
+
+	<TabBar current="profile" />
+
+	{#if settingsOpen}
+		<SettingsSheet
+			markDirection={settings.markDirection}
+			onchange={setDirection}
+			onclose={() => (settingsOpen = false)}
+		/>
+	{/if}
+</div>
+
+<style>
+	.app { min-height: 100dvh; padding-top: var(--safe-t); }
+	header { padding: 10px var(--gutter) 4px; }
+	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+
+	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+	.chips button {
+		flex: none; min-height: 32px; padding: 0 12px; border-radius: 9px;
+		background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--text-dim);
+	}
+	.chips button.on { background: var(--surface-raised); color: var(--text); }
+
+	main { padding: 10px var(--gutter) calc(var(--tabbar-h) + var(--safe-b) + 32px); }
+
+	.headline { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+	.big {
+		font-size: 42px; font-weight: 700; line-height: 1; letter-spacing: -0.03em;
+		background: var(--signal); -webkit-background-clip: text; background-clip: text; color: transparent;
+	}
+	.unit { font-size: 13px; color: var(--text-dim); }
+
+	.tiles, .streaks {
+		display: grid; gap: 8px; margin: 0 0 24px; padding: 0; list-style: none;
+	}
+	.tiles { grid-template-columns: repeat(4, 1fr); }
+	.streaks { grid-template-columns: repeat(2, 1fr); }
+	.tiles li, .streaks div {
+		display: flex; flex-direction: column; gap: 2px; align-items: center;
+		padding: 12px 6px; border-radius: var(--radius); background: var(--surface);
+	}
+	.n { font-size: 19px; font-weight: 700; }
+	.l { font-size: 10.5px; color: var(--text-dim); text-align: center; }
+
+	section { margin-bottom: 24px; }
+	h2 {
+		margin: 0 0 6px; font-size: 12.5px; font-weight: 700;
+		text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim);
+	}
+	.sub { margin: 0 0 12px; font-size: 13px; color: var(--text); }
+
+	.bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; height: 110px; }
+	.bar { display: flex; flex-direction: column; gap: 6px; }
+	.col { flex: 1; display: flex; align-items: flex-end; border-radius: 6px; background: var(--surface); overflow: hidden; }
+	.fill { width: 100%; border-radius: 6px; background: var(--signal); }
+	.lab { font-size: 10.5px; text-align: center; color: var(--text-dim); }
+
+	.rail { display: flex; gap: 12px; margin: 0; padding: 0 0 4px; list-style: none; overflow-x: auto; }
+	.rail li { flex: none; width: 92px; }
+	.cap {
+		display: -webkit-box; margin-top: 6px; font-size: 12px; font-weight: 600; line-height: 1.3;
+		overflow: hidden; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+	}
+	.sub2 { display: block; font-size: 11px; color: var(--text-dim); }
+
+	.list, .links { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+	.list li, .links button {
+		display: flex; align-items: center; justify-content: space-between; gap: 12px;
+		width: 100%; min-height: var(--tap); padding: 8px 14px;
+		border-radius: var(--radius); background: var(--surface); font-size: 14px;
+	}
+	.dim { color: var(--text-dim); font-size: 12.5px; }
+	.chev { color: var(--text-dim); font-size: 18px; }
+
+	.empty { margin-top: 20vh; text-align: center; }
+	.empty h2 { margin: 0 0 8px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); }
+	.empty p { margin: 0; font-size: 14px; color: var(--text-dim); }
+</style>

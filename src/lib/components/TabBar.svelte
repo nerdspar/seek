@@ -3,30 +3,23 @@
 
 	type Tab = 'watchlist' | 'upcoming' | 'discover' | 'profile';
 
-	type Props = {
-		current: Tab;
-		/** Profile currently opens the settings sheet; the tab itself is step 8. */
-		onprofile?: () => void;
-		onunbuilt?: (label: string) => void;
-	};
-	let { current, onprofile, onunbuilt }: Props = $props();
+	type Props = { current: Tab; onunbuilt?: (label: string) => void };
+	let { current, onunbuilt }: Props = $props();
 
 	const TABS: { id: Tab; label: string; href: string | null }[] = [
 		{ id: 'watchlist', label: 'Watchlist', href: '/' },
 		{ id: 'upcoming', label: 'Upcoming', href: '/upcoming' },
-		{ id: 'discover', label: 'Discover', href: null },
-		{ id: 'profile', label: 'Profile', href: null }
+		{ id: 'discover', label: 'Discover', href: '/discover' },
+		{ id: 'profile', label: 'Profile', href: '/profile' }
 	];
 
 	function activate(tab: (typeof TABS)[number]) {
 		if (tab.id === current) return;
-		if (tab.id === 'profile' && onprofile) return onprofile();
 		if (tab.href) return void goto(tab.href);
 		onunbuilt?.(tab.label);
 	}
 
-	const enabled = (tab: (typeof TABS)[number]) =>
-		Boolean(tab.href) || (tab.id === 'profile' && Boolean(onprofile));
+	const enabled = (tab: (typeof TABS)[number]) => Boolean(tab.href);
 </script>
 
 <nav class="tabbar">
