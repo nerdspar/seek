@@ -78,17 +78,51 @@ Fill in the three values marked ⬅ :
 
 | Setting | Where it comes from |
 |---|---|
-| `FLOPPY_URL` | `http://floppy:8000` if Floppy runs on this same Docker host (see below), otherwise its LAN address, e.g. `http://10.0.1.14:8007` |
+| `FLOPPY_URL` | `http://floppy:8000` if Floppy runs on this same Docker host — note 8000 is the *internal* port, not the published one (see below). Otherwise its LAN address, e.g. `http://10.0.1.14:8007` |
 | `FLOPPY_TOKEN` | Floppy → Settings → Integrations → API Token |
 | `SEEK_SESSION_SECRET` | `openssl rand -hex 32` |
 
 `SEEK_PASSPHRASE`, `FLOPPY_CALENDAR_TOKEN` and `TMDB_API_KEY` can stay empty for
 now — see "Security" and "Not wired up yet" below.
 
-**If Floppy runs on this same host**, prefer reaching it by container name: set
-`FLOPPY_URL` to `http://floppy:8000` (confirm the real name and internal port
-with `docker ps`) and uncomment the two `networks:` blocks in the compose file.
-That keeps the traffic inside Docker instead of hairpinning through the LAN.
+**If Floppy runs on this same host** — including in a *different compose stack* —
+prefer reaching it by container name. `docker-compose.yml` ships configured that
+way (`FLOPPY_URL: http://floppy:8000` plus the two `networks:` blocks). Two things
+to verify first, because both are easy to get wrong:
+
+**The network name is project-prefixed.** Floppy's compose declares `floppy-net`
+with no `name:` override, so Compose creates it as `<project>_floppy-net` — most
+often `floppy_floppy-net`. `external: true` does no fuzzy matching:
+
+```bash
+docker network ls | grep floppy
+```
+
+Put that exact string in the `name:` field at the bottom of `docker-compose.yml`.
+A mismatch fails loudly at startup with "network ... declared as external, but
+could not be found".
+
+**The port is the internal one, not the published one.** Floppy listens on 8000
+inside the container by default. If you changed the published port to 8007, the
+mapping is `8007:8000` and the internal port is still **8000** — Floppy's own
+compose comments say not to set `FLOPPY_PORT` merely to change what's published.
+Confirm with the right-hand side of the arrow:
+
+```bash
+docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
+```
+
+Then prove the route works from inside the container:
+
+```bash
+docker compose up -d && sleep 5
+docker compose exec seek node -e \
+  "fetch('http://floppy:8000/api/v1/info/').then(r=>r.json()).then(j=>console.log('reached Floppy',j.version)).catch(e=>console.log('FAILED',e.message))"
+```
+
+To skip all of this, comment out both `networks:` blocks and set `FLOPPY_URL`
+back to the LAN address (`http://10.0.1.14:8007`). It works fine; it just
+hairpins through the router.
 
 ## 4. Launch
 
@@ -149,6 +183,7 @@ when those features exist.
 |---|---|
 | `denied` / `manifest unknown` on pull | Not logged in to GHCR, or the first build hasn't published. Check GitHub → Packages. |
 | Health shows `"token":"rejected"` | `FLOPPY_TOKEN` is wrong or was regenerated in Floppy. |
-| Health shows `reachable:false` | `FLOPPY_URL` is wrong, or Seek isn't on `floppy-net` while using a container name. |
+| `network ... declared as external, but could not be found` | The `name:` under the top-level `networks:` doesn't match. Run `docker network ls \| grep floppy` — it's project-prefixed, e.g. `floppy_floppy-net`. |
+| Health shows `reachable:false` with a container-name URL | Wrong internal port (it's 8000, not the published 8007), or Seek isn't actually on Floppy's network. |
 | Watchlist empty, health OK | No shows are `in_progress` with an unwatched episode — check Floppy directly. |
 | Undo fails with a 405 | Floppy removed `DELETE` on the episode watch path. See the API findings in [README.md](README.md). |

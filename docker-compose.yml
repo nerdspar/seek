@@ -37,12 +37,19 @@ services:
       TZ: "America/New_York"
 
       # Where Floppy lives.
-      #  • Floppy on this same Docker host: use its container name and INTERNAL
-      #    port, e.g. http://floppy:8000, and uncomment the two `networks:`
-      #    blocks at the bottom of this file. Preferred — it keeps the traffic
-      #    off the LAN.
-      #  • Floppy anywhere else: use its LAN address, as below.
-      FLOPPY_URL: "http://10.0.1.14:8007" # ⬅ FLOPPY_URL
+      #  • Floppy on this same Docker host (even in a different compose stack):
+      #    use its container name and INTERNAL port, and uncomment the two
+      #    `networks:` blocks below. Preferred — it keeps traffic off the LAN.
+      #
+      #    Floppy's compose sets `container_name: floppy`, so the hostname is
+      #    `floppy`. The INTERNAL port is 8000 by default and is NOT the port
+      #    you publish: a mapping of "8007:8000" still listens on 8000 inside.
+      #    Floppy's own docs say not to set FLOPPY_PORT merely to change the
+      #    published port. Confirm the right-hand side of the arrow with:
+      #        docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
+      #
+      #  • Floppy anywhere else: use its LAN address, e.g. http://10.0.1.14:8007
+      FLOPPY_URL: "http://floppy:8000" # ⬅ FLOPPY_URL
 
       # Floppy → Settings → Integrations → API Token.
       FLOPPY_TOKEN: "PASTE_FLOPPY_TOKEN_HERE" # ⬅ FLOPPY_TOKEN
@@ -79,14 +86,27 @@ services:
       start_period: 10s
       retries: 3
 
-    # ── Floppy on this same Docker host ──────────────────────────────────────
-    # Uncomment BOTH this block and the top-level `networks:` below, and set
-    # FLOPPY_URL above to http://floppy:8000 (check the real container name with
-    # `docker ps` — it may not be "floppy").
-    #
-    # networks:
-    #   - floppy-net
+    # ── Reaching Floppy on this same host ────────────────────────────────────
+    # Uncomment this and the top-level `networks:` block below. Works across
+    # compose stacks — Seek and Floppy do not need to be in the same project.
+    networks:
+      - floppy-net
 
-# networks:
-#   floppy-net:
-#     external: true
+# IMPORTANT: Compose prefixes network names with the project name. Floppy's
+# compose declares `floppy-net` with no `name:` override, so the network that
+# actually exists on the host is `<project>_floppy-net` — typically
+# `floppy_floppy-net`. `external: true` does no fuzzy matching, so the `name:`
+# below must be the exact string from:
+#
+#     docker network ls | grep floppy
+#
+# Getting it wrong fails at startup with "network ... declared as external, but
+# could not be found" — a loud, harmless failure, not a silent misconfiguration.
+#
+# To skip all of this and reach Floppy over the LAN instead, comment out this
+# whole block AND the service's `networks:` above, then set FLOPPY_URL back to
+# http://10.0.1.14:8007.
+networks:
+  floppy-net:
+    external: true
+    name: floppy_floppy-net # ⬅ FLOPPY_NETWORK — verify with the command above
