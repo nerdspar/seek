@@ -1,0 +1,67 @@
+# Candidate `anime` tag list — REVIEW BEFORE APPLYING
+#
+# Floppy has no content-based anime classification, so this is a judgement call,
+# not a detection. Every Animation-genre show in the library is listed. Delete any
+# line you do NOT want tagged `anime`; add lines for anything missing.
+# Format: source:media_id  Title   (only source:media_id is read)
+
+# ── Flagged Japanese by Floppy metadata (13) ──
+tmdb:43167  Accel World
+tmdb:62745  Is It Wrong to Try to Pick Up Girls in a Dungeon?
+tmdb:95479  JUJUTSU KAISEN
+tmdb:65942  Re:ZERO -Starting Life in Another World-
+tmdb:69292  Scum's Wish
+tmdb:127532  Solo Leveling
+tmdb:229676  Spice and Wolf: MERCHANT MEETS THE WISE WOLF
+tmdb:114478  Star Wars: Visions
+tmdb:78204  Sword Art Online Alternative: Gun Gale Online
+tmdb:82684  That Time I Got Reincarnated as a Slime
+tmdb:62104  The Seven Deadly Sins
+tmdb:218843  The Seven Deadly Sins: Four Knights of the Apocalypse
+tmdb:118541  The Slime Diaries
+
+# ── Other Animation-genre shows (42) — Floppy has no Japanese flag on
+#    these, but several ARE anime (Naruto, SPY x FAMILY, Boruto…). Floppy metadata
+#    is simply missing the language. Keep the anime, delete the Western animation.
+tmdb:107124  Animaniacs
+tmdb:94605  Arcane
+tmdb:114466  Baymax!
+tmdb:68665  Big Hero 6 The Series
+tmdb:111111  Blood of Zeus
+tmdb:225180  BLUE EYE SAMURAI
+tmdb:70881  Boruto: Naruto Next Generations
+tmdb:72350  DuckTales
+tmdb:90808  Gremlins: Secrets of the Mogwai
+tmdb:74440  Harley Quinn
+tmdb:232125  I Am Groot
+tmdb:95557  INVINCIBLE
+tmdb:93741  Jurassic World Camp Cretaceous
+tmdb:237512  Jurassic World: Chaos Theory
+tmdb:232230  Lord of Mysteries
+tmdb:86831  Love, Death & Robots
+tmdb:90461  Monsters at Work
+tmdb:280110  My Hero Academia: Vigilantes
+tmdb:46260  Naruto
+tmdb:31910  Naruto Shippūden
+tmdb:195339  Pantheon
+tmdb:60625  Rick and Morty
+tmdb:204154  Scavengers Reign
+tmdb:261579  Secret Level
+tmdb:205050  Shangri-La Frontier
+tmdb:2190  South Park
+tmdb:120089  SPY x FAMILY
+tmdb:60554  Star Wars Rebels
+tmdb:79093  Star Wars Resistance
+tmdb:289219  Star Wars: Maul - Shadow Lord
+tmdb:251091  Star Wars: Tales of the Empire
+tmdb:105971  Star Wars: The Bad Batch
+tmdb:4194  Star Wars: The Clone Wars
+tmdb:224263  Stranger Things: Tales from '85
+tmdb:81046  The Dragon Prince
+tmdb:135934  The Legend of Vox Machina
+tmdb:219080  The Mighty Nein
+tmdb:117830  Tomb Raider: The Legend of Lara Croft
+tmdb:97333  Twilight of the Gods
+tmdb:91363  What If...?
+tmdb:138502  X-Men '97
+tmdb:138503  Your Friendly Neighborhood Spider-Man
