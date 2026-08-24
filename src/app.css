@@ -1,0 +1,94 @@
+/* Seek design tokens — spec §10.
+   Structured as swappable theme sets from day one; Midnight is the only one
+   shipped. A second theme = one more [data-theme="…"] block, nothing else. */
+
+[data-theme='midnight'] {
+	--bg: #08080c;
+	--surface: #14141c;
+	--surface-raised: #1e1e28;
+	--text: #f4f5fa;
+	--text-dim: #8a8da0;
+	--signal-from: #5b6cff;
+	--signal-to: #b36bff;
+	--signal-solid: #6b7bff;
+}
+
+:root {
+	--signal: linear-gradient(100deg, var(--signal-from), var(--signal-to));
+
+	--radius: 12px;
+	--radius-lg: 16px;
+	--tap: 44px; /* §10 minimum touch target — never go below this */
+
+	--gutter: 16px;
+	--tabbar-h: 56px;
+
+	/* Physical inset, not a design choice: content must clear the home indicator. */
+	--safe-b: env(safe-area-inset-bottom, 0px);
+	--safe-t: env(safe-area-inset-top, 0px);
+
+	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, sans-serif;
+}
+
+* {
+	box-sizing: border-box;
+	-webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	/* Standalone PWA: the page itself must not rubber-band, or the swipe
+	   gesture fights the scroll view. Panes opt into scrolling explicitly. */
+	overscroll-behavior-y: none;
+}
+
+body {
+	font-size: 16px;
+	line-height: 1.4;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* §10: tabular numerals so progress counts and timestamps don't jitter as
+   they update. Applied to every number that changes in place. */
+.tnum {
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: 'tnum' 1;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+img {
+	display: block;
+	max-width: 100%;
+}
+
+:focus-visible {
+	outline: 2px solid var(--signal-solid);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+}

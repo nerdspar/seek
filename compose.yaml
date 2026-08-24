@@ -1,0 +1,21 @@
+services:
+  seek:
+    build: .
+    image: seek:latest
+    container_name: seek
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Inside floppy-net, reach Floppy by container name rather than the LAN.
+      - "FLOPPY_URL=http://floppy:8000"
+      - "TZ=America/New_York"
+    volumes:
+      - /mnt/NAS/Data/seek:/data
+    ports:
+      - "8100:8100"
+    networks:
+      - floppy-net
+
+networks:
+  floppy-net:
+    external: true
