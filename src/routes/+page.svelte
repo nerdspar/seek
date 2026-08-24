@@ -3,6 +3,7 @@
 	import WatchRow from '$lib/components/WatchRow.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import SettingsSheet from '$lib/components/SettingsSheet.svelte';
+	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import {
 		load as loadSettings,
@@ -176,6 +177,25 @@
 	}
 
 	const notBuilt = (what: string) => () => (note = `${what} — not built yet (build order §13).`);
+
+	/* §4.1's two destinations, now both real. The pill opens a sheet over the
+	   list; everything else in the row navigates to the show. */
+	let sheetRow = $state<WatchlistRow | null>(null);
+
+	function openShow(row: WatchlistRow) {
+		goto(`/show/${row.source}/${row.mediaId}`);
+	}
+
+	function openEpisode(row: WatchlistRow) {
+		if (!row.next) return;
+		sheetRow = row;
+	}
+
+	function markFromSheet() {
+		const row = sheetRow;
+		sheetRow = null;
+		if (row) onmark(row);
+	}
 </script>
 
 <div class="app">
@@ -216,8 +236,8 @@
 						markDirection={settings.markDirection}
 						pending={inFlight.has(key(row))}
 						{onmark}
-						onepisode={notBuilt('Episode sheet')}
-						onshow={notBuilt('Show page')}
+						onepisode={openEpisode}
+						onshow={openShow}
 					/>
 				{/each}
 			</ul>
@@ -249,6 +269,19 @@
 			Profile
 		</button>
 	</nav>
+
+	{#if sheetRow?.next}
+		<EpisodeSheet
+			showTitle={sheetRow.title}
+			source={sheetRow.source}
+			mediaId={sheetRow.mediaId}
+			season={sheetRow.next.season}
+			episode={sheetRow.next.episode}
+			marking={inFlight.has(key(sheetRow))}
+			onmark={markFromSheet}
+			onclose={() => (sheetRow = null)}
+		/>
+	{/if}
 
 	{#if settingsOpen}
 		<SettingsSheet

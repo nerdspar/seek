@@ -106,3 +106,74 @@ export type WatchlistRow = {
 	maxProgress: number | null;
 	left: number | null;
 };
+
+/* ── Detail views (§4.4, §6.1) ────────────────────────────────────────────
+   Shapes Seek's own components consume, mapped from Floppy in
+   $lib/server/detail.ts. Deliberately decoupled: on the show endpoint
+   `details.seasons` and `details.episodes` are COUNTS, not arrays — the real
+   lists live under `related` (§12.6 in practice). Nothing outside that mapper
+   should have to know. */
+
+export type SeasonSummary = {
+	seasonNumber: number;
+	title: string;
+	poster: string | null;
+	/** Episodes watched in this season; null when the season isn't tracked. */
+	progress: number | null;
+	/** Total episodes, when Floppy reports one. */
+	maxProgress: number | null;
+	tracked: boolean;
+};
+
+export type ShowDetail = {
+	mediaId: string;
+	source: string;
+	title: string;
+	poster: string | null;
+	synopsis: string | null;
+	genres: string[];
+	score: number | null;
+	scoreCount: number | null;
+	maxProgress: number | null;
+	progress: number;
+	tracked: boolean;
+	status: string | null;
+	firstAirDate: string | null;
+	lastAirDate: string | null;
+	studios: string[];
+	runtime: number | null;
+	cast: { name: string; role: string | null; image: string | null }[];
+	seasons: SeasonSummary[];
+};
+
+export type EpisodeRow = {
+	seasonNumber: number;
+	episodeNumber: number;
+	title: string;
+	synopsis: string | null;
+	still: string | null;
+	runtime: number | null;
+	/** Local air datetime with offset, e.g. 2001-10-02T20:00:00-04:00. */
+	airDate: string | null;
+	/** Number of recorded plays. >0 means watched; >1 means rewatched. */
+	plays: number;
+};
+
+export type SeasonDetail = {
+	mediaId: string;
+	source: string;
+	seasonNumber: number;
+	title: string;
+	showTitle: string | null;
+	poster: string | null;
+	maxProgress: number | null;
+	progress: number;
+	episodes: EpisodeRow[];
+};
+
+/** What the episode sheet renders (§4.4). */
+export type EpisodeDetail = EpisodeRow & {
+	mediaId: string;
+	source: string;
+	showTitle: string | null;
+};
