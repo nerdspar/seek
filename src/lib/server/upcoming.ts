@@ -1,0 +1,113 @@
+/**
+ * Upcoming (§5). The backend fetches and parses the iCal feed on a schedule,
+ * caches it, and serves JSON — the feed URL contains a credential and must never
+ * reach the browser.
+ *
+ * The feed carries no artwork and its UID is a Floppy row id rather than a TMDB
+ * id, so posters and show links are recovered by matching the event title
+ * against the library. Measured 163/163 once RFC 5545 escaping is undone.
+ */
+import { env } from '$env/dynamic/private';
+import { floppy } from './floppy';
+import { FLOPPY_URL } from './env';
+import { parseIcal, type IcalEvent } from './ical';
+import type { UpcomingItem } from '$lib/types';
+
+
+type Cached = { at: number; items: UpcomingItem[] };
+let cache: Cached | null = null;
+let inflight: Promise<UpcomingItem[]> | null = null;
+
+/** §5.1 says every 30–60 min is plenty; release schedules move slowly. */
+const TTL_MS = 45 * 60 * 1000;
+
+async function fetchFeed(): Promise<IcalEvent[]> {
+	const token = env.FLOPPY_CALENDAR_TOKEN;
+	if (!token) throw new Error('FLOPPY_CALENDAR_TOKEN is not set — Upcoming is unavailable.');
+
+	const params = new URLSearchParams();
+	for (const t of ['tv', 'season', 'movie', 'anime']) params.append('media_types', t);
+
+	const res = await fetch(`${FLOPPY_URL()}/calendar/download/${token}?${params}`, {
+		signal: AbortSignal.timeout(20_000)
+	});
+	if (!res.ok) throw new Error(`Calendar feed returned ${res.status}`);
+	return parseIcal(await res.text());
+}
+
+type ListResponse = { results?: { item?: Record<string, unknown> }[] };
+
+/** Title → poster and ids, for attaching artwork to feed events. */
+async function libraryIndex(): Promise<Map<string, { poster: string | null; mediaId: string; source: string }>> {
+	const index = new Map<string, { poster: string | null; mediaId: string; source: string }>();
+
+	for (const mediaType of ['tv', 'movie'] as const) {
+		let offset = 0;
+		for (;;) {
+			const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
+				query: { status: ['all'], limit: 100, offset }
+			});
+			const rows = res.results ?? [];
+			for (const r of rows) {
+				const item = r.item ?? {};
+				const title = typeof item.title === 'string' ? item.title.toLowerCase() : '';
+				const mediaId = String(item.media_id ?? '');
+				if (!title || !mediaId || index.has(title)) continue;
+				index.set(title, {
+					poster: typeof item.image === 'string' ? item.image : null,
+					mediaId,
+					source: String(item.source ?? 'tmdb')
+				});
+			}
+			offset += 100;
+			if (rows.length < 100 || offset > 1000) break;
+		}
+	}
+
+	return index;
+}
+
+async function build(): Promise<UpcomingItem[]> {
+	const [events, index] = await Promise.all([fetchFeed(), libraryIndex()]);
+	const now = Date.now();
+
+	return events
+		// Past episodes belong in the diary, not in Upcoming.
+		.filter((e) => new Date(e.start).getTime() >= now - 12 * 60 * 60 * 1000)
+		.map((e): UpcomingItem => {
+			const hit = index.get(e.title.toLowerCase());
+			return {
+				title: e.title,
+				season: e.season,
+				episode: e.episode,
+				start: e.start,
+				hasTime: e.hasTime,
+				poster: hit?.poster ?? null,
+				mediaId: hit?.mediaId ?? null,
+				source: hit?.source ?? null
+			};
+		});
+}
+
+/** Cached read. Concurrent callers share one in-flight refresh. */
+export async function getUpcoming(force = false): Promise<UpcomingItem[]> {
+	if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.items;
+	if (inflight) return inflight;
+
+	inflight = build()
+		.then((items) => {
+			cache = { at: Date.now(), items };
+			return items;
+		})
+		.catch((err) => {
+			// Serve stale rather than nothing — a missed refresh should not empty
+			// the tab.
+			if (cache) return cache.items;
+			throw err;
+		})
+		.finally(() => {
+			inflight = null;
+		});
+
+	return inflight;
+}

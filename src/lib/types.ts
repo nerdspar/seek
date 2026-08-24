@@ -191,3 +191,19 @@ export type SearchResult = {
 	 *  report this, so it is cross-referenced against the local list. */
 	tracked: boolean;
 };
+
+/* ── Upcoming (§5) ─────────────────────────────────────────────────────── */
+
+export type UpcomingItem = {
+	title: string;
+	season: number | null;
+	episode: number | null;
+	/** UTC instant. */
+	start: string;
+	/** False when Floppy padded a date with no known time (§5.2). */
+	hasTime: boolean;
+	poster: string | null;
+	/** Present when the title matched a tracked show, enabling a link. */
+	mediaId: string | null;
+	source: string | null;
+};

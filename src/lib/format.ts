@@ -34,3 +34,52 @@ export function formatRuntime(minutes: number): string {
 	const m = minutes % 60;
 	return m ? `${h}h ${m}m` : `${h}h`;
 }
+
+/**
+ * Relative marker for the Upcoming rail (§5.2) — "9 Hours", "2 Days".
+ * Deliberately coarse: an exact countdown on a release three weeks out is noise,
+ * and half of these events have no real time anyway.
+ */
+export function relativeWhen(iso: string, from: Date = new Date()): string {
+	const then = new Date(iso).getTime();
+	if (Number.isNaN(then)) return '';
+
+	const mins = Math.round((then - from.getTime()) / 60000);
+	// Nothing useful to say about something already past, and roughly 60% of
+	// these have a padded time anyway — "Now" would be asserting more than we know.
+	if (mins <= 0) return '';
+	if (mins < 60) return `${mins} Min`;
+
+	const hours = Math.round(mins / 60);
+	if (hours < 24) return `${hours} Hour${hours === 1 ? '' : 's'}`;
+
+	const days = Math.round(hours / 24);
+	if (days < 7) return `${days} Day${days === 1 ? '' : 's'}`;
+
+	const weeks = Math.round(days / 7);
+	if (days < 30) return `${weeks} Week${weeks === 1 ? '' : 's'}`;
+
+	const months = Math.round(days / 30);
+	return `${months} Month${months === 1 ? '' : 's'}`;
+}
+
+/** Groups by local calendar day, so the rail reads as a schedule. */
+export function dayKey(iso: string): string {
+	const d = new Date(iso);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function dayLabel(iso: string, from: Date = new Date()): string {
+	const d = new Date(iso);
+	if (dayKey(iso) === dayKey(from.toISOString())) return 'Today';
+	const tomorrow = new Date(from);
+	tomorrow.setDate(tomorrow.getDate() + 1);
+	if (dayKey(iso) === dayKey(tomorrow.toISOString())) return 'Tomorrow';
+
+	return d.toLocaleDateString(undefined, {
+		weekday: 'short',
+		month: 'short',
+		day: 'numeric',
+		year: d.getFullYear() === from.getFullYear() ? undefined : 'numeric'
+	});
+}

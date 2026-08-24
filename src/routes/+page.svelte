@@ -4,6 +4,7 @@
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import SettingsSheet from '$lib/components/SettingsSheet.svelte';
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
 	import { haptic } from '$lib/haptics';
 	import {
 		load as loadSettings,
@@ -251,24 +252,7 @@
 		</svg>
 	</button>
 
-	<nav class="tabbar">
-		<button class="active" onclick={() => {}}>
-			<span class="dot"></span>
-			Watchlist
-		</button>
-		{#each [{ id: 'upcoming', label: 'Upcoming' }, { id: 'discover', label: 'Discover' }] as tab (tab.id)}
-			<button disabled onclick={notBuilt(tab.label)}>
-				<span class="dot"></span>
-				{tab.label}
-			</button>
-		{/each}
-		<!-- Settings live under Profile (§7/§8). Only the swipe direction exists
-		     so far, but it belongs here rather than cluttering the watchlist. -->
-		<button onclick={() => (settingsOpen = true)}>
-			<span class="dot"></span>
-			Profile
-		</button>
-	</nav>
+	<TabBar current="watchlist" onprofile={() => (settingsOpen = true)} onunbuilt={(l) => (note = `${l} — not built yet (build order §13).`)} />
 
 	{#if sheetRow?.next}
 		<EpisodeSheet
@@ -396,46 +380,6 @@
 		background: var(--signal);
 		color: #fff;
 		box-shadow: 0 8px 24px rgb(91 108 255 / 0.34);
-	}
-
-	.tabbar {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		z-index: 50;
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		height: calc(var(--tabbar-h) + var(--safe-b));
-		padding-bottom: var(--safe-b);
-		background: color-mix(in srgb, var(--bg) 92%, transparent);
-		backdrop-filter: blur(12px);
-		border-top: 1px solid var(--surface);
-	}
-	.tabbar button {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 5px;
-		font-size: 10.5px;
-		font-weight: 600;
-		color: var(--text-dim);
-	}
-	.tabbar button.active {
-		color: var(--text);
-	}
-	.tabbar button:disabled {
-		opacity: 0.4;
-	}
-	.dot {
-		width: 18px;
-		height: 18px;
-		border-radius: 5px;
-		background: var(--surface-raised);
-	}
-	.tabbar button.active .dot {
-		background: var(--signal);
 	}
 
 	.note {
