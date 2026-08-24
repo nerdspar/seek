@@ -18,11 +18,20 @@ npm run dev            # http://<your-lan-ip>:8100
 Production / container:
 
 ```bash
+mkdir -p data
 docker compose up -d --build
 ```
 
-`compose.yaml` joins `floppy-net` and overrides `FLOPPY_URL` to `http://floppy:8000`
-so Seek reaches Floppy by container name rather than traversing the LAN (§2).
+Then open `http://<docker-host>:8100` on the phone and add it to the home screen.
+
+`compose.yaml` defaults to whatever `FLOPPY_URL` is in `.env`, so it runs from any
+host on the LAN. To run it on Floppy's own Docker host instead — the spec §2 shape,
+reaching Floppy by container name rather than traversing the LAN — set
+`FLOPPY_URL=http://floppy:8000` in `.env` and uncomment the `floppy-net` blocks at
+the bottom of `compose.yaml`.
+
+The runtime image carries only `build/` and `package.json`: adapter-node bundles its
+own dependencies, verified by running the build with no `node_modules` present.
 
 Health check: `GET /api/health` — reports Floppy reachability, its build version,
 and whether the API token is accepted.
@@ -115,8 +124,15 @@ rather than imported — see the migration below.
 
 ### Anime bucket migration
 
+**Parked** — prepared but not run.
+
 `scripts/anime-list.mjs` (read-only) regenerates `anime-list.txt`, the reviewable
-list of shows to move. `scripts/anime-migration-sql.mjs` turns that list into
+list of shows to move. Anime means **Japanese-produced animation**, not animation
+generally: the list is a curated set matched by title, because Floppy's metadata
+is wrong in both directions (it misses Naruto and SPY x FAMILY, and marks Star
+Wars: Visions Japanese). Currently 18 shows, with 7 borderline titles — Blood of
+Zeus, Blue Eye Samurai, Lord of Mysteries, Pantheon, Star Wars: Visions, Tomb
+Raider, Twilight of the Gods — commented out rather than silently included. `scripts/anime-migration-sql.mjs` turns that list into
 `migrate-anime.sql`. **The generator never connects to a database and runs
 nothing**; the SQL ends in `ROLLBACK` until deliberately changed to `COMMIT`.
 

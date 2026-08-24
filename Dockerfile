@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build && npm prune --omit=dev
+RUN npm run build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
@@ -14,8 +14,9 @@ ENV NODE_ENV=production
 ENV PORT=8100
 ENV HOST=0.0.0.0
 
+# adapter-node bundles its own dependencies — verified by running build/ with no
+# node_modules present — so the runtime image needs nothing but the output.
 COPY --from=build /app/build ./build
-COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 
 # Preferences only (§8). Watch state is never stored here.
