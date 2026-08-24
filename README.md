@@ -59,7 +59,59 @@ daily.
 | Air times are mostly placeholders | Most `air_date` values end `T11:59:59.999999Z` — a padded date, not a real time. Relevant to §5.2 and open question §14.2. |
 | `POST /api/v1/discover/refresh/` does not exist | GET only. (§6.1) |
 | `EpisodeDetails` is typed | `air_date`, `runtime`, `episode_number`, `season_number`, `episode_type` are stable. §12.6 still holds for show-level `details`/`related`. |
-| Undocumented endpoints | `GET /api/v1/home/` (returns `groups`) and `GET /api/v1/media/` (all types at once). |
+| Undocumented endpoints | `GET /api/v1/home/` (returns `groups`), `GET /api/v1/media/` (all types at once), and `POST\|DELETE /api/v1/media/movie/{source}/{media_id}/watch/` (`MediaMovieWatchView` — mirrors episode watch semantics, optional `external_id` for idempotency). |
+| Never POST anime with `source=tmdb` | `POST /api/v1/media/anime/` skips the tracking-type resolver and creates an item that GET/PATCH/DELETE then reject. Grouped anime is `media_type=tv` + `library_media_type=anime`. See below. |
+
+### Anime: how it actually works
+
+Corrected after a first pass got this wrong. Floppy does support native anime for
+a TMDB-sourced library — the earlier conclusion tested the wrong creation path.
+
+`get_tracking_media_type(anime, source=tmdb)` returns **`tv`**
+(`services/metadata_resolution.py:164`). So a correct grouped-anime item is:
+
+```
+media_type = tv          library_media_type = anime          source = tmdb
+```
+
+That shape works with every route Seek needs, because `tmdb` is a valid source for
+`media_type=tv`: show detail, the episode watch POST/DELETE, and the list endpoint
+all behave normally. It also appears in `GET /api/v1/media/anime/`, which is what
+backs an Anime segment. **Marking is unaffected — it keeps using the tv routes.**
+
+The broken artifact from the first pass was `media_type=anime, source=tmdb`, which
+`POST /api/v1/media/anime/` creates because it skips the resolver the web UI
+applies. `VALID_SOURCES[anime]` is `["mal","manual"]`, so GET/PATCH/DELETE on that
+item all 400 with "Cannot query `tmdb` for `anime` media type" — creatable but
+unmanageable. **Never POST to `/api/v1/media/anime/` with `source=tmdb`.**
+
+Two things gate a working setup:
+
+1. **`anime_library_mode` must be `both`** (or `anime`). Verified empirically: with
+   `tv`, a grouped-anime item appears in **neither** list — the TV query excludes
+   `library_media_type=anime` unless the mode is `both`, and the anime query only
+   includes grouped rows when the mode is `anime`/`both`. `both` puts each show
+   once in the TV list and once in the Anime list.
+
+2. **The import source has to separate anime.** This is why a Trakt-imported
+   library is entirely `library_media_type=tv` — Trakt does not distinguish anime.
+
+   | Importer | Anime classification |
+   |---|---|
+   | Simkl | Explicit `anime_destination` param, default `anime`; Simkl's own catalogue separates anime |
+   | Plex | Section title: `"anime" in section.title.lower()` |
+   | MAL / AniList / Kitsu | Native, but **flat** — `next_episode: null`, no per-episode marking, progress counter only |
+   | Stremio | Has anime handling |
+   | Trakt | **None** |
+   | Jellyfin (playback reporting) | **None** — no section-name logic despite Jellyfin library separation |
+
+Imports are dispatchable via `POST /api/v1/imports/{service}/` (free-form body,
+returns a `task_id` pollable at `GET /api/v1/tasks/{task_id}/`).
+
+Because `Item` is unique on `(media_id, source, media_type, library_media_type)`,
+the same show can legitimately exist in both the tv and anime buckets — see
+`imports/helpers.py:find_item_across_buckets`. Re-importing anime without removing
+the tv-bucket copies leaves duplicates.
 
 ### Known traps (§12) as implemented
 
