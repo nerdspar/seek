@@ -41,11 +41,10 @@ services:
       #    use its container name and INTERNAL port, and uncomment the two
       #    `networks:` blocks below. Preferred — it keeps traffic off the LAN.
       #
-      #    Floppy's compose sets `container_name: floppy`, so the hostname is
-      #    `floppy`. The INTERNAL port is 8000 by default and is NOT the port
-      #    you publish: a mapping of "8007:8000" still listens on 8000 inside.
-      #    Floppy's own docs say not to set FLOPPY_PORT merely to change the
-      #    published port. Confirm the right-hand side of the arrow with:
+      #    Verified on this host: `docker ps` reports
+      #        floppy  0.0.0.0:8007->8000/tcp
+      #    so the hostname is `floppy` and the INTERNAL port is 8000. 8007 is
+      #    only the published port. Re-check if Floppy is ever redeployed:
       #        docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
       #
       #  • Floppy anywhere else: use its LAN address, e.g. http://10.0.1.14:8007
@@ -92,11 +91,10 @@ services:
     networks:
       - floppy-net
 
-# IMPORTANT: Compose prefixes network names with the project name. Floppy's
-# compose declares `floppy-net` with no `name:` override, so the network that
-# actually exists on the host is `<project>_floppy-net` — typically
-# `floppy_floppy-net`. `external: true` does no fuzzy matching, so the `name:`
-# below must be the exact string from:
+# Compose prefixes network names with the project name, and TrueNAS Apps adds a
+# further `ix-` prefix, so Floppy's `floppy-net` exists on the host as
+# `ix-floppy_floppy-net`. `external: true` does no fuzzy matching — the `name:`
+# below must match exactly. Re-check if Floppy is ever redeployed:
 #
 #     docker network ls | grep floppy
 #
@@ -109,4 +107,4 @@ services:
 networks:
   floppy-net:
     external: true
-    name: floppy_floppy-net # ⬅ FLOPPY_NETWORK — verify with the command above
+    name: ix-floppy_floppy-net # verified on this host with the command above

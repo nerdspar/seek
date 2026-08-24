@@ -102,6 +102,9 @@ Put that exact string in the `name:` field at the bottom of `docker-compose.yml`
 A mismatch fails loudly at startup with "network ... declared as external, but
 could not be found".
 
+On this NAS it is **`ix-floppy_floppy-net`** — TrueNAS Apps adds an `ix-` prefix
+on top of the compose project prefix. The shipped file already has it.
+
 **The port is the internal one, not the published one.** Floppy listens on 8000
 inside the container by default. If you changed the published port to 8007, the
 mapping is `8007:8000` and the internal port is still **8000** — Floppy's own
@@ -111,6 +114,9 @@ Confirm with the right-hand side of the arrow:
 ```bash
 docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
 ```
+
+On this NAS that reports `floppy  0.0.0.0:8007->8000/tcp`, so `http://floppy:8000`
+is correct and is what the shipped file uses.
 
 Then prove the route works from inside the container:
 
