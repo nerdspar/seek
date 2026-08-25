@@ -71,7 +71,11 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 	const { start, end, label } = rangeDates(key);
 	const res = rec(
 		await floppy('/api/v1/statistics/overview/', {
-			query: { start_date: start, end_date: end }
+			query: { start_date: start, end_date: end },
+			// This endpoint genuinely takes ~9.4s for an all-time range and returns
+			// ~500 KB. The 15s default is not enough headroom when Floppy is also
+			// serving something else, and a timeout here renders as a broken tab.
+			timeoutMs: 90_000
 		})
 	);
 

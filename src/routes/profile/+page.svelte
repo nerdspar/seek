@@ -32,7 +32,15 @@
 
 <div class="app">
 	<header>
-		<h1>Profile</h1>
+		<div class="titlerow">
+			<h1>Profile</h1>
+			<button class="gear" onclick={() => (settingsOpen = true)} aria-label="Settings">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7">
+					<circle cx="12" cy="12" r="3.1" />
+					<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+				</svg>
+			</button>
+		</div>
 		<div class="chips">
 			{#each RANGES as r (r.id)}
 				<button
@@ -134,7 +142,6 @@
 					<h2>Collection</h2>
 					<ul class="links">
 						<li><button onclick={() => goto('/profile/diary')}><span>Diary</span><span class="chev">›</span></button></li>
-						<li><button onclick={() => (settingsOpen = true)}><span>Settings</span><span class="chev">›</span></button></li>
 					</ul>
 				</section>
 		{:catch err}
@@ -156,7 +163,17 @@
 <style>
 	.app { min-height: 100dvh; padding-top: var(--safe-t); }
 	header { padding: 10px var(--gutter) 4px; }
-	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+	.titlerow {
+		display: flex; align-items: center; justify-content: space-between; gap: 12px;
+		margin-bottom: 10px;
+	}
+	h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+	.gear {
+		flex: none; display: grid; place-items: center;
+		width: var(--tap); height: var(--tap);
+		margin-right: -10px; /* optical alignment with the gutter */
+		border-radius: 50%; color: var(--text-dim);
+	}
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 	.chips button {

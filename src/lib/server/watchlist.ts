@@ -148,7 +148,9 @@ export async function getWatchlist(
 			direction,
 			limit,
 			offset
-		}
+		},
+		// ~1.2s warm, but slower while Floppy is serving a statistics query.
+		timeoutMs: 45_000
 	});
 
 	// Titles resolve in parallel; one slow lookup does not hold up the page.

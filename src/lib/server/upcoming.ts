@@ -57,7 +57,9 @@ async function buildLibraryIndex(): Promise<Map<string, { poster: string | null;
 		let offset = 0;
 		for (;;) {
 			const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-				query: { status: ['all'], limit: 100, offset }
+				// ~3.6s and 1.9 MB per page from Floppy; the default is too tight.
+				query: { status: ['all'], limit: 100, offset },
+				timeoutMs: 60_000
 			});
 			const rows = res.results ?? [];
 			for (const r of rows) {
@@ -106,9 +108,11 @@ async function build(): Promise<UpcomingItem[]> {
  * open a tab after a container restart doesn't absorb the cold cost. Failures
  * are ignored: this is an optimisation, and every caller still works without it.
  */
-export function warmCaches(): void {
-	void libraryIndex().catch(() => {});
-	void getUpcoming().catch(() => {});
+export async function warmCaches(): Promise<void> {
+	// getUpcoming needs the index, so building it first means one pass, not two
+	// competing ones.
+	await libraryIndex().catch(() => {});
+	await getUpcoming().catch(() => {});
 }
 
 /** Cached read. Concurrent callers share one in-flight refresh. */
