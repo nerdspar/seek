@@ -137,10 +137,12 @@ export const MOOD_PRESETS: { label: string; keywords: number[] }[] = [
 /**
  * Live-TV bundles carry hundreds of channels, so listing them as "where to
  * watch" is noise: fuboTV is the answer for almost everything currently airing,
- * which makes it the answer for nothing.
+ * which makes it the answer for nothing. They are equally useless as a browse
+ * target — "trending on fuboTV" is just trending.
  */
 const LIVE_TV_CARRIERS = new Set([
 	'fuboTV',
+	'Fubo TV',
 	'YouTube TV',
 	'Hulu Live TV',
 	'Sling TV',
@@ -148,9 +150,147 @@ const LIVE_TV_CARRIERS = new Set([
 	'DIRECTV',
 	'Philo',
 	'Spectrum On Demand',
-	'Xfinity',
-	'Fubo TV'
+	'Xfinity'
 ]);
+
+
+export type Provider = { id: number; name: string; logo: string | null; priority: number };
+
+const providerCache = new TTLCache<Provider[]>(7 * 24 * 60 * 60 * 1000, 4);
+
+/**
+ * US watch providers, for discovering by streaming service.
+ *
+ * TMDB lists every resale and tier variant as its own provider — "HBO Max",
+ * "HBO Max Amazon Channel", "Netflix Standard with Ads" — which would turn a
+ * service picker into 46 near-duplicate chips. Collapsed to one entry per real
+ * service, preferring the canonical listing: the one whose raw name survives
+ * normalisation unchanged, then lowest display priority.
+ */
+export async function getProviders(): Promise<Provider[]> {
+	const hit = providerCache.get('us');
+	if (hit) return hit;
+	if (!TMDB_API_KEY()) return [];
+
+	try {
+		const data = await tmdb<{
+			results?: {
+				provider_id: number;
+				provider_name: string;
+				logo_path: string | null;
+				display_priority: number;
+			}[];
+		}>('/watch/providers/tv', { watch_region: 'US' });
+
+		type Candidate = Provider & { raw: string };
+		const best = new Map<string, Candidate>();
+
+		for (const p of data.results ?? []) {
+			const name = normaliseServiceName(p.provider_name);
+			if (!name || LIVE_TV_CARRIERS.has(name)) continue;
+
+			const candidate: Candidate = {
+				id: p.provider_id,
+				name,
+				logo: p.logo_path ? `https://image.tmdb.org/t/p/w92${p.logo_path}` : null,
+				priority: p.display_priority ?? 999,
+				raw: p.provider_name
+			};
+
+			const existing = best.get(name.toLowerCase());
+			if (!existing) {
+				best.set(name.toLowerCase(), candidate);
+				continue;
+			}
+			// Prefer the entry TMDB names canonically, then the one it ranks highest.
+			const canonical = (c: Candidate) => (c.raw === c.name ? 0 : 1);
+			const beatsExisting =
+				canonical(candidate) < canonical(existing) ||
+				(canonical(candidate) === canonical(existing) && candidate.priority < existing.priority);
+			if (beatsExisting) best.set(name.toLowerCase(), candidate);
+		}
+
+		const providers = [...best.values()]
+			.map(({ raw: _raw, ...rest }) => rest)
+			.sort((a, b) => a.priority - b.priority);
+		providerCache.set('us', providers);
+		return providers;
+	} catch {
+		return [];
+	}
+}
+
+export type ProviderMode = 'trending' | 'new';
+
+const providerRowCache = new TTLCache<TmdbResult[]>(6 * 60 * 60 * 1000, 200);
+
+/**
+ * What is popular, or newly arrived, on one service.
+ *
+ * "New" is bounded to the last 90 days and sorted by air date; without the
+ * window TMDB happily returns things dated years ahead. Vote thresholds differ
+ * by mode on purpose — a brand new title has not accumulated votes yet, so
+ * demanding them would empty the row.
+ */
+export async function discoverByProvider(
+	providerId: number,
+	mediaType: 'tv' | 'movie',
+	mode: ProviderMode
+): Promise<TmdbResult[]> {
+	if (!TMDB_API_KEY()) return [];
+
+	const key = `${providerId}:${mediaType}:${mode}`;
+	const hit = providerRowCache.get(key);
+	if (hit) return hit;
+
+	const today = new Date();
+	const from = new Date(today.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
+	const to = today.toISOString().slice(0, 10);
+	const dateField = mediaType === 'tv' ? 'first_air_date' : 'primary_release_date';
+
+	const params: Record<string, string | number> = {
+		with_watch_providers: providerId,
+		watch_region: 'US',
+		include_adult: 'false',
+		...(mode === 'trending'
+			? { sort_by: 'popularity.desc', 'vote_count.gte': 20 }
+			: {
+					sort_by: `${dateField}.desc`,
+					[`${dateField}.gte`]: from,
+					[`${dateField}.lte`]: to,
+					'vote_count.gte': 3
+				})
+	};
+
+	type Row = {
+		id: number;
+		name?: string;
+		title?: string;
+		poster_path: string | null;
+		first_air_date?: string;
+		release_date?: string;
+		vote_average?: number;
+	};
+
+	try {
+		const data = await tmdb<{ results?: Row[] }>(`/discover/${mediaType}`, params);
+		const results = (data.results ?? []).slice(0, 18).map(
+			(r): TmdbResult => ({
+				mediaId: String(r.id),
+				source: 'tmdb',
+				mediaType,
+				title: r.title ?? r.name ?? 'Untitled',
+				poster: img(r.poster_path),
+				year: yearOf(r.release_date ?? r.first_air_date),
+				rating: typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
+			})
+		);
+		providerRowCache.set(key, results);
+		return results;
+	} catch {
+		return [];
+	}
+}
 
 export type ShowExtras = {
 	/** Broadcast networks (The WB, AMC) — what a show "airs on". */

@@ -15,6 +15,38 @@
 	   The distinguishing feature: "I want a heist show", not a trending grid.
 	   Chips carry no keyword ids — the server owns those — so the client cannot
 	   construct TMDB queries of its own. */
+	/* ── Browse by streaming service (§6.3) ────────────────────────────────
+	   "What's new on Netflix" is a different question from a mood, so it gets
+	   its own row and replaces the shelves the same way a mood search does. */
+	type Platform = { id: number; name: string; logo: string | null };
+	let platform = $state<Platform | null>(null);
+	let platformRows = $state<{ mode: string; items: TmdbResult[] }[] | null>(null);
+	let platformBusy = $state(false);
+
+	async function pickPlatform(p: Platform) {
+		if (platform?.id === p.id) {
+			platform = null;
+			platformRows = null;
+			return;
+		}
+		platform = p;
+		platformRows = null;
+		clearMood();
+		platformBusy = true;
+		try {
+			const res = await fetch(`/api/platform?id=${p.id}&type=${data.mediaType}`);
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			platformRows = (await res.json()).rows;
+		} catch (err) {
+			note = err instanceof Error ? err.message : String(err);
+			platform = null;
+		} finally {
+			platformBusy = false;
+		}
+	}
+
+	const MODE_LABEL: Record<string, string> = { trending: 'Trending on', new: 'New on' };
+
 	let mood = $state<string | null>(null);
 	let freeText = $state('');
 	let moodResults = $state<TmdbResult[] | null>(null);
@@ -36,6 +68,8 @@
 	}
 
 	function pickPreset(label: string) {
+		platform = null;
+		platformRows = null;
 		if (mood === label) {
 			mood = null;
 			moodResults = null;
@@ -50,6 +84,7 @@
 		e.preventDefault();
 		const q = freeText.trim();
 		if (!q) return;
+		submitFreeTextClearsPlatform();
 		mood = null;
 		runMood(new URLSearchParams({ q }));
 	}
@@ -58,6 +93,11 @@
 		mood = null;
 		freeText = '';
 		moodResults = null;
+	}
+
+	function submitFreeTextClearsPlatform() {
+		platform = null;
+		platformRows = null;
 	}
 
 	const open = (mediaType: string, source: string, mediaId: string) => {
@@ -81,6 +121,21 @@
 	</header>
 
 	<main>
+		{#await data.platforms then platforms}
+			{#if platforms.length}
+				<section class="platforms">
+					<div class="chips">
+						{#each platforms as p (p.id)}
+							<button class="platform" class:on={platform?.id === p.id} onclick={() => pickPlatform(p)}>
+								{#if p.logo}<img src={p.logo} alt="" />{/if}
+								{p.name}
+							</button>
+						{/each}
+					</div>
+				</section>
+			{/if}
+		{/await}
+
 		{#if data.moodAvailable}
 			<section class="mood">
 				<form onsubmit={submitFreeText}>
@@ -100,7 +155,34 @@
 			</section>
 		{/if}
 
-		{#if moodBusy}
+		{#if platformBusy}
+			<p class="msg">Looking at {platform?.name ?? 'that service'}…</p>
+		{:else if platformRows}
+			<div class="moodhead">
+				<h2>{platform?.name}</h2>
+				<button class="clear" onclick={() => { platform = null; platformRows = null; }}>Clear</button>
+			</div>
+			{#each platformRows.filter((r) => r.items.length) as row (row.mode)}
+				<section class="shelf">
+					<h2>{MODE_LABEL[row.mode] ?? row.mode} {platform?.name}</h2>
+					<ul class="rail">
+						{#each row.items as item (item.mediaId)}
+							<li>
+								<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
+									<Poster src={item.poster} width={110} height={165} radius={10} />
+									<span class="add"><AddButton mediaType={item.mediaType} source={item.source} mediaId={item.mediaId} title={item.title} onerror={(m) => (note = m)} /></span>
+								</button>
+								<span class="cap">{item.title}</span>
+								<span class="sub tnum">{[item.year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join(' · ')}</span>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/each}
+			{#if !platformRows.some((r) => r.items.length)}
+				<p class="msg">Nothing found on {platform?.name}.</p>
+			{/if}
+		{:else if moodBusy}
 			<p class="msg">Looking…</p>
 		{:else if moodResults}
 			<div class="moodhead">
@@ -188,6 +270,16 @@
 	.segments button.on { background: var(--surface-raised); color: var(--text); }
 
 	main { padding: 6px 0 calc(var(--tabbar-h) + var(--safe-b) + 32px); }
+
+	.platforms { margin-bottom: 14px; }
+	.platforms .chips { padding: 0 var(--gutter); }
+	.platform {
+		display: flex; align-items: center; gap: 7px;
+		flex: none; min-height: 38px; padding: 0 13px 0 5px; border-radius: 10px;
+		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text);
+	}
+	.platform img { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; }
+	.platform.on { background: var(--signal); color: #fff; }
 
 	.mood { padding: 0 var(--gutter); margin-bottom: 18px; }
 	.mood input {
