@@ -31,6 +31,20 @@ void (async () => {
 			getWatchlist('tv', { sort, direction })
 		)
 	);
+	/* The movie tab opens on every status rather than the in-progress backlog —
+	   see the note in +page.server.ts — so this is the key it actually asks for. */
+	const movieSortKey = prefs ? sortFor(prefs, 'movie') : 'recently_watched';
+	const movieSort = SORTS[movieSortKey];
+	await step('watchlist:movie', () =>
+		memo(`watchlist:movie:${movieSortKey}:all:all:`, 60 * 1000, () =>
+			getWatchlist('movie', {
+				sort: movieSort.sort,
+				direction: movieSort.direction,
+				statuses: ['all']
+			})
+		)
+	);
+
 	await step('stats', () => memo('stats:all_time', 30 * 60 * 1000, () => getStats('all_time')));
 	await step('upcoming', () => warmCaches());
 	await step('discover', () =>

@@ -30,8 +30,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	const sortKey = sortFor(prefs, mediaType);
 	const { sort, direction } = SORTS[sortKey];
 
-	const rawStatus = url.searchParams.get('status') ?? 'in_progress';
-	const status = STATUSES.includes(rawStatus) ? rawStatus : 'in_progress';
+	/* A movie has no middle. Floppy tracks it as planned or completed and nothing
+	   between, so the in-progress backlog that makes the TV tab useful asks for a
+	   state no movie can ever hold — the tab renders empty however full the
+	   library is. Movies open on everything instead, and the chips narrow it. */
+	const fallbackStatus = mediaType === 'movie' ? 'all' : 'in_progress';
+	const rawStatus = url.searchParams.get('status') ?? fallbackStatus;
+	const status = STATUSES.includes(rawStatus) ? rawStatus : fallbackStatus;
 	const rawCompany = url.searchParams.get('company') ?? 'all';
 	const company = (COMPANIES as string[]).includes(rawCompany) ? (rawCompany as Company) : 'all';
 	const services = url.searchParams.getAll('service').filter(Boolean);
