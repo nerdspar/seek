@@ -57,6 +57,11 @@
 
 <div class="sheet" role="dialog" aria-modal="true" aria-label="{epLabel(season, episode)} details">
 	<div class="grip"></div>
+	<button class="close" onclick={onclose} aria-label="Close">
+		<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+			<path d="M6 6l12 12M18 6L6 18" />
+		</svg>
+	</button>
 
 	{#if failed}
 		<div class="pad">
@@ -146,6 +151,21 @@
 		border-radius: 2px;
 		background: var(--surface-raised);
 		z-index: 1;
+	}
+
+	/* Sits above the still, which can be light, so it carries its own scrim. */
+	.close {
+		position: absolute;
+		top: 12px;
+		right: 12px;
+		z-index: 3;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--bg) 72%, transparent);
+		color: var(--text);
 	}
 
 	.pad {

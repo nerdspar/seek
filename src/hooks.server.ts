@@ -2,6 +2,7 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { COOKIE, gateEnabled, verify } from '$lib/server/session';
 import { warmCaches } from '$lib/server/upcoming';
 import { getWatchlist } from '$lib/server/watchlist';
+import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import { getStats } from '$lib/server/stats';
 import { memo } from '$lib/server/memo';
 
@@ -15,7 +16,12 @@ import { memo } from '$lib/server/memo';
    launch screen. */
 void (async () => {
 	const step = (run: () => Promise<unknown>) => run().catch(() => {});
-	await step(() => memo('watchlist:tv', 60 * 1000, () => getWatchlist('tv')));
+	await step(async () => {
+		const prefs = await getPrefs();
+		const key = sortFor(prefs, 'tv');
+		const { sort, direction } = SORTS[key];
+		return memo(`watchlist:tv:${key}`, 60 * 1000, () => getWatchlist('tv', { sort, direction }));
+	});
 	await step(() => memo('stats:all_time', 30 * 60 * 1000, () => getStats('all_time')));
 	await step(async () => warmCaches());
 })();

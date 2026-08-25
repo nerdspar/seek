@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import WatchRow from '$lib/components/WatchRow.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import SortSheet from '$lib/components/SortSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import { load as loadSettings, type Settings } from '$lib/settings';
 	import type { MediaType, WatchlistRow } from '$lib/types';
+	import type { SortKey } from '$lib/server/prefs';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -168,6 +170,36 @@
 
 	const notBuilt = (what: string) => () => (note = `${what} — not built yet (build order §13).`);
 
+	/* ── Sort (§4.5) ───────────────────────────────────────────────────────
+	   The chosen key is persisted server-side per media type, so it survives a
+	   relaunch and applies on the first server render rather than after hydrate. */
+	const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+		{ key: 'recently_watched', label: 'Recently watched' },
+		{ key: 'newest_episode', label: 'Newest episode' },
+		{ key: 'oldest_episode', label: 'Oldest episode' },
+		{ key: 'alphabetical', label: 'Alphabetical' },
+		{ key: 'total_episodes', label: 'Total episodes' },
+		{ key: 'episodes_left', label: 'Episodes left' }
+	];
+
+	let sortOpen = $state(false);
+
+	async function chooseSort(key: SortKey) {
+		sortOpen = false;
+		if (key === data.sortKey) return;
+		try {
+			await fetch('/api/prefs', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ sort: { [data.mediaType]: key } })
+			});
+		} catch {
+			// Persisting is best-effort; the re-fetch below still applies it now.
+		}
+		overrides = {};
+		await invalidateAll();
+	}
+
 	/* §4.1's two destinations, now both real. The pill opens a sheet over the
 	   list; everything else in the row navigates to the show. */
 	let sheetRow = $state<WatchlistRow | null>(null);
@@ -200,6 +232,12 @@
 				>
 			{/each}
 		</div>
+
+		<button class="sort" onclick={() => (sortOpen = true)} aria-label="Sort">
+			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+				<path d="M4 7h16M6.5 12h11M10 17h4" />
+			</svg>
+		</button>
 
 	</header>
 
@@ -242,6 +280,15 @@
 	</button>
 
 	<TabBar current="watchlist" />
+
+	{#if sortOpen}
+		<SortSheet
+			current={data.sortKey}
+			options={SORT_OPTIONS}
+			onchange={chooseSort}
+			onclose={() => (sortOpen = false)}
+		/>
+	{/if}
 
 	{#if sheetRow?.next}
 		<EpisodeSheet
@@ -288,6 +335,18 @@
 		padding-top: calc(8px + var(--header-top));
 		margin-top: calc(-1 * var(--safe-t));
 		background: var(--bg);
+	}
+
+	.sort {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: var(--tap);
+		height: var(--tap);
+		margin-left: 6px;
+		margin-right: -8px;
+		border-radius: 11px;
+		color: var(--text-dim);
 	}
 
 	.segments {

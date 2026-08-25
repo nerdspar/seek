@@ -1,11 +1,79 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
-	import { formatAirDate, formatRuntime } from '$lib/format';
+	import { formatRuntime } from '$lib/format';
+	import { haptic } from '$lib/haptics';
+	import type { SeasonSummary } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-	const show = $derived(data.show);
+
+	/* Optimistic overlay, same shape as the watchlist: derive from the server
+	   payload so the page still server-renders, and layer local edits on top. */
+	let overrides = $state<Record<number, SeasonSummary>>({});
+	const show = $derived({
+		...data.show,
+		seasons: data.show.seasons.map((s) => overrides[s.seasonNumber] ?? s)
+	});
+
+	let busy = $state<Set<number>>(new Set());
+	let note = $state<string | null>(null);
+
+	function setBusy(n: number, on: boolean) {
+		const next = new Set(busy);
+		on ? next.add(n) : next.delete(n);
+		busy = next;
+	}
+
+	/**
+	 * Toggle an entire season.
+	 *
+	 * Unmarking is a single DELETE on the season path, which clears every
+	 * episode's plays. Marking has to step the season forward one episode at a
+	 * time because Floppy's progress route only accepts increase/decrease — there
+	 * is no "set to N" — so the server route loops, sequentially (§12.1).
+	 */
+	async function toggleSeason(season: SeasonSummary, e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (busy.has(season.seasonNumber) || !season.maxProgress) return;
+
+		const complete = season.progress !== null && season.progress >= season.maxProgress;
+		const before = { ...season };
+
+		if (complete && !confirm(`Clear all ${season.maxProgress} episodes of ${season.title}?`)) return;
+
+		haptic();
+		setBusy(season.seasonNumber, true);
+		overrides = {
+			...overrides,
+			[season.seasonNumber]: {
+				...season,
+				progress: complete ? 0 : season.maxProgress,
+				tracked: true
+			}
+		};
+
+		try {
+			const res = await fetch('/api/season', {
+				method: complete ? 'DELETE' : 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					source: show.source,
+					mediaId: show.mediaId,
+					season: season.seasonNumber,
+					episodes: season.maxProgress,
+					watched: season.progress ?? 0
+				})
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		} catch (err) {
+			overrides = { ...overrides, [season.seasonNumber]: before };
+			note = `Couldn't update ${season.title} — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			setBusy(season.seasonNumber, false);
+		}
+	}
 
 	const year = (iso: string | null) => (iso ? new Date(iso).getFullYear() : null);
 	const pct = (p: number | null, max: number | null) =>
@@ -59,7 +127,7 @@
 		<h2>Seasons</h2>
 		<ul class="seasons">
 			{#each seasons as s (s.seasonNumber)}
-				<li>
+				<li class:busy={busy.has(s.seasonNumber)}>
 					<a href="/show/{show.source}/{show.mediaId}/{s.seasonNumber}">
 						<Poster src={s.poster} width={44} height={44} />
 						<div class="s-meta">
@@ -75,16 +143,24 @@
 								</span>
 							</div>
 						</div>
-						{#if s.maxProgress && s.progress === s.maxProgress}
-							<svg class="done" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="Complete">
-								<path d="m5 13 4 4L19 7" />
-							</svg>
-						{:else}
-							<svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-								<path d="m9 18 6-6-6-6" />
-							</svg>
-						{/if}
+						<svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="m9 18 6-6-6-6" />
+						</svg>
 					</a>
+
+					<!-- Outside the <a> so tapping it toggles rather than navigates. -->
+					<button
+						class="check"
+						class:watched={s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
+						disabled={busy.has(s.seasonNumber) || !s.maxProgress}
+						aria-pressed={s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
+						aria-label={`Mark ${s.title} watched`}
+						onclick={(e) => toggleSeason(s, e)}
+					>
+						{#if s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
+							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+						{/if}
+					</button>
 				</li>
 			{/each}
 		</ul>
@@ -109,6 +185,13 @@
 		<p class="studios">{show.studios.join(' · ')}</p>
 	{/if}
 </main>
+
+{#if note}
+	<div class="note" role="status">
+		<span>{note}</span>
+		<button onclick={() => (note = null)} aria-label="Dismiss">×</button>
+	</div>
+{/if}
 
 <style>
 	main {
@@ -199,15 +282,52 @@
 		padding: 0;
 		list-style: none;
 	}
+	.seasons li {
+		display: grid;
+		grid-template-columns: 1fr var(--tap);
+		align-items: center;
+		border-radius: var(--radius);
+		background: var(--surface);
+	}
+	.seasons li.busy {
+		opacity: 0.6;
+	}
 	.seasons a {
 		display: grid;
 		grid-template-columns: 44px 1fr auto;
 		align-items: center;
 		gap: 12px;
 		min-height: 60px;
-		padding: 8px 12px 8px 8px;
-		border-radius: var(--radius);
-		background: var(--surface);
+		padding: 8px 4px 8px 8px;
+		min-width: 0;
+	}
+
+	.check {
+		position: relative;
+		display: grid;
+		place-items: center;
+		width: var(--tap);
+		height: var(--tap);
+		justify-self: center;
+	}
+	.check::before {
+		content: '';
+		position: absolute;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		border: 1.8px solid var(--surface-raised);
+	}
+	.check.watched::before {
+		border-color: transparent;
+		background: var(--signal);
+	}
+	.check svg {
+		position: relative;
+		color: #fff;
+	}
+	.check:disabled {
+		opacity: 0.4;
 	}
 	.s-meta {
 		display: flex;
@@ -228,9 +348,6 @@
 		font-size: 11.5px;
 		color: var(--text-dim);
 		flex: none;
-	}
-	.done {
-		color: var(--signal-solid);
 	}
 	.chev {
 		color: var(--text-dim);
@@ -273,4 +390,22 @@
 		font-size: 12px;
 		color: var(--text-dim);
 	}
+
+	.note {
+		position: fixed;
+		left: var(--gutter);
+		right: var(--gutter);
+		bottom: calc(var(--safe-b) + 12px);
+		z-index: 60;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 12px 8px 12px 16px;
+		border-radius: var(--radius);
+		background: var(--surface-raised);
+		box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+		font-size: 13.5px;
+	}
+	.note span { flex: 1; }
+	.note button { flex: none; width: var(--tap); height: var(--tap); font-size: 22px; color: var(--text-dim); }
 </style>

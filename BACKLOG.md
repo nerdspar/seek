@@ -59,15 +59,14 @@ needs a separate LAN-reachable address — add a `FLOPPY_PUBLIC_URL` env var
 
 ## Not yet built from the spec
 
-- **Sort control** (§4.5) — Recently watched / Newest / Oldest / Alphabetical /
-  Total episodes / Episodes left. Maps to the `sort` and `direction` params;
-  note `sort` is a closed enum and there is no `progressed_at`.
 - **Filters** (§4.6) — status and platform, plus the anime chip once the bucket
   migration lands.
 - **Joint/solo tag** (§11) — `tag[]`/`tag_mode` on the list endpoint and
   `PUT .../tags/` already support it; the payload is the Solo/Joint/All filter.
 - **Collection rows** (§7.2) — My TV Shows / My Movies / Archive with View All.
-  Profile currently links only to the Diary.
+- **Remaining settings** (§8) — theme, default tab, subscribed streaming
+  services. The store exists (`$lib/server/prefs.ts`, one JSON file in /data);
+  only swipe direction and per-type sort are wired to it so far.
 
 ## Smaller items
 

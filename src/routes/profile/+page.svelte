@@ -34,12 +34,20 @@
 	<header>
 		<div class="titlerow">
 			<h1>Profile</h1>
+			<div class="actions">
+			<button class="gear" onclick={() => goto('/profile/diary')} aria-label="Diary">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v18H5.5A1.5 1.5 0 0 1 4 19.5z" />
+					<path d="M8 3v18M11.5 8.5h4M11.5 12h4" />
+				</svg>
+			</button>
 			<button class="gear" onclick={() => (settingsOpen = true)} aria-label="Settings">
 				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7">
 					<circle cx="12" cy="12" r="3.1" />
 					<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
 				</svg>
 			</button>
+			</div>
 		</div>
 		<div class="chips">
 			{#each RANGES as r (r.id)}
@@ -138,12 +146,6 @@
 					</section>
 				{/if}
 
-				<section>
-					<h2>Collection</h2>
-					<ul class="links">
-						<li><button onclick={() => goto('/profile/diary')}><span>Diary</span><span class="chev">›</span></button></li>
-					</ul>
-				</section>
 		{:catch err}
 			<div class="empty"><h2>Can't load stats</h2><p>{err.message}</p></div>
 		{/await}
@@ -168,10 +170,10 @@
 		margin-bottom: 10px;
 	}
 	h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+	.actions { display: flex; align-items: center; gap: 2px; margin-right: -10px; }
 	.gear {
 		flex: none; display: grid; place-items: center;
 		width: var(--tap); height: var(--tap);
-		margin-right: -10px; /* optical alignment with the gutter */
 		border-radius: 50%; color: var(--text-dim);
 	}
 
@@ -224,14 +226,13 @@
 	}
 	.sub2 { display: block; font-size: 11px; color: var(--text-dim); }
 
-	.list, .links { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-	.list li, .links button {
+	.list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+	.list li {
 		display: flex; align-items: center; justify-content: space-between; gap: 12px;
 		width: 100%; min-height: var(--tap); padding: 8px 14px;
 		border-radius: var(--radius); background: var(--surface); font-size: 14px;
 	}
 	.dim { color: var(--text-dim); font-size: 12.5px; }
-	.chev { color: var(--text-dim); font-size: 18px; }
 
 	.loading { display: flex; flex-direction: column; gap: 16px; }
 	.sk { border-radius: var(--radius); background: var(--surface); animation: pulse 1.4s ease-in-out infinite; }
