@@ -172,10 +172,82 @@ Seek holds your Floppy API token and proxies every call server-side, so the
 browser never sees it — but **anyone who can reach Seek can control your Floppy
 library**. On a trusted LAN that's fine and `SEEK_PASSPHRASE` can stay empty.
 
-Set `SEEK_PASSPHRASE` to a shared household passphrase **before** putting Seek
-behind a reverse proxy, Cloudflare Tunnel, or anything else reachable off the
-LAN. With it set, Seek gates every page and every API route behind a signed
-session cookie.
+Set `SEEK_PASSPHRASE` **before** putting Seek behind a reverse proxy, Cloudflare
+Tunnel, or anything else reachable off the LAN. With it set, Seek gates every
+page and every API route behind a signed session cookie.
+
+### What the gate does
+
+- **One passphrase, then a year of quiet.** A correct passphrase issues an
+  HttpOnly cookie lasting a year, so you authenticate once per device and not
+  again. On iOS the home-screen app has its own cookie store separate from
+  Safari, so expect to enter it twice on a phone — once in Safari, once after
+  adding to the home screen.
+- **The cookie is per-device.** Every other device and every other person gets
+  the login screen.
+- **Sessions really expire.** The token carries a signed issue time that the
+  server checks, so a copied cookie dies at a year rather than lasting forever.
+  The cookie's own `Max-Age` is only a promise the browser makes.
+- **Guessing is throttled.** Every wrong answer costs a fixed delay; six wrong
+  answers lock that client out for a minute, and each further failure escalates
+  the lockout up to two hours. A lockout blocks the *correct* passphrase too,
+  and the counters decay after six quiet hours.
+
+Because you type it about once per device, make it long — six random words or
+20+ characters from a password manager. Nothing about the UX rewards a short one.
+
+### `ORIGIN` — the one that will bite you
+
+**Set `ORIGIN` to the exact address browsers use, protocol included, whenever the
+gate is on.** SvelteKit checks it against the `Origin` header on every POST, and
+a mismatch rejects the login form with `403 Cross-site POST form submissions are
+forbidden` before the passphrase is read. The symptom is a login page that just
+sits there, so Seek now says so on screen rather than failing silently.
+
+It is not really optional: with `ORIGIN` unset, adapter-node assumes `https`, so
+a plain-HTTP deployment rejects its own login page.
+
+Reach Seek by the **same hostname inside and outside** the LAN and one value
+covers both — the alternative is an origin that is right for one path and wrong
+for the other. Seek is already served at `https://seek.nerdspar.com`, and that
+name resolves to the NAS on the internal network, so:
+
+```yaml
+ORIGIN: "https://seek.nerdspar.com"
+```
+
+Then use that URL on the phone too, not `http://10.0.1.14:8100`.
+
+### Exposing it beyond the LAN
+
+A Cloudflare Tunnel avoids opening ports and reuses the hostname you already
+have. In order:
+
+1. **Turn the gate on and confirm it.** `SEEK_PASSPHRASE` and
+   `SEEK_SESSION_SECRET` set, `ORIGIN` set, container restarted, login screen
+   reached and passed — *before* the name resolves publicly. Scanners find new
+   hostnames within hours of a certificate being issued.
+2. **Set `ADDRESS_HEADER`** so the throttle can tell clients apart. Without it
+   every request carries the proxy's address and one stranger's failures would
+   lock out the household.
+
+Verify after cutover — the cookie must come back marked `Secure`:
+
+```bash
+curl -s -X POST https://seek.nerdspar.com/login \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H 'Origin: https://seek.nerdspar.com' \
+  --data-urlencode 'passphrase=YOUR_PASSPHRASE' -D - -o /dev/null | grep -i set-cookie
+```
+
+Cloudflare's own rate limiting on `/login` is worth adding as a second layer, but
+Seek does not depend on it.
+
+### Revoking access
+
+There is one shared secret and no per-device records, so a lost phone means
+rotating `SEEK_SESSION_SECRET` and restarting. That invalidates every session on
+every device, and everyone logs in once more.
 
 ## Not wired up yet
 

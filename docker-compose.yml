@@ -67,6 +67,30 @@ services:
       # container name. Blank hides the link.
       FLOPPY_PUBLIC_URL: "https://floppy.nerdspar.com" # ⬅ FLOPPY_PUBLIC_URL (optional)
 
+      # --- Required whenever SEEK_PASSPHRASE is set ---------------------------
+      # The address browsers actually use, protocol included. SvelteKit compares
+      # it against the Origin header on every POST, so getting it wrong makes the
+      # login form fail with 403 "Cross-site POST form submissions are forbidden"
+      # — the passphrase is never even read. It also decides whether the session
+      # cookie is marked Secure.
+      #
+      # Not optional in practice: with ORIGIN unset, adapter-node assumes https,
+      # so a plain-HTTP deployment rejects its own login page.
+      #
+      # Use the SAME hostname on the LAN as from outside so one value covers both.
+      ORIGIN: "https://seek.nerdspar.com" # ⬅ ORIGIN (required if gated)
+
+      # Lets the login throttle tell clients apart. Without it every request
+      # carries the proxy's address and the throttle becomes one global bucket —
+      # still safe, but one stranger's failures would lock out everyone.
+      #   openresty/nginx/Traefik: x-forwarded-for   Cloudflare: cf-connecting-ip
+      # Set XFF_DEPTH to the number of proxies in front of Seek.
+      #
+      # Only safe if the proxy is the sole route in: the header is trusted as
+      # given, so anything able to reach Seek directly could forge it.
+      ADDRESS_HEADER: "x-forwarded-for" # ⬅ ADDRESS_HEADER (recommended if gated)
+      XFF_DEPTH: "1"
+
       # Not used yet — both are for build steps that aren't written.
       # Calendar token (Upcoming, step 6): Floppy's calendar page, the token in
       # the .ics feed URL. TMDB key (search/discovery, steps 5 and 7).
