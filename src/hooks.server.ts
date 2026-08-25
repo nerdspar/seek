@@ -45,7 +45,16 @@ void (async () => {
 		)
 	);
 
-	await step('stats', () => memo('stats:all_time', 30 * 60 * 1000, () => getStats('all_time')));
+	/* All four ranges, not just the default. Each is a separate ~5-9s query on
+	   Floppy, so the first tap on a range used to pay full price — and there are
+	   only four, so there is nothing to be gained by being selective. Warmed in
+	   the order the tabs sit in, default first. memo serves stale entries while
+	   refreshing behind them, so once these land, switching stays instant. */
+	for (const range of ['all_time', 'this_year', 'last_year', 'this_month'] as const) {
+		await step(`stats:${range}`, () =>
+			memo(`stats:${range}`, 30 * 60 * 1000, () => getStats(range))
+		);
+	}
 	await step('upcoming', () => warmCaches());
 	await step('discover', () =>
 		memo('discover:tv', 30 * 60 * 1000, () => getDiscoverRows('tv'))
