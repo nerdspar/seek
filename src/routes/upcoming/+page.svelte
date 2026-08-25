@@ -89,7 +89,7 @@
 <style>
 	.app {
 		min-height: 100dvh;
-		padding-top: var(--safe-t);
+		padding-top: var(--header-top);
 	}
 	header {
 		padding: 10px var(--gutter) 6px;

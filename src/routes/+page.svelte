@@ -285,7 +285,7 @@
 		display: flex;
 		align-items: center;
 		padding: 8px var(--gutter);
-		padding-top: calc(8px + var(--safe-t));
+		padding-top: calc(8px + var(--header-top));
 		margin-top: calc(-1 * var(--safe-t));
 		background: var(--bg);
 	}

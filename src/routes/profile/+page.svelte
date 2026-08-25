@@ -161,7 +161,7 @@
 </div>
 
 <style>
-	.app { min-height: 100dvh; padding-top: var(--safe-t); }
+	.app { min-height: 100dvh; padding-top: var(--header-top); }
 	header { padding: 10px var(--gutter) 4px; }
 	.titlerow {
 		display: flex; align-items: center; justify-content: space-between; gap: 12px;

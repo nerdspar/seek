@@ -14,11 +14,10 @@
 		<link rel="apple-touch-icon" href="/seek-180.png" />
 		<link rel="icon" href="/seek-icon.svg" type="image/svg+xml" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
-		<!-- NOT black-translucent: that makes iOS render the status bar transparent
-		     and lets page content scroll underneath the clock and battery, which
-		     reads as a blurred gradient band across the top of every screen. `black`
-		     gives an opaque bar matching --bg. -->
-		<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+		<!-- Translucent on purpose: iOS blurs page content as it scrolls under the
+		     status bar, which is the effect we want. It does mean content must be
+		     held clear of that band at rest — see --header-top in app.css. -->
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="Seek" />
 
 		%sveltekit.head%

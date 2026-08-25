@@ -23,9 +23,18 @@
 	--gutter: 16px;
 	--tabbar-h: 56px;
 
-	/* Physical inset, not a design choice: content must clear the home indicator. */
+	/* Physical insets, not design choices: content must clear the home indicator
+	   and the status bar. */
 	--safe-b: env(safe-area-inset-bottom, 0px);
 	--safe-t: env(safe-area-inset-top, 0px);
+
+	/* iOS blurs whatever scrolls under the translucent status bar, which is the
+	   effect we want — but the blur bleeds a little past the inset the browser
+	   reports, so padding to exactly --safe-t leaves a header sitting half
+	   underneath it. This is the single knob for that clearance: every header
+	   offsets its content by --header-top rather than --safe-t directly. */
+	--status-clearance: 10px;
+	--header-top: calc(var(--safe-t) + var(--status-clearance));
 
 	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, sans-serif;
 }

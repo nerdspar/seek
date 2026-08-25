@@ -24,7 +24,7 @@
 		align-items: center;
 		gap: 4px;
 		padding: 6px var(--gutter) 6px 4px;
-		padding-top: calc(6px + var(--safe-t));
+		padding-top: calc(6px + var(--header-top));
 		background: var(--bg);
 	}
 	.back {

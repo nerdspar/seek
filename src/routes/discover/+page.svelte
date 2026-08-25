@@ -160,7 +160,7 @@
 </div>
 
 <style>
-	.app { min-height: 100dvh; padding-top: var(--safe-t); }
+	.app { min-height: 100dvh; padding-top: var(--header-top); }
 	header { padding: 10px var(--gutter) 4px; }
 	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
 
