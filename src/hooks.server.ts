@@ -3,7 +3,7 @@ import { COOKIE, gateEnabled, verify } from '$lib/server/session';
 import { warmCaches } from '$lib/server/upcoming';
 import { getWatchlist, knownServices } from '$lib/server/watchlist';
 import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
-import { getStats } from '$lib/server/stats';
+import { COUNTS_KEY, COUNTS_TTL, getCollectionCounts, getStats } from '$lib/server/stats';
 import { getDiscoverRows } from '$lib/server/discover';
 import { memo } from '$lib/server/memo';
 
@@ -55,6 +55,11 @@ void (async () => {
 			memo(`stats:${range}`, 30 * 60 * 1000, () => getStats(range))
 		);
 	}
+
+	/* Two more round trips that the Profile shell waits on regardless of range —
+	   measured at ~4.8s cold, which read as "switching ranges is slow" because it
+	   landed on whichever range was opened first. */
+	await step('collection:counts', () => memo(COUNTS_KEY, COUNTS_TTL, getCollectionCounts));
 	await step('upcoming', () => warmCaches());
 	await step('discover', () =>
 		memo('discover:tv', 30 * 60 * 1000, () => getDiscoverRows('tv'))

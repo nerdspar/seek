@@ -155,6 +155,37 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 	};
 }
 
+/* ── Collection counts (§7.2) ──────────────────────────────────────────── */
+
+export type CollectionCounts = { tv: number; movie: number };
+
+/** Shared so the route and the boot warmup cannot prime different keys. */
+export const COUNTS_KEY = 'collection:counts';
+export const COUNTS_TTL = 5 * 60 * 1000;
+
+/**
+ * Totals for the Collection rows. Cheap per call — limit=1 and read the
+ * pagination total — but it is two round trips against a Floppy that may be busy,
+ * which measured ~4.8s cold and landed on the first Profile visit every time.
+ * Lives here rather than inline in the route so the boot warmup can prime the
+ * same cache key.
+ */
+export async function getCollectionCounts(): Promise<CollectionCounts> {
+	const one = async (mediaType: string) => {
+		try {
+			const res = await floppy<{ pagination?: { total?: number } }>(
+				`/api/v1/media/${mediaType}/`,
+				{ query: { status: ['all'], limit: 1 }, timeoutMs: 30_000 }
+			);
+			return res.pagination?.total ?? 0;
+		} catch {
+			return 0;
+		}
+	};
+	const [tv, movie] = await Promise.all([one('tv'), one('movie')]);
+	return { tv, movie };
+}
+
 /* ── Diary (§7.3) ──────────────────────────────────────────────────────── */
 
 export type DiaryEntry = {
