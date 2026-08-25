@@ -55,37 +55,6 @@
 	</header>
 
 	<main>
-		<section class="collection">
-			<h2>Collection</h2>
-			<ul class="links">
-				{#await data.counts}
-					<li><button disabled><span>My TV Shows</span><span class="chev">›</span></button></li>
-					<li><button disabled><span>My Movies</span><span class="chev">›</span></button></li>
-					<li><button disabled><span>Archive</span><span class="chev">›</span></button></li>
-				{:then counts}
-					<li>
-						<button onclick={() => goto('/library/tv')}>
-							<span>My TV Shows</span>
-							<span class="count tnum">{counts.tv}<span class="chev">›</span></span>
-						</button>
-					</li>
-					<li>
-						<button onclick={() => goto('/library/movie')}>
-							<span>My Movies</span>
-							<span class="count tnum">{counts.movie}<span class="chev">›</span></span>
-						</button>
-					</li>
-					<li>
-						<button onclick={() => goto('/library/tv?view=archive')}>
-							<span>Archive</span><span class="chev">›</span>
-						</button>
-					</li>
-				{:catch}
-					<li><button onclick={() => goto('/library/tv')}><span>My TV Shows</span><span class="chev">›</span></button></li>
-				{/await}
-			</ul>
-		</section>
-
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">
@@ -128,7 +97,38 @@
 					</section>
 				{/if}
 
-				<section class="streaks">
+				<section class="collection">
+				<h2>Collection</h2>
+				<ul class="links">
+					{#await data.counts}
+						<li><button disabled><span>My TV Shows</span><span class="chev">›</span></button></li>
+						<li><button disabled><span>My Movies</span><span class="chev">›</span></button></li>
+						<li><button disabled><span>Archive</span><span class="chev">›</span></button></li>
+					{:then counts}
+						<li>
+							<button onclick={() => goto('/library/tv')}>
+								<span>My TV Shows</span>
+								<span class="count tnum">{counts.tv}<span class="chev">›</span></span>
+							</button>
+						</li>
+						<li>
+							<button onclick={() => goto('/library/movie')}>
+								<span>My Movies</span>
+								<span class="count tnum">{counts.movie}<span class="chev">›</span></span>
+							</button>
+						</li>
+						<li>
+							<button onclick={() => goto('/library/tv?view=archive')}>
+								<span>Archive</span><span class="chev">›</span>
+							</button>
+						</li>
+					{:catch}
+						<li><button onclick={() => goto('/library/tv')}><span>My TV Shows</span><span class="chev">›</span></button></li>
+					{/await}
+				</ul>
+			</section>
+
+			<section class="streaks">
 					<div><span class="n tnum">{stats.currentStreak}</span><span class="l">Current streak</span></div>
 					<div><span class="n tnum">{stats.longestStreak}</span><span class="l">Longest streak</span></div>
 				</section>

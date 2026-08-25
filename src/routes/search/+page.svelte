@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
+	import AddButton from '$lib/components/AddButton.svelte';
 	import type { SearchResult } from '$lib/types';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 
 	type Scope = 'best' | 'tv' | 'movie';
 	const CHIPS: { id: Scope; label: string }[] = [
@@ -11,7 +16,9 @@
 		{ id: 'movie', label: 'Movies' }
 	];
 
-	let query = $state('');
+	/* Seeded from ?q= so links into search — tapping an actor on a show page —
+	   arrive with the query already run. */
+	let query = $state(page.url.searchParams.get('q') ?? '');
 	let scope = $state<Scope>('best');
 	let results = $state<SearchResult[]>([]);
 	let searching = $state(false);
@@ -125,7 +132,31 @@
 	{#if failed}
 		<p class="msg error">{failed}</p>
 	{:else if !query.trim()}
-		<p class="msg">Search Floppy's providers to add something new.</p>
+		{#if data.trending.length}
+			<h2 class="eyebrow">Trending now</h2>
+			<ul class="grid">
+				{#each data.trending as r (r.mediaId)}
+					<li>
+						<button onclick={() => r.mediaType === 'tv' && goto(`/show/${r.source}/${r.mediaId}`)}>
+							<Poster src={r.poster} width={104} height={156} radius={9} />
+							<span class="cap">{r.title}</span>
+							{#if r.year}<span class="sub tnum">{r.year}</span>{/if}
+						</button>
+						<span class="gridadd">
+							<AddButton
+								mediaType={r.mediaType}
+								source={r.source}
+								mediaId={r.mediaId}
+								title={r.title}
+								onerror={(m) => (failed = m)}
+							/>
+						</span>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="msg">Search Floppy's providers to add something new.</p>
+		{/if}
 	{:else if searching}
 		<p class="msg">Searching…</p>
 	{:else if !results.length}
@@ -230,6 +261,23 @@
 	.msg.error {
 		color: #ff8a8a;
 	}
+
+	.eyebrow {
+		margin: 4px 0 10px; font-size: 12.5px; font-weight: 700;
+		text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim);
+	}
+	.grid {
+		display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+		gap: 16px 12px; margin: 0; padding: 0; list-style: none;
+	}
+	.grid li { position: relative; }
+	.grid li > button { width: 100%; text-align: left; }
+	.gridadd { position: absolute; right: 5px; top: 128px; }
+	.cap {
+		display: -webkit-box; margin-top: 6px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+		overflow: hidden; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+	}
+	.sub { display: block; font-size: 11px; color: var(--text-dim); }
 
 	.results {
 		display: flex;

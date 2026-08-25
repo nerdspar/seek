@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import { formatRuntime } from '$lib/format';
@@ -139,6 +140,21 @@
 				{#if show.score}<span class="chip">★ {show.score.toFixed(1)}</span>{/if}
 				{#if show.runtime}<span class="chip">{formatRuntime(show.runtime)}</span>{/if}
 			</p>
+			{#await data.extras then extras}
+				{#if extras.services.length || extras.networks.length}
+					<!-- What it streams on now, falling back to the broadcast network
+					     for older shows that are not on a service. -->
+					<p class="where">
+						{#each (extras.services.length ? extras.services : extras.networks).slice(0, 3) as w (w.name)}
+							<span class="badge">
+								{#if w.logo}<img src={w.logo} alt="" />{/if}
+								{w.name}
+							</span>
+						{/each}
+					</p>
+				{/if}
+			{/await}
+
 			{#if show.genres.length}
 				<p class="genres">{show.genres.join(' · ')}</p>
 			{/if}
@@ -172,6 +188,20 @@
 					<!-- Off by default: Floppy returns the show's poster for every
 					     season, so it is usually a column of identical images. Some
 					     shows do have distinct art, hence the setting. -->
+					<!-- Outside the <a> so tapping it toggles rather than navigates. -->
+					<button
+						class="check"
+						class:watched={s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
+						disabled={busy.has(s.seasonNumber) || !s.maxProgress}
+						aria-pressed={s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
+						aria-label={`Mark ${s.title} watched`}
+						onclick={(e) => toggleSeason(s, e)}
+					>
+						{#if s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
+							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+						{/if}
+					</button>
+
 					<a href="/show/{show.source}/{show.mediaId}/{s.seasonNumber}" class:with-art={data.seasonArtwork}>
 						{#if data.seasonArtwork}
 							<Poster src={s.poster} width={44} height={44} />
@@ -193,20 +223,6 @@
 							<path d="m9 18 6-6-6-6" />
 						</svg>
 					</a>
-
-					<!-- Outside the <a> so tapping it toggles rather than navigates. -->
-					<button
-						class="check"
-						class:watched={s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
-						disabled={busy.has(s.seasonNumber) || !s.maxProgress}
-						aria-pressed={s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
-						aria-label={`Mark ${s.title} watched`}
-						onclick={(e) => toggleSeason(s, e)}
-					>
-						{#if s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress}
-							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-						{/if}
-					</button>
 				</li>
 			{/each}
 		</ul>
@@ -218,14 +234,37 @@
 			<ul class="cast">
 				{#each show.cast as person (person.name + (person.role ?? ''))}
 					<li>
+						<!-- Tapping a face searches for that name, which is how you find
+						     the other thing you know them from. -->
+						<button onclick={() => goto(`/search?q=${encodeURIComponent(person.name)}`)}>
 						<Poster src={person.image} width={78} height={78} radius={39} />
 						<span class="name">{person.name}</span>
 						{#if person.role}<span class="role">{person.role}</span>{/if}
+						</button>
 					</li>
 				{/each}
 			</ul>
 		</section>
 	{/if}
+
+	{#await data.extras then extras}
+		{#if extras.similar.length}
+			<section>
+				<h2>Shows like this</h2>
+				<ul class="rail">
+					{#each extras.similar as rec (rec.mediaId)}
+						<li>
+							<button onclick={() => goto(`/show/tmdb/${rec.mediaId}`)}>
+								<Poster src={rec.poster} width={104} height={156} radius={9} />
+								<span class="cap">{rec.title}</span>
+								<span class="sub tnum">{[rec.year, rec.rating ? `★ ${rec.rating}` : null].filter(Boolean).join(' · ')}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+	{/await}
 
 	{#if show.studios.length}
 		<p class="studios">{show.studios.join(' · ')}</p>
@@ -351,7 +390,7 @@
 	}
 	.seasons li {
 		display: grid;
-		grid-template-columns: 1fr var(--tap);
+		grid-template-columns: var(--tap) 1fr;
 		align-items: center;
 		border-radius: var(--radius);
 		background: var(--surface);
@@ -455,6 +494,27 @@
 		color: var(--text-dim);
 		line-height: 1.3;
 	}
+
+	.where { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+	.badge {
+		display: inline-flex; align-items: center; gap: 6px;
+		padding: 3px 9px 3px 3px; border-radius: 7px;
+		background: var(--surface-raised); font-size: 12px; font-weight: 600;
+	}
+	.badge img { width: 18px; height: 18px; border-radius: 4px; object-fit: cover; }
+	.badge:has(img) { padding-left: 3px; }
+
+	.rail {
+		display: flex; gap: 12px; margin: 8px 0 24px; padding: 0 var(--gutter) 4px 0;
+		list-style: none; overflow-x: auto;
+		scroll-snap-type: x proximity; scroll-padding-left: var(--gutter);
+	}
+	.rail li { flex: none; width: 104px; scroll-snap-align: start; }
+	.cap {
+		display: -webkit-box; margin-top: 6px; font-size: 12px; font-weight: 600; line-height: 1.3;
+		overflow: hidden; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+	}
+	.sub { display: block; font-size: 11px; color: var(--text-dim); }
 
 	.studios {
 		margin: 0;

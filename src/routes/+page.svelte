@@ -274,7 +274,7 @@
 			data.filters.services.length > 0
 	);
 
-	async function chooseSort(key: SortKey) {
+	async function chooseSort(key: string) {
 		sortOpen = false;
 		if (key === data.sortKey) return;
 		try {

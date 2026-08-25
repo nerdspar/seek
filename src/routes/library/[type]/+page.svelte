@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import type { PageData } from './$types';
 
@@ -20,6 +21,20 @@
 		anime: 'My Anime'
 	};
 
+	let sortOpen = $state(false);
+
+	function chooseSort(key: string) {
+		sortOpen = false;
+		const params = new URLSearchParams();
+		if (data.viewKey !== 'all') params.set('view', data.viewKey);
+		if (key !== 'alphabetical') params.set('sort', key);
+		goto(`/library/${data.mediaType}${params.toString() ? `?${params}` : ''}`, { noScroll: true });
+	}
+
+	const sortLabel = $derived(
+		data.sortOptions.find((o) => o.key === data.sortKey)?.label ?? 'A–Z'
+	);
+
 	const pct = (p: number, max: number | null) =>
 		max && max > 0 ? Math.min(100, (p / max) * 100) : 0;
 </script>
@@ -31,6 +46,15 @@
 />
 
 <main>
+	<div class="controls">
+		<button class="sortbtn" onclick={() => (sortOpen = true)}>
+			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+				<path d="M4 7h16M6.5 12h11M10 17h4" />
+			</svg>
+			{sortLabel}
+		</button>
+	</div>
+
 	<div class="chips">
 		{#each VIEWS as v (v.id)}
 			<button
@@ -39,6 +63,15 @@
 			>{v.label}</button>
 		{/each}
 	</div>
+
+	{#if sortOpen}
+		<SortSheet
+			current={data.sortKey}
+			options={data.sortOptions}
+			onchange={chooseSort}
+			onclose={() => (sortOpen = false)}
+		/>
+	{/if}
 
 	{#if data.error}
 		<div class="empty"><h2>Can't load your library</h2><p>{data.error}</p></div>
@@ -64,6 +97,14 @@
 
 <style>
 	main { padding: 4px var(--gutter) calc(var(--safe-b) + 32px); }
+
+	.controls { display: flex; margin-bottom: 10px; }
+	.sortbtn {
+		display: flex; align-items: center; gap: 7px;
+		min-height: 34px; padding: 0 12px; border-radius: 9px;
+		background: var(--surface-raised); font-size: 13px; font-weight: 600;
+	}
+
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; }
 	.chips button {

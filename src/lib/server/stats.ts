@@ -46,6 +46,15 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
+/** Floppy formats durations as "5357h 28min". Four-plus digit hour counts are
+ *  hard to read without separators, and these are exactly the numbers that get
+ *  large — a favourite genre easily runs to thousands of hours. */
+function groupHours(duration: string): string {
+	return duration.replace(/\b(\d{4,})h\b/g, (_, digits: string) =>
+		`${Number(digits).toLocaleString()}h`
+	);
+}
+
 /** Named range → the explicit dates the endpoint actually honours. */
 export function rangeDates(key: RangeKey, now = new Date()): { start?: string; end?: string; label: string } {
 	const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -112,7 +121,7 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 			.slice(0, 6)
 			.map((g) => {
 				const r = rec(g);
-				return { name: str(r.name) ?? '', duration: str(r.formatted_duration) ?? '' };
+				return { name: str(r.name) ?? '', duration: groupHours(str(r.formatted_duration) ?? '') };
 			})
 			.filter((g) => g.name),
 		topTitles: arr(rec(st.top_played).tv)
@@ -127,7 +136,7 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 					poster: str(item.image),
 					mediaId,
 					source: str(item.source) ?? 'tmdb',
-					duration: str(r.formatted_duration) ?? '',
+					duration: groupHours(str(r.formatted_duration) ?? ''),
 					plays: typeof r.episode_count === 'number' ? r.episode_count : null
 				};
 			})
@@ -138,7 +147,7 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 				const r = rec(s);
 				return {
 					name: str(r.name) ?? '',
-					watched: str(r.watched_time) ?? '',
+					watched: groupHours(str(r.watched_time) ?? ''),
 					shows: num(r.unique_shows)
 				};
 			})
@@ -170,7 +179,10 @@ export type DiaryDay = {
 	entries: DiaryEntry[];
 };
 
-export async function getDiary(offset = 0, limit = 20): Promise<{ days: DiaryDay[]; hasMore: boolean }> {
+export async function getDiary(
+	offset = 0,
+	limit = 20
+): Promise<{ days: DiaryDay[]; hasMore: boolean; total: number }> {
 	const res = rec(await floppy('/api/v1/history/', { query: { limit, offset } }));
 
 	const days = arr(res.results).map((raw): DiaryDay => {
@@ -203,5 +215,11 @@ export async function getDiary(offset = 0, limit = 20): Promise<{ days: DiaryDay
 		};
 	});
 
-	return { days, hasMore: Boolean(rec(res.pagination).next) };
+	const pagination = rec(res.pagination);
+	return {
+		days,
+		hasMore: Boolean(pagination.next),
+		// Days with activity, not plays — what the pager counts through.
+		total: typeof pagination.total === 'number' ? pagination.total : days.length
+	};
 }

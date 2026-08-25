@@ -96,18 +96,52 @@
 		}
 	}
 
-	/** Mark everything unwatched in this season. Sequential, not parallel: these
-	 *  are appends against one show and Floppy resolves the season row per call,
-	 *  so firing them at once invites the duplicate-item errors of §12.1. */
+	const allWatched = $derived(episodes.length > 0 && watchedCount === episodes.length);
+
+	/* Fill or clear the whole season.
+	   Clearing is one DELETE on the season path. Filling walks the episodes
+	   sequentially, not in parallel: these are appends against one show and
+	   Floppy resolves the season row per call, so firing them at once invites the
+	   duplicate-item errors of §12.1. */
 	let bulkRunning = $state(false);
 	let bulkDone = $state(0);
+	let bulkTotal = $state(0);
 
-	async function markAll() {
-		if (bulkRunning || !unwatched.length) return;
+	async function toggleAll() {
+		if (bulkRunning || !episodes.length) return;
+
+		if (allWatched) {
+			if (!confirm(`Clear all ${episodes.length} episodes of ${season.title}?`)) return;
+			bulkRunning = true;
+			bulkTotal = episodes.length;
+			bulkDone = 0;
+			toast = null;
+			try {
+				const res = await fetch('/api/season', {
+					method: 'DELETE',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						source: season.source,
+						mediaId: season.mediaId,
+						season: season.seasonNumber
+					})
+				});
+				if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+				overrides = Object.fromEntries(episodes.map((e) => [e.episodeNumber, { ...e, plays: 0 }]));
+				note = `Cleared ${episodes.length} episodes.`;
+			} catch (err) {
+				note = `Couldn't clear the season — ${err instanceof Error ? err.message : err}`;
+			} finally {
+				bulkRunning = false;
+			}
+			return;
+		}
+
 		const targets = [...unwatched];
 		if (!confirm(`Mark ${targets.length} unwatched episode${targets.length === 1 ? '' : 's'} watched?`)) return;
 
 		bulkRunning = true;
+		bulkTotal = targets.length;
 		bulkDone = 0;
 		toast = null;
 		const failures: number[] = [];
@@ -141,17 +175,49 @@
 
 <main>
 	<div class="summary">
-		<span class="tnum">{watchedCount}/{episodes.length} watched</span>
-		{#if unwatched.length}
-			<button class="markall" onclick={markAll} disabled={bulkRunning}>
-				{bulkRunning ? `Marking ${bulkDone}/${unwatched.length}…` : 'Mark all watched'}
-			</button>
-		{/if}
+		<div class="bar">
+			<div class="track">
+				<div
+					class="fill"
+					style:width={`${episodes.length ? (watchedCount / episodes.length) * 100 : 0}%`}
+				></div>
+			</div>
+			<span class="tnum">{watchedCount}/{episodes.length}</span>
+		</div>
+
+		<!-- One control that both fills and clears the season, mirroring the
+		     per-episode circle so the affordance reads the same. -->
+		<button
+			class="allcheck"
+			class:watched={allWatched}
+			disabled={bulkRunning || !episodes.length}
+			aria-pressed={allWatched}
+			aria-label={allWatched ? 'Clear the whole season' : 'Mark the whole season watched'}
+			onclick={toggleAll}
+		>
+			{#if bulkRunning}
+				<span class="tnum mini">{bulkDone}/{bulkTotal}</span>
+			{:else if allWatched}
+				<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+			{:else}
+				<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+			{/if}
+		</button>
 	</div>
 
 	<ul class="episodes">
 		{#each episodes as ep (ep.episodeNumber)}
 			<li class:busy={inFlight.has(ep.episodeNumber)}>
+				<button class="body" onclick={() => (sheetFor = ep.episodeNumber)}>
+					<span class="line1">
+						<span class="num tnum">{epLabel(ep.seasonNumber, ep.episodeNumber)}</span>
+						<span class="title">{ep.title}</span>
+					</span>
+					{#if ep.airDate}
+						<span class="air tnum">{formatAirDate(ep.airDate)}</span>
+					{/if}
+				</button>
+
 				<button
 					class="check"
 					class:watched={ep.plays > 0}
@@ -164,16 +230,6 @@
 						<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
 					{/if}
 					{#if ep.plays > 1}<span class="plays tnum">{ep.plays}</span>{/if}
-				</button>
-
-				<button class="body" onclick={() => (sheetFor = ep.episodeNumber)}>
-					<span class="line1">
-						<span class="num tnum">{epLabel(ep.seasonNumber, ep.episodeNumber)}</span>
-						<span class="title">{ep.title}</span>
-					</span>
-					{#if ep.airDate}
-						<span class="air tnum">{formatAirDate(ep.airDate)}</span>
-					{/if}
 				</button>
 			</li>
 		{/each}
@@ -218,26 +274,41 @@
 	}
 
 	.summary {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr 52px;
 		align-items: center;
-		justify-content: space-between;
 		gap: 12px;
-		margin: 6px 0 10px;
-		font-size: 13px;
-		color: var(--text-dim);
+		margin: 6px 0 12px;
 	}
-	.markall {
-		min-height: 36px;
-		padding: 0 12px;
-		border-radius: 9px;
-		background: var(--surface-raised);
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--text);
+	.bar { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-dim); }
+	.track {
+		flex: 1; height: 6px; border-radius: 3px;
+		background: var(--surface); overflow: hidden;
 	}
-	.markall:disabled {
-		opacity: 0.6;
+	.fill {
+		height: 100%; border-radius: 3px; background: var(--signal);
+		transition: width 260ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
+
+	/* Same shape as a row's circle, so it reads as "all of these". */
+	.allcheck {
+		position: relative;
+		display: grid; place-items: center;
+		width: 52px; height: var(--tap);
+		justify-self: center;
+	}
+	.allcheck::before {
+		content: '';
+		position: absolute;
+		width: 26px; height: 26px;
+		border-radius: 50%;
+		border: 1.8px solid var(--surface-raised);
+	}
+	.allcheck.watched::before { border-color: transparent; background: var(--signal); }
+	.allcheck svg { position: relative; color: var(--text-dim); }
+	.allcheck.watched svg { color: #fff; }
+	.allcheck:disabled { opacity: 0.5; }
+	.mini { position: relative; font-size: 9.5px; font-weight: 700; color: var(--text-dim); }
 
 	.episodes {
 		display: flex;
@@ -249,7 +320,7 @@
 	}
 	.episodes li {
 		display: grid;
-		grid-template-columns: 52px 1fr;
+		grid-template-columns: 1fr 52px;
 		align-items: center;
 		/* Roomier than the 44px minimum: these get tapped repeatedly while
 		   working through a season, and the row itself is the target. */
@@ -305,7 +376,7 @@
 		justify-content: center;
 		gap: 3px;
 		min-height: 60px;
-		padding: 10px 14px 10px 2px;
+		padding: 10px 2px 10px 14px;
 		text-align: left;
 		min-width: 0;
 	}

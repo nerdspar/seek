@@ -1,11 +1,11 @@
 <script lang="ts">
 	import Sheet from './Sheet.svelte';
-	import type { SortKey } from '$lib/server/prefs';
-
+	/** Deliberately keyed on plain strings: the watchlist and the collection views
+	 *  offer different orderings, and neither should have to know the other's. */
 	type Props = {
-		current: SortKey;
-		options: { key: SortKey; label: string }[];
-		onchange: (key: SortKey) => void;
+		current: string;
+		options: { key: string; label: string }[];
+		onchange: (key: string) => void;
 		onclose: () => void;
 	};
 	let { current, options, onchange, onclose }: Props = $props();
