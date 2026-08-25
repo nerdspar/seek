@@ -54,7 +54,7 @@ services:
       FLOPPY_TOKEN: "PASTE_FLOPPY_TOKEN_HERE" # ⬅ FLOPPY_TOKEN
 
       # openssl rand -hex 32
-      SEEK_SESSION_SECRET: "PASTE_SESSION_SECRET_HERE" # ⬅ SEEK_SESSION_SECRET
+      SEEK_SESSION_SECRET: "PASTE_SEEK_SESSION_SECRET_HERE" # ⬅ SEEK_SESSION_SECRET
 
       # Shared household passphrase. Leave EMPTY on a trusted LAN and Seek is
       # ungated. Set it before exposing Seek through a reverse proxy or tunnel —
