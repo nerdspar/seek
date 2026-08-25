@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { WatchlistRow } from '$lib/types';
 	import Poster from './Poster.svelte';
-	import type { MarkDirection } from '$lib/settings';
+	import type { MarkDirection } from '$lib/server/prefs';
 
 	type Props = {
 		row: WatchlistRow;

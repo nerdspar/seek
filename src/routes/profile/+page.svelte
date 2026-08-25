@@ -3,21 +3,16 @@
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import SettingsSheet from '$lib/components/SettingsSheet.svelte';
-	import { load as loadSettings, save as saveSettings, type MarkDirection, type Settings } from '$lib/settings';
+	import type { Prefs } from '$lib/server/prefs';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	let settings = $state<Settings>({ markDirection: 'rtl' });
 	let settingsOpen = $state(false);
-	$effect(() => {
-		settings = loadSettings();
-	});
-
-	function setDirection(markDirection: MarkDirection) {
-		settings = { ...settings, markDirection };
-		saveSettings(settings);
-	}
+	/* Derived from the server payload, overridden only once a save comes back —
+	   no effect needed, and it re-syncs automatically on navigation. */
+	let saved = $state<Prefs | null>(null);
+	const prefs = $derived(saved ?? data.prefs);
 
 	const RANGES = [
 		{ id: 'this_month', label: 'This month' },
@@ -155,8 +150,8 @@
 
 	{#if settingsOpen}
 		<SettingsSheet
-			markDirection={settings.markDirection}
-			onchange={setDirection}
+			{prefs}
+			onsaved={(p) => (saved = p)}
 			onclose={() => (settingsOpen = false)}
 		/>
 	{/if}

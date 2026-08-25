@@ -24,12 +24,13 @@ export const load: PageServerLoad = async ({ url }) => {
 		const page = await memo(`watchlist:${mediaType}:${sortKey}`, 60 * 1000, () =>
 			getWatchlist(mediaType, { sort, direction })
 		);
-		return { mediaType, sortKey, ...page, error: null };
+		return { mediaType, sortKey, markDirection: prefs.markDirection, ...page, error: null };
 	} catch (err) {
 		// A dead Floppy should render an explainable screen, not a 500.
 		return {
 			mediaType,
 			sortKey,
+			markDirection: prefs.markDirection,
 			rows: [],
 			total: 0,
 			hasMore: false,

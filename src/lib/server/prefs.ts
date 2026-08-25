@@ -25,12 +25,17 @@ export type Prefs = {
 	/** Sort is remembered per media type (§4.5). */
 	sort: Record<string, SortKey>;
 	defaultTab: 'watchlist' | 'upcoming' | 'discover' | 'profile';
+	/** Season thumbnails on the show page. Off by default: Floppy returns the
+	 *  show's poster for every season, so it is usually a column of identical
+	 *  images — but some shows do have per-season art. */
+	seasonArtwork: boolean;
 };
 
 export const DEFAULTS: Prefs = {
 	markDirection: 'rtl',
 	sort: {},
-	defaultTab: 'watchlist'
+	defaultTab: 'watchlist',
+	seasonArtwork: false
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */

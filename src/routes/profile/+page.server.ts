@@ -1,5 +1,6 @@
 import { getStats, type RangeKey, type Stats } from '$lib/server/stats';
 import { memo } from '$lib/server/memo';
+import { getPrefs } from '$lib/server/prefs';
 import type { PageServerLoad } from './$types';
 
 const RANGES: RangeKey[] = ['this_month', 'this_year', 'last_year', 'all_time'];
@@ -15,5 +16,5 @@ export const load: PageServerLoad = async ({ url }) => {
 	   a slightly stale hours count is harmless, a 9.5s stall is not. */
 	const stats: Promise<Stats> = memo(`stats:${range}`, 30 * 60 * 1000, () => getStats(range));
 
-	return { range, stats };
+	return { range, stats, prefs: await getPrefs() };
 };

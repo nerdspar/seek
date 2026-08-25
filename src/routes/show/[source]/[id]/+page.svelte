@@ -128,8 +128,13 @@
 		<ul class="seasons">
 			{#each seasons as s (s.seasonNumber)}
 				<li class:busy={busy.has(s.seasonNumber)}>
-					<a href="/show/{show.source}/{show.mediaId}/{s.seasonNumber}">
-						<Poster src={s.poster} width={44} height={44} />
+					<!-- Off by default: Floppy returns the show's poster for every
+					     season, so it is usually a column of identical images. Some
+					     shows do have distinct art, hence the setting. -->
+					<a href="/show/{show.source}/{show.mediaId}/{s.seasonNumber}" class:with-art={data.seasonArtwork}>
+						{#if data.seasonArtwork}
+							<Poster src={s.poster} width={44} height={44} />
+						{/if}
 						<div class="s-meta">
 							<span class="s-title">{s.seasonNumber === 0 ? 'Specials' : `Season ${s.seasonNumber}`}</span>
 							<div class="s-progress">
@@ -294,12 +299,16 @@
 	}
 	.seasons a {
 		display: grid;
-		grid-template-columns: 44px 1fr auto;
+		grid-template-columns: 1fr auto;
 		align-items: center;
 		gap: 12px;
-		min-height: 60px;
-		padding: 8px 4px 8px 8px;
+		min-height: 62px;
+		padding: 10px 4px 10px 14px;
 		min-width: 0;
+	}
+	.seasons a.with-art {
+		grid-template-columns: 44px 1fr auto;
+		padding-left: 8px;
 	}
 
 	.check {

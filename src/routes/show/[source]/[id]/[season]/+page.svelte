@@ -242,15 +242,18 @@
 	.episodes {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 6px;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 	.episodes li {
 		display: grid;
-		grid-template-columns: var(--tap) 1fr;
+		grid-template-columns: 52px 1fr;
 		align-items: center;
+		/* Roomier than the 44px minimum: these get tapped repeatedly while
+		   working through a season, and the row itself is the target. */
+		min-height: 60px;
 		border-radius: var(--radius);
 		background: var(--surface);
 	}
@@ -262,8 +265,8 @@
 		position: relative;
 		display: grid;
 		place-items: center;
-		width: var(--tap);
-		height: var(--tap);
+		width: 52px;
+		height: 60px;
 		justify-self: center;
 	}
 	.check::before {
@@ -299,9 +302,10 @@
 	.body {
 		display: flex;
 		flex-direction: column;
+		justify-content: center;
 		gap: 3px;
-		min-height: var(--tap);
-		padding: 8px 12px 8px 2px;
+		min-height: 60px;
+		padding: 10px 14px 10px 2px;
 		text-align: left;
 		min-width: 0;
 	}
@@ -312,12 +316,12 @@
 	}
 	.num {
 		flex: none;
-		font-size: 14px;
+		font-size: 14.5px;
 		font-weight: 600;
 		color: var(--text-dim);
 	}
 	.title {
-		font-size: 14px;
+		font-size: 14.5px;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;

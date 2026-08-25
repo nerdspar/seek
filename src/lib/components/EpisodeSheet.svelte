@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Sheet from './Sheet.svelte';
 	import type { EpisodeDetail } from '$lib/types';
 	import { formatAirDate, formatRuntime, epLabel } from '$lib/format';
 
@@ -38,31 +39,9 @@
 			cancelled = true;
 		};
 	});
-
-	function onkeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') onclose();
-	}
 </script>
 
-<svelte:window {onkeydown} />
-
-<div
-	class="scrim"
-	role="button"
-	tabindex="-1"
-	aria-label="Close"
-	onclick={onclose}
-	onkeydown={(e) => e.key === 'Enter' && onclose()}
-></div>
-
-<div class="sheet" role="dialog" aria-modal="true" aria-label="{epLabel(season, episode)} details">
-	<div class="grip"></div>
-	<button class="close" onclick={onclose} aria-label="Close">
-		<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-			<path d="M6 6l12 12M18 6L6 18" />
-		</svg>
-	</button>
-
+<Sheet label={`${epLabel(season, episode)} details`} {onclose} scrollable>
 	{#if failed}
 		<div class="pad">
 			<h2>Couldn't load that episode</h2>
@@ -109,67 +88,11 @@
 			</button>
 		</div>
 	{/if}
-</div>
+</Sheet>
 
 <style>
-	.scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 70;
-		background: rgb(0 0 0 / 0.6);
-		border: none;
-		animation: fade 160ms ease;
-	}
-	@keyframes fade {
-		from { opacity: 0; }
-	}
-
-	.sheet {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		z-index: 71;
-		max-height: 88dvh;
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		padding-bottom: calc(var(--safe-b) + 16px);
-		background: var(--surface);
-		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-		animation: rise 240ms cubic-bezier(0.22, 1, 0.36, 1);
-	}
-	@keyframes rise {
-		from { transform: translateY(100%); }
-	}
-
-	.grip {
-		position: sticky;
-		top: 0;
-		width: 36px;
-		height: 4px;
-		margin: 8px auto;
-		border-radius: 2px;
-		background: var(--surface-raised);
-		z-index: 1;
-	}
-
-	/* Sits above the still, which can be light, so it carries its own scrim. */
-	.close {
-		position: absolute;
-		top: 12px;
-		right: 12px;
-		z-index: 3;
-		display: grid;
-		place-items: center;
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		background: color-mix(in srgb, var(--bg) 72%, transparent);
-		color: var(--text);
-	}
-
 	.pad {
-		padding: 4px var(--gutter) 0;
+		padding: 0 var(--gutter);
 	}
 
 	.still {
@@ -177,6 +100,7 @@
 		aspect-ratio: 16 / 9;
 		object-fit: cover;
 		background: var(--surface-raised);
+		margin-bottom: 4px;
 	}
 
 	.eyebrow {

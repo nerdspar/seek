@@ -6,14 +6,12 @@
 	import TabBar from '$lib/components/TabBar.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import { haptic } from '$lib/haptics';
-	import { load as loadSettings, type Settings } from '$lib/settings';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { SortKey } from '$lib/server/prefs';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	let settings = $state<Settings>({ markDirection: 'rtl' });
 	let note = $state<string | null>(null);
 
 	/* Optimistic edits live in an overlay keyed by row, and the list is derived
@@ -24,10 +22,6 @@
 	   first thing you see, and this screen is judged on how fast it appears. */
 	let overrides = $state<Record<string, WatchlistRow>>({});
 	const rows = $derived(data.rows.map((r) => overrides[key(r)] ?? r));
-
-	$effect(() => {
-		settings = loadSettings();
-	});
 
 	/* Anime is deliberately NOT a segment. Floppy files it inside the TV library,
 	   so a third tab would either sit empty or split the list on a distinction
@@ -261,7 +255,7 @@
 				{#each rows as row (key(row))}
 					<WatchRow
 						{row}
-						markDirection={settings.markDirection}
+						markDirection={data.markDirection}
 						pending={inFlight.has(key(row))}
 						{onmark}
 						onepisode={openEpisode}
