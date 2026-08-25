@@ -227,10 +227,25 @@ export async function getWatchlist(
 		}
 	}
 
-	// Titles resolve in parallel; one slow lookup does not hold up the page.
-	let rows = shouldEnrich
-		? await Promise.all(collected.map((r) => enrich(mapRow(r, mediaType))))
-		: collected.map((r) => mapRow(r, mediaType));
+	/* Enrichment is the expensive part of a rebuild — up to 88 episode lookups.
+	   Run in bounded batches rather than all at once so a rebuild leaves Floppy
+	   slots free for whatever the user is doing at the same time. With
+	   stale-while-revalidate nobody waits on this, so the extra wall time is
+	   spent off the request path. */
+	let rows: WatchlistRow[];
+	if (shouldEnrich) {
+		rows = [];
+		const BATCH = 8;
+		for (let i = 0; i < collected.length; i += BATCH) {
+			rows.push(
+				...(await Promise.all(
+					collected.slice(i, i + BATCH).map((r) => enrich(mapRow(r, mediaType)))
+				))
+			);
+		}
+	} else {
+		rows = collected.map((r) => mapRow(r, mediaType));
+	}
 
 	if (services.length) {
 		const wanted = new Set(services);

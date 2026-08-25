@@ -2,7 +2,9 @@ import { json, error } from '@sveltejs/kit';
 import { markEpisodeWatched } from '$lib/server/api';
 import { getRow } from '$lib/server/watchlist';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
-import { invalidate } from '$lib/server/memo';
+import { patch, expire } from '$lib/server/memo';
+import type { WatchlistPage } from '$lib/server/watchlist';
+import type { WatchlistRow } from '$lib/types';
 import type { MediaType } from '$lib/types';
 import type { RequestHandler } from './$types';
 
@@ -40,16 +42,31 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw err;
 	}
 
-	// The library changed, so the cached watchlist page is now wrong.
-	invalidate('watchlist:');
-
-	// The write succeeded. Re-read the show row for its new next-up (§4.2).
-	// Deliberately outside the try above: a refresh failure must not be reported
-	// as a failed mark, or the client would roll back a play that was recorded.
+	/* The write succeeded. Re-read this one show for its new next-up (§4.2).
+	   Deliberately outside the try above: a refresh failure must not be reported
+	   as a failed mark, or the client would roll back a play that was recorded. */
 	try {
 		const row = await getRow(mediaType, source, mediaId, title);
+
+		/* Update the cached list in place rather than dropping it.
+		   Discarding the cache here was what made marking expensive: the next
+		   watchlist view had to rebuild from scratch — a 2.3s list query plus an
+		   88-way title fan-out — so a couple of quick marks left the app looking
+		   hung. Here the one row that changed is swapped in and everything else
+		   stays warm. */
+		if (row) patch<WatchlistPage>('watchlist:', (page) => ({
+			...page,
+			rows: page.rows.map((r: WatchlistRow) =>
+				r.source === source && r.mediaId === mediaId ? row : r
+			)
+		}));
+		// Still mark it stale so a background refresh reconciles anything the
+		// patch could not know about, like a show dropping out of the filter.
+		expire('watchlist:');
+
 		return json({ ok: true, row });
 	} catch {
+		expire('watchlist:');
 		return json({ ok: true, row: null, stale: true });
 	}
 };
@@ -73,7 +90,6 @@ export const DELETE: RequestHandler = async ({ request }) => {
 
 	try {
 		await floppy(path, { method: 'DELETE' });
-		invalidate('watchlist:');
 	} catch (err) {
 		if (err instanceof FloppyError && err.status === 405) {
 			error(502, 'Floppy no longer accepts DELETE on the watch path; undo is unavailable.');
@@ -85,8 +101,16 @@ export const DELETE: RequestHandler = async ({ request }) => {
 
 	try {
 		const row = await getRow(mediaType, source, mediaId, title);
+		if (row) patch<WatchlistPage>('watchlist:', (page) => ({
+			...page,
+			rows: page.rows.map((r: WatchlistRow) =>
+				r.source === source && r.mediaId === mediaId ? row : r
+			)
+		}));
+		expire('watchlist:');
 		return json({ ok: true, row });
 	} catch {
+		expire('watchlist:');
 		return json({ ok: true, row: null, stale: true });
 	}
 };

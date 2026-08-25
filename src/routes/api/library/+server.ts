@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { addMedia, removeMedia } from '$lib/server/search';
 import { FloppyError, FloppyUnreachable } from '$lib/server/floppy';
-import { invalidate } from '$lib/server/memo';
+import { expire } from '$lib/server/memo';
 import type { MediaType } from '$lib/types';
 import type { RequestHandler } from './$types';
 
@@ -18,7 +18,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { mediaType, source, mediaId } = parse(await request.json());
 	try {
 		await addMedia(mediaType, source, mediaId);
-		invalidate('watchlist:');
+		expire('watchlist:');
 		return json({ ok: true });
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was added.');
@@ -32,7 +32,7 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	const { mediaType, source, mediaId } = parse(await request.json());
 	try {
 		await removeMedia(mediaType, source, mediaId);
-		invalidate('watchlist:');
+		expire('watchlist:');
 		return json({ ok: true });
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was removed.');

@@ -112,6 +112,18 @@
 	let undoBusy = $state(false);
 	let inFlight = $state<Set<string>>(new Set());
 
+	/* Writes run one at a time.
+	   Swiping several rows quickly used to fire the marks in parallel, and each
+	   one costs a write plus a re-read on the server. Queuing them keeps a burst
+	   of taps from turning into a burst of concurrent Floppy work — the UI is
+	   already optimistic, so nothing visible waits on the queue. */
+	let writeQueue: Promise<unknown> = Promise.resolve();
+	function enqueue<T>(job: () => Promise<T>): Promise<T> {
+		const next = writeQueue.then(job, job);
+		writeQueue = next.catch(() => {});
+		return next;
+	}
+
 	function setInFlight(k: string, on: boolean) {
 		const next = new Set(inFlight);
 		if (on) next.add(k);
@@ -146,18 +158,20 @@
 		});
 
 		try {
-			const res = await fetch('/api/watch', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					source: row.source,
-					mediaId: row.mediaId,
-					mediaType: row.mediaType,
-					title: row.title,
-					season: marked.season,
-					episode: marked.episode
+			const res = await enqueue(() =>
+				fetch('/api/watch', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						source: row.source,
+						mediaId: row.mediaId,
+						mediaType: row.mediaType,
+						title: row.title,
+						season: marked.season,
+						episode: marked.episode
+					})
 				})
-			});
+			);
 
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			const body = await res.json();
@@ -185,18 +199,20 @@
 		const t = toast;
 
 		try {
-			const res = await fetch('/api/watch', {
-				method: 'DELETE',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					source: t.snapshot.source,
-					mediaId: t.snapshot.mediaId,
-					mediaType: t.snapshot.mediaType,
-					title: t.snapshot.title,
-					season: t.marked.season,
-					episode: t.marked.episode
+			const res = await enqueue(() =>
+				fetch('/api/watch', {
+					method: 'DELETE',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						source: t.snapshot.source,
+						mediaId: t.snapshot.mediaId,
+						mediaType: t.snapshot.mediaType,
+						title: t.snapshot.title,
+						season: t.marked.season,
+						episode: t.marked.episode
+					})
 				})
-			});
+			);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			const body = await res.json();
 

@@ -10,7 +10,7 @@
  *   ...&tag_mode=not                              -> the inverse
  */
 import { floppy } from './floppy';
-import { invalidate } from './memo';
+import { expire } from './memo';
 
 export const JOINT_TAG = 'joint';
 
@@ -73,7 +73,7 @@ export async function setJoint(
 	const tagIds = [...next].map((name) => byName.get(name)).filter((id): id is number => id != null);
 
 	await floppy(tagsPath(mediaType, source, mediaId), { method: 'PUT', body: { tag_ids: tagIds } });
-	invalidate('watchlist:');
+	expire('watchlist:');
 	return [...next];
 }
 

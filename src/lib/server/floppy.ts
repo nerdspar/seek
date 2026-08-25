@@ -49,6 +49,33 @@ function buildQuery(query: Req['query']): string {
 	return s ? `?${s}` : '';
 }
 
+/**
+ * Concurrency limiter.
+ *
+ * Seek fans out up to 88 episode-title lookups when rebuilding the watchlist.
+ * Floppy survives that — measured, no errors — but it takes ~1.4s on its own and
+ * ~3.7s alongside the 200-row list query, and while it is in flight it is
+ * competing with whatever the user is actually waiting for. Capping in-flight
+ * requests keeps a burst from monopolising Floppy.
+ */
+const MAX_IN_FLIGHT = 10;
+let active = 0;
+const waiting: (() => void)[] = [];
+
+async function acquire(): Promise<void> {
+	if (active < MAX_IN_FLIGHT) {
+		active++;
+		return;
+	}
+	await new Promise<void>((resolve) => waiting.push(resolve));
+	active++;
+}
+
+function release(): void {
+	active--;
+	waiting.shift()?.();
+}
+
 export async function floppy<T = unknown>(path: string, opts: Req = {}): Promise<T> {
 	const { method = 'GET', query, body, anonymous = false, timeoutMs = 15_000 } = opts;
 	const url = `${FLOPPY_URL()}${path}${buildQuery(query)}`;
@@ -58,6 +85,7 @@ export async function floppy<T = unknown>(path: string, opts: Req = {}): Promise
 	if (body !== undefined) headers['Content-Type'] = 'application/json';
 
 	let res: Response;
+	await acquire();
 	try {
 		res = await fetch(url, {
 			method,
@@ -71,6 +99,8 @@ export async function floppy<T = unknown>(path: string, opts: Req = {}): Promise
 		// A connect-stage failure means it did not. A timeout is ambiguous and is
 		// NOT treated as unreachable — see markEpisodeWatched.
 		throw new FloppyUnreachable(cause, method, path);
+	} finally {
+		release();
 	}
 
 	if (!res.ok) throw new FloppyError(res.status, await res.text().catch(() => ''), method, path);

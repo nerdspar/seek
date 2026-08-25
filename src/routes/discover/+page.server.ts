@@ -1,4 +1,5 @@
 import { getDiscoverRows } from '$lib/server/discover';
+import { memo } from '$lib/server/memo';
 import { MOOD_PRESETS, tmdbConfigured } from '$lib/server/tmdb';
 import type { MediaType } from '$lib/types';
 import type { PageServerLoad } from './$types';
@@ -15,7 +16,9 @@ export const load: PageServerLoad = async ({ url }) => {
 		return {
 			mediaType,
 			presets,
-			rows: await getDiscoverRows(mediaType),
+			// Floppy builds these rows on its own schedule and they change slowly,
+			// so a stale read is fine and a blocking rebuild is not.
+			rows: await memo(`discover:${mediaType}`, 30 * 60 * 1000, () => getDiscoverRows(mediaType)),
 			moodAvailable: tmdbConfigured(),
 			error: null
 		};
