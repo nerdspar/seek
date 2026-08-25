@@ -33,6 +33,16 @@ export type Prefs = {
 	theme: 'midnight';
 	/** Services the household actually pays for (§6.3, §8). Empty means "all". */
 	services: string[];
+	/**
+	 * Discover's mood chips, in display order (§6.2).
+	 *
+	 * Stored as labels rather than keyword ids: a label the user types resolves
+	 * through TMDB's keyword search at query time, and the built-in labels have
+	 * curated id sets that are better than a single lookup. Null means "use the
+	 * built-in list", so shipping new defaults reaches anyone who has not edited
+	 * theirs.
+	 */
+	moodPresets: string[] | null;
 };
 
 export const DEFAULTS: Prefs = {
@@ -41,7 +51,8 @@ export const DEFAULTS: Prefs = {
 	defaultTab: 'watchlist',
 	seasonArtwork: false,
 	theme: 'midnight',
-	services: []
+	services: [],
+	moodPresets: null
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */
@@ -76,7 +87,7 @@ export async function getPrefs(): Promise<Prefs> {
 		};
 	} catch {
 		// Missing or unreadable file is the normal first-run case.
-		cache = { ...DEFAULTS, sort: {}, services: [] };
+		cache = { ...DEFAULTS, sort: {}, services: [], moodPresets: null };
 	}
 	return cache;
 }
@@ -87,9 +98,10 @@ export async function setPrefs(patch: Partial<Prefs>): Promise<Prefs> {
 		...current,
 		...patch,
 		sort: { ...current.sort, ...(patch.sort ?? {}) },
-		// Replaced wholesale rather than merged — deselecting a service has to
-		// actually remove it.
-		services: patch.services ?? current.services
+		// Replaced wholesale rather than merged — deselecting a service, or
+		// reordering the chips, has to actually take effect.
+		services: patch.services ?? current.services,
+		moodPresets: patch.moodPresets !== undefined ? patch.moodPresets : current.moodPresets
 	};
 
 	const path = file();

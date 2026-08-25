@@ -8,11 +8,20 @@
 		prefs: Prefs;
 		/** Services seen across the library, for the subscription picker (§6.3). */
 		allServices?: string[];
+		/** The built-in mood chips, used when the user has not customised them. */
+		defaultPresets?: string[];
 		floppyUrl?: string | null;
 		onsaved: (p: Prefs) => void;
 		onclose: () => void;
 	};
-	let { prefs, allServices = [], floppyUrl = null, onsaved, onclose }: Props = $props();
+	let {
+		prefs,
+		allServices = [],
+		defaultPresets = [],
+		floppyUrl = null,
+		onsaved,
+		onclose
+	}: Props = $props();
 
 	/* Optimistic edit layered over the prop, so a save that fails simply reverts
 	   by clearing it. */
@@ -37,6 +46,54 @@
 		{ id: 'rtl', label: 'Right to left', hint: 'Swipe leftward across the row' },
 		{ id: 'ltr', label: 'Left to right', hint: 'Swipe rightward across the row' }
 	];
+
+	/* ── Discover mood chips ───────────────────────────────────────────────
+	   Stored as labels. A new one is checked against TMDB's keyword search
+	   before being saved — a chip that resolves to nothing would just render an
+	   empty result set with no explanation. */
+	const presets = $derived(local.moodPresets ?? defaultPresets);
+
+	let newPreset = $state('');
+	let presetBusy = $state(false);
+	let presetError = $state<string | null>(null);
+
+	function movePreset(index: number, delta: number) {
+		const next = [...presets];
+		const to = index + delta;
+		if (to < 0 || to >= next.length) return;
+		[next[index], next[to]] = [next[to], next[index]];
+		patch({ moodPresets: next });
+	}
+
+	const removePreset = (label: string) =>
+		patch({ moodPresets: presets.filter((p) => p !== label) });
+
+	async function addPreset() {
+		const label = newPreset.trim();
+		if (!label || presetBusy) return;
+		if (presets.some((p) => p.toLowerCase() === label.toLowerCase())) {
+			presetError = `“${label}” is already there.`;
+			return;
+		}
+
+		presetBusy = true;
+		presetError = null;
+		try {
+			const res = await fetch(`/api/mood?preset=${encodeURIComponent(label)}&type=tv`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const body = await res.json();
+			if (!body.keywords?.length) {
+				presetError = `TMDB has no keyword for “${label}”. Try a different word.`;
+				return;
+			}
+			await patch({ moodPresets: [...presets, label] });
+			newPreset = '';
+		} catch (err) {
+			presetError = `Couldn't check that — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			presetBusy = false;
+		}
+	}
 
 	async function patch(change: Partial<Prefs>) {
 		const before = edited;
@@ -128,6 +185,49 @@
 				</div>
 			</section>
 		{/if}
+
+		<section>
+			<h3>Discover chips</h3>
+			<p class="hint">The mood shortcuts on Discover, in the order they appear.</p>
+
+			<ul class="presets">
+				{#each presets as label, i (label)}
+					<li>
+						<span class="plabel">{label}</span>
+						<button
+							class="ctl"
+							disabled={i === 0}
+							aria-label={`Move ${label} up`}
+							onclick={() => movePreset(i, -1)}
+						>↑</button>
+						<button
+							class="ctl"
+							disabled={i === presets.length - 1}
+							aria-label={`Move ${label} down`}
+							onclick={() => movePreset(i, 1)}
+						>↓</button>
+						<button class="ctl remove" aria-label={`Remove ${label}`} onclick={() => removePreset(label)}>×</button>
+					</li>
+				{/each}
+			</ul>
+
+			<form class="addrow" onsubmit={(e) => { e.preventDefault(); addPreset(); }}>
+				<input
+					bind:value={newPreset}
+					type="text"
+					placeholder="Add a mood — body swap, road trip"
+					autocapitalize="off"
+					autocorrect="off"
+				/>
+				<button type="submit" disabled={!newPreset.trim() || presetBusy}>
+					{presetBusy ? '…' : 'Add'}
+				</button>
+			</form>
+			{#if presetError}<p class="error">{presetError}</p>{/if}
+			{#if local.moodPresets}
+				<button class="reset" onclick={() => patch({ moodPresets: null })}>Reset to defaults</button>
+			{/if}
+		</section>
 
 		<section>
 			<h3>Show page</h3>
@@ -228,5 +328,28 @@
 	}
 	input::-webkit-search-cancel-button { display: none; }
 
-	.error { margin: 0 0 12px; font-size: 13px; color: #ff8a8a; }
+	.presets { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+	.presets li {
+		display: grid; grid-template-columns: 1fr auto auto auto;
+		align-items: center; gap: 2px;
+		border-radius: var(--radius); background: var(--surface-raised);
+	}
+	.plabel { padding: 0 4px 0 14px; font-size: 14.5px; font-weight: 600; }
+	.ctl {
+		width: 36px; height: var(--tap);
+		font-size: 17px; color: var(--text-dim);
+	}
+	.ctl:disabled { opacity: 0.25; }
+	.remove { padding-right: 10px; font-size: 21px; }
+
+	.addrow { display: flex; gap: 8px; }
+	.addrow input { flex: 1; min-width: 0; margin-bottom: 0; }
+	.addrow button {
+		flex: none; min-height: 40px; padding: 0 16px; border-radius: var(--radius);
+		background: var(--signal); color: #fff; font-size: 14px; font-weight: 600;
+	}
+	.addrow button:disabled { opacity: 0.5; }
+	.reset { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
+
+	.error { margin: 8px 0 0; font-size: 13px; color: #ff8a8a; }
 </style>

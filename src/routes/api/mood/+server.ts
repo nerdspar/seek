@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { discoverByKeyword, keywordIds, MOOD_PRESETS, tmdbConfigured } from '$lib/server/tmdb';
+import { discoverByKeyword, keywordIds, keywordsForLabel, tmdbConfigured } from '$lib/server/tmdb';
 import type { RequestHandler } from './$types';
 
 /** Mood and theme search (§6.2). Chips carry keyword ids; free text resolves
@@ -13,8 +13,11 @@ export const GET: RequestHandler = async ({ url }) => {
 	const minRating = Number(url.searchParams.get('minRating')) || undefined;
 
 	try {
+		/* A chip and free text resolve the same way. Built-in labels carry curated
+		   id sets — "heist" alone misses "bank heist" and "art heist" — and a label
+		   the user added falls through to TMDB's keyword search. */
 		const keywords = preset
-			? (MOOD_PRESETS.find((p) => p.label === preset)?.keywords ?? [])
+			? (keywordsForLabel(preset) ?? (await keywordIds(preset)))
 			: await keywordIds(q);
 
 		if (!keywords.length) return json({ results: [], keywords: [] });

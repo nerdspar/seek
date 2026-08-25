@@ -46,6 +46,14 @@ export async function keywordIds(query: string): Promise<number[]> {
 	return ids;
 }
 
+/** Curated ids for the built-in labels; anything else resolves by search. */
+export function keywordsForLabel(label: string): number[] | null {
+	const preset = MOOD_PRESETS.find((p) => p.label.toLowerCase() === label.trim().toLowerCase());
+	return preset ? preset.keywords : null;
+}
+
+export const DEFAULT_PRESET_LABELS = () => MOOD_PRESETS.map((p) => p.label);
+
 export type MoodOptions = {
 	keywords: number[];
 	mediaType: 'tv' | 'movie';
