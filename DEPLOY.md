@@ -264,4 +264,5 @@ when those features exist.
 | `network ... declared as external, but could not be found` | The `name:` under the top-level `networks:` doesn't match. Run `docker network ls \| grep floppy` — it's project-prefixed, e.g. `floppy_floppy-net`. |
 | Health shows `reachable:false` with a container-name URL | Wrong internal port (it's 8000, not the published 8007), or Seek isn't actually on Floppy's network. |
 | Watchlist empty, health OK | No shows are `in_progress` with an unwatched episode — check Floppy directly. |
+| App works, but TrueNAS shows it stuck "Deploying" / "Starting" | The container healthcheck is failing. `/api/health` is deliberately reachable without a session so it can pass while the gate is on; if this comes back on an older image, that is the cause. Check with `docker inspect --format '{{json .State.Health}}' seek`. |
 | Undo fails with a 405 | Floppy removed `DELETE` on the episode watch path. See the API findings in [README.md](README.md). |

@@ -75,15 +75,21 @@ void (async () => {
 	}
 })();
 
+/* The container's HEALTHCHECK cannot hold a session, so gating this path makes
+   the container permanently unhealthy — which reads as "stuck deploying" in
+   TrueNAS even though the app is serving fine. It stays reachable, and answers
+   an unauthenticated caller with nothing but ok/not-ok. */
+const UNGATED = new Set(['/login', '/api/health']);
+
 export const handle: Handle = async ({ event, resolve }) => {
-	if (gateEnabled() && event.url.pathname !== '/login') {
-		if (!verify(event.cookies.get(COOKIE))) {
-			// API routes get a status, not a redirect to an HTML page.
-			if (event.url.pathname.startsWith('/api/')) {
-				return new Response('Unauthorized', { status: 401 });
-			}
-			redirect(303, '/login');
+	event.locals.authed = !gateEnabled() || verify(event.cookies.get(COOKIE));
+
+	if (!event.locals.authed && !UNGATED.has(event.url.pathname)) {
+		// API routes get a status, not a redirect to an HTML page.
+		if (event.url.pathname.startsWith('/api/')) {
+			return new Response('Unauthorized', { status: 401 });
 		}
+		redirect(303, '/login');
 	}
 	return resolve(event);
 };
