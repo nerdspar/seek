@@ -83,7 +83,13 @@ function mapEpisode(entry: unknown): EpisodeRow | null {
 	};
 }
 
-export async function getShow(source: string, mediaId: string): Promise<ShowDetail> {
+export async function getShow(
+	source: string,
+	mediaId: string,
+	/** Episode counts per season, if a cheaper source already has them. Supplying
+	 *  these skips a per-season request each — the dominant cost of this page. */
+	knownSeasonEpisodes: Record<number, number> = {}
+): Promise<ShowDetail> {
 	const d = rec(await floppy(`${showPath(source, mediaId)}/`));
 	const details = rec(d.details);
 	const related = rec(d.related);
@@ -107,13 +113,16 @@ export async function getShow(source: string, mediaId: string): Promise<ShowDeta
 		.filter((s): s is SeasonSummary => s !== null)
 		.sort((a, b) => a.seasonNumber - b.seasonNumber);
 
-	// Fill the missing episode counts concurrently.
+	/* Fill the missing episode counts. Anything the caller already knows costs
+	   nothing; only the remainder falls back to one request per season, which is
+	   what made this page slow before TMDB started supplying them. */
 	const withTotals = await Promise.all(
-		seasons.map(async (s) =>
-			s.maxProgress === null
-				? { ...s, maxProgress: await seasonMax(source, mediaId, s.seasonNumber) }
-				: s
-		)
+		seasons.map(async (s) => {
+			if (s.maxProgress !== null) return s;
+			const known = knownSeasonEpisodes[s.seasonNumber];
+			if (typeof known === 'number') return { ...s, maxProgress: known };
+			return { ...s, maxProgress: await seasonMax(source, mediaId, s.seasonNumber) };
+		})
 	);
 
 	// The show's own consumption row carries total episodes watched.

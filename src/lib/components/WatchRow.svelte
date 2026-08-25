@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { WatchlistRow } from '$lib/types';
 	import Poster from './Poster.svelte';
+	import { preloadData } from '$app/navigation';
 	import type { MarkDirection } from '$lib/server/prefs';
 
 	type Props = {
@@ -81,6 +82,14 @@
 	function onpointerdown(e: PointerEvent) {
 		if (phase !== 'idle' || activePointer !== null) return;
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+		/* Start loading the show page the moment a finger lands, rather than when
+		   it lifts. The row is a div with its own gesture handling, so SvelteKit's
+		   link preloading never applied to it — this buys back the couple of
+		   hundred milliseconds between touch and tap. Harmless on a swipe: the
+		   data is simply cached and unused. */
+		if (row.mediaId) void preloadData(`/show/${row.source}/${row.mediaId}`).catch(() => {});
+
 		activePointer = e.pointerId;
 		startX = e.clientX;
 		startY = e.clientY;

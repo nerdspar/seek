@@ -61,12 +61,14 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	} catch (err) {
 		expire('watchlist:');
+		expire(`show:${source}:${mediaId}`);
 		if (err instanceof FloppyUnreachable) error(503, `Floppy unreachable after ${marked} of ${remaining}.`);
 		if (err instanceof FloppyError) error(502, `Stopped after ${marked} of ${remaining}: ${err.message}`);
 		throw err;
 	}
 
 	expire('watchlist:');
+	expire(`show:${source}:${mediaId}`);
 	return json({ ok: true, marked });
 };
 
@@ -79,12 +81,14 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	try {
 		await floppy(`${base(source, mediaId, season)}/`, { method: 'DELETE', timeoutMs: 30_000 });
 		expire('watchlist:');
+		expire(`show:${source}:${mediaId}`);
 		return json({ ok: true });
 	} catch (err) {
 		// An untracked season has nothing to clear, which is the desired end state
 		// anyway — treat it as success rather than surfacing an error.
 		if (err instanceof FloppyError && err.status === 404) {
 			expire('watchlist:');
+			expire(`show:${source}:${mediaId}`);
 			return json({ ok: true, alreadyClear: true });
 		}
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was cleared.');

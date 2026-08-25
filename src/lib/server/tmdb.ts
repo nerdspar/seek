@@ -132,6 +132,15 @@ export type ShowExtras = {
 	/** US subscription services it streams on now. */
 	services: { name: string; logo: string | null }[];
 	similar: TmdbResult[];
+	/**
+	 * Episode count per season number.
+	 *
+	 * This is the same data Floppy exposes as `max_progress` on each season, but
+	 * getting it from Floppy costs one request per season — measured at 869ms for
+	 * an eight-season show, which was most of the show page's load time. TMDB
+	 * returns all of them inside the call this function already makes.
+	 */
+	seasonEpisodes: Record<number, number>;
 };
 
 const extrasCache = new TTLCache<ShowExtras>(24 * 60 * 60 * 1000, 500);
@@ -145,7 +154,7 @@ const extrasCache = new TTLCache<ShowExtras>(24 * 60 * 60 * 1000, 500);
  * more honest than stitching those together.
  */
 export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
-	const empty: ShowExtras = { networks: [], services: [], similar: [] };
+	const empty: ShowExtras = { networks: [], services: [], similar: [], seasonEpisodes: {} };
 	if (!TMDB_API_KEY()) return empty;
 
 	const hit = extrasCache.get(mediaId);
@@ -157,6 +166,7 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 	try {
 		const data = await tmdb<{
 			networks?: { name: string; logo_path: string | null }[];
+			seasons?: { season_number: number; episode_count: number }[];
 			recommendations?: { results?: Row[] };
 			'watch/providers'?: { results?: Record<string, { flatrate?: Provider[] }> };
 		}>(`/tv/${encodeURIComponent(mediaId)}`, {
@@ -178,6 +188,11 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 				logo: n.logo_path ? `https://image.tmdb.org/t/p/w92${n.logo_path}` : null
 			})),
 			services,
+			seasonEpisodes: Object.fromEntries(
+				(data.seasons ?? [])
+					.filter((s) => typeof s.season_number === 'number' && typeof s.episode_count === 'number')
+					.map((s) => [s.season_number, s.episode_count])
+			),
 			similar: (data.recommendations?.results ?? []).slice(0, 12).map((r) => ({
 				mediaId: String(r.id),
 				source: 'tmdb' as const,

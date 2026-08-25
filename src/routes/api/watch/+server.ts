@@ -63,10 +63,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Still mark it stale so a background refresh reconciles anything the
 		// patch could not know about, like a show dropping out of the filter.
 		expire('watchlist:');
+		// The show page shows season progress, which this just changed.
+		expire(`show:${source}:${mediaId}`);
 
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
+		expire(`show:${source}:${mediaId}`);
 		return json({ ok: true, row: null, stale: true });
 	}
 };
@@ -111,6 +114,7 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
+		expire(`show:${source}:${mediaId}`);
 		return json({ ok: true, row: null, stale: true });
 	}
 };

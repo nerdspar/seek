@@ -140,20 +140,18 @@
 				{#if show.score}<span class="chip">★ {show.score.toFixed(1)}</span>{/if}
 				{#if show.runtime}<span class="chip">{formatRuntime(show.runtime)}</span>{/if}
 			</p>
-			{#await data.extras then extras}
-				{#if extras.services.length || extras.networks.length}
+			{#if data.extras.services.length || data.extras.networks.length}
 					<!-- What it streams on now, falling back to the broadcast network
 					     for older shows that are not on a service. -->
 					<p class="where">
-						{#each (extras.services.length ? extras.services : extras.networks).slice(0, 3) as w (w.name)}
+						{#each (data.extras.services.length ? data.extras.services : data.extras.networks).slice(0, 3) as w (w.name)}
 							<span class="badge">
 								{#if w.logo}<img src={w.logo} alt="" />{/if}
 								{w.name}
 							</span>
 						{/each}
 					</p>
-				{/if}
-			{/await}
+			{/if}
 
 			{#if show.genres.length}
 				<p class="genres">{show.genres.join(' · ')}</p>
@@ -247,12 +245,11 @@
 		</section>
 	{/if}
 
-	{#await data.extras then extras}
-		{#if extras.similar.length}
+	{#if data.extras.similar.length}
 			<section>
 				<h2>Shows like this</h2>
 				<ul class="rail">
-					{#each extras.similar as rec (rec.mediaId)}
+					{#each data.extras.similar as rec (rec.mediaId)}
 						<li>
 							<button onclick={() => goto(`/show/tmdb/${rec.mediaId}`)}>
 								<Poster src={rec.poster} width={104} height={156} radius={9} />
@@ -263,8 +260,7 @@
 					{/each}
 				</ul>
 			</section>
-		{/if}
-	{/await}
+	{/if}
 
 	{#if show.studios.length}
 		<p class="studios">{show.studios.join(' · ')}</p>

@@ -9,18 +9,23 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	try {
+		/* TMDB first, because it carries the per-season episode counts. Fetching
+		   those from Floppy costs one request per season — 869ms for an
+		   eight-season show, most of this page's load time — while TMDB returns
+		   them inside a call already being made for networks and recommendations.
+		   Cached for a day, so it is a one-off per show. */
+		const extras = await memo(`extras:${params.id}`, 24 * 60 * 60 * 1000, () =>
+			getShowExtras(params.id)
+		);
+
 		const [show, prefs, tags] = await Promise.all([
-			getShow(params.source, params.id),
+			// Cached so revisiting a show is instant; marking expires it.
+			memo(`show:${params.source}:${params.id}`, 5 * 60 * 1000, () =>
+				getShow(params.source, params.id, extras.seasonEpisodes)
+			),
 			getPrefs(),
 			getItemTags('tv', params.source, params.id)
 		]);
-
-		/* Networks, streaming services and similar shows come from TMDB — Floppy
-		   has none of them at show level. Streamed rather than awaited so the page
-		   paints immediately and the extras fill in. */
-		const extras = memo(`extras:${params.id}`, 24 * 60 * 60 * 1000, () =>
-			getShowExtras(params.id)
-		);
 
 		return { show, extras, seasonArtwork: prefs.seasonArtwork, joint: tags.includes(JOINT_TAG) };
 	} catch (err) {
