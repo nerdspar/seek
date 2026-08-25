@@ -97,6 +97,11 @@
 					</section>
 				{/if}
 
+				<section class="streaks">
+					<div><span class="n tnum">{stats.currentStreak}</span><span class="l">Current streak</span></div>
+					<div><span class="n tnum">{stats.longestStreak}</span><span class="l">Longest streak</span></div>
+				</section>
+
 				<section class="collection">
 				<h2>Collection</h2>
 				<ul class="links">
@@ -128,12 +133,7 @@
 				</ul>
 			</section>
 
-			<section class="streaks">
-					<div><span class="n tnum">{stats.currentStreak}</span><span class="l">Current streak</span></div>
-					<div><span class="n tnum">{stats.longestStreak}</span><span class="l">Longest streak</span></div>
-				</section>
-
-				{#if stats.topTitles.length}
+			{#if stats.topTitles.length}
 					<section>
 						<h2>Most watched</h2>
 						<ul class="rail">
