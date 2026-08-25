@@ -2,7 +2,6 @@ import { getStats, type RangeKey, type Stats } from '$lib/server/stats';
 import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
 import { FLOPPY_PUBLIC_URL } from '$lib/server/env';
-import { knownServices } from '$lib/server/watchlist';
 import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
 import type { PageServerLoad } from './$types';
 
@@ -45,7 +44,6 @@ export const load: PageServerLoad = async ({ url }) => {
 		stats,
 		counts,
 		prefs: await getPrefs(),
-		allServices: await memo('services:all', 6 * 60 * 60 * 1000, knownServices),
 		defaultPresets: DEFAULT_PRESET_LABELS(),
 		floppyUrl: publicUrl ? `${publicUrl}/settings/` : null
 	};

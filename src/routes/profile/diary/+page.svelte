@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -16,40 +17,56 @@
 	   day, and days are contiguous and newest-first, so the distance in days from
 	   the newest entry gives the offset directly — no scanning. */
 	let jumpTo = $state('');
-	const newestDate = $derived(data.days[0]?.date ?? '');
 
-	function jump() {
+	/**
+	 * Jump to roughly a date. The API pages by *days with activity* rather than
+	 * calendar days, so the distance from the newest entry lands near the target
+	 * rather than exactly on it — close enough to browse from.
+	 */
+	function jump(newestDate: string, totalDays: number) {
 		if (!jumpTo || !newestDate) return;
-		// Only days with activity are counted, so this lands near rather than
-		// exactly on the target; the page then shows the surrounding days.
 		const target = new Date(jumpTo).getTime();
 		const newest = new Date(newestDate).getTime();
 		if (Number.isNaN(target) || Number.isNaN(newest)) return;
 		const daysBack = Math.max(0, Math.round((newest - target) / 86_400_000));
-		go(Math.max(0, Math.min(daysBack, Math.max(0, data.total - data.pageSize))));
+		go(Math.max(0, Math.min(daysBack, Math.max(0, totalDays - data.pageSize))));
 	}
 </script>
 
-<PageHeader
-	title="Diary"
-	subtitle={data.total ? `${data.offset + 1}–${Math.min(data.offset + data.pageSize, data.total)} of ${data.total} days` : null}
-	onback={() => history.back()}
-/>
+{#await data.result then r}
+	<PageHeader
+		title="Diary"
+		subtitle={r.total ? `${data.offset + 1}–${Math.min(data.offset + data.pageSize, r.total)} of ${r.total} days` : null}
+		onback={() => history.back()}
+	/>
+{:catch}
+	<PageHeader title="Diary" onback={() => history.back()} />
+{/await}
 
 <main>
-	<div class="jump">
-		<input type="date" bind:value={jumpTo} max={newestDate} aria-label="Jump to date" />
-		<button onclick={jump} disabled={!jumpTo}>Go</button>
-		{#if data.offset > 0}
-			<button class="latest" onclick={() => go(0)}>Latest</button>
-		{/if}
-	</div>
-	{#if data.error}
-		<div class="empty"><h2>Can't load history</h2><p>{data.error}</p></div>
-	{:else if !data.days.length}
-		<div class="empty"><h2>Nothing logged yet</h2></div>
-	{:else}
-		{#each data.days as day (day.date)}
+	{#await data.result}
+		<div class="skdays">
+			{#each Array(3) as _, g (g)}
+				<Skeleton width="42%" height="13px" />
+				{#each Array(4) as _, i (i)}
+					<Skeleton height="60px" radius={12} />
+				{/each}
+			{/each}
+		</div>
+	{:then r}
+		{@const newestDate = r.days[0]?.date ?? ''}
+		<div class="jump">
+			<input type="date" bind:value={jumpTo} max={newestDate} aria-label="Jump to date" />
+			<button onclick={() => jump(newestDate, r.total)} disabled={!jumpTo}>Go</button>
+			{#if data.offset > 0}
+				<button class="latest" onclick={() => go(0)}>Latest</button>
+			{/if}
+		</div>
+
+		{#if !r.days.length}
+			<div class="empty"><h2>Nothing logged yet</h2></div>
+		{:else}
+		{#each r.days as day (day.date)}
 			<section>
 				<h2>
 					<span>{day.label}</span>
@@ -80,11 +97,14 @@
 			<button disabled={data.offset === 0} onclick={() => go(Math.max(0, data.offset - data.pageSize))}>
 				← Newer
 			</button>
-			<button disabled={!data.hasMore} onclick={() => go(data.offset + data.pageSize)}>
+			<button disabled={!r.hasMore} onclick={() => go(data.offset + data.pageSize)}>
 				Older →
 			</button>
 		</div>
-	{/if}
+		{/if}
+	{:catch err}
+		<div class="empty"><h2>Can't load history</h2><p>{err.message}</p></div>
+	{/await}
 </main>
 
 <style>
@@ -112,6 +132,7 @@
 	.empty { margin-top: 22vh; text-align: center; }
 	.empty h2 { margin: 0 0 8px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); }
 	.empty p { margin: 0; font-size: 14px; color: var(--text-dim); }
+	.skdays { display: flex; flex-direction: column; gap: 6px; }
 	.jump { display: flex; gap: 8px; margin-bottom: 14px; }
 	.jump input {
 		flex: 1; min-width: 0; height: 38px; padding: 0 12px;

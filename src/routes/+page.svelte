@@ -7,6 +7,7 @@
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import FilterSheet, { type Filters } from '$lib/components/FilterSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import type { MediaType, WatchlistRow } from '$lib/types';
@@ -30,8 +31,12 @@
 	   the server's order", which is the case on every fresh load. */
 	let order = $state<string[] | null>(null);
 
+	/** Rows from the resolved page, with local edits and ordering applied. */
+	let serverRows = $state<WatchlistRow[]>([]);
+	let total = $state(0);
+
 	const rows = $derived.by(() => {
-		const mapped = data.rows.map((r) => overrides[key(r)] ?? r);
+		const mapped = serverRows.map((r) => overrides[key(r)] ?? r);
 		if (!order) return mapped;
 		const byKey = new Map(mapped.map((r) => [key(r), r]));
 		const sorted = order.map((k) => byKey.get(k)).filter((r): r is WatchlistRow => Boolean(r));
@@ -42,8 +47,24 @@
 
 	// A new server payload supersedes any local ordering.
 	$effect(() => {
-		data.rows;
-		order = null;
+		let cancelled = false;
+		data.page
+			.then((p) => {
+				if (cancelled) return;
+				serverRows = p.rows;
+				total = p.total;
+				order = null;
+				overrides = {};
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	let loadFailed = $state<string | null>(null);
+	$effect(() => {
+		data.page.catch((e) => (loadFailed = e instanceof Error ? e.message : String(e)));
 	});
 
 	/**
@@ -338,10 +359,17 @@
 	</header>
 
 	<main>
-		{#if data.error}
+		{#await data.page}
+			<ul class="rows">
+				{#each Array(6) as _, i (i)}
+					<li><Skeleton height="122px" radius={16} /></li>
+				{/each}
+			</ul>
+		{:then _resolved}
+		{#if loadFailed}
 			<div class="empty">
 				<h2>Can't reach Floppy</h2>
-				<p>{data.error}</p>
+				<p>{loadFailed}</p>
 			</div>
 		{:else if rows.length === 0}
 			<div class="empty">
@@ -371,8 +399,11 @@
 					</li>
 				{/each}
 			</ul>
-			<p class="count-note tnum">{rows.length} of {data.total}</p>
+			<p class="count-note tnum">{rows.length} of {total}</p>
 		{/if}
+		{:catch err}
+			<div class="empty"><h2>Can't reach Floppy</h2><p>{err.message}</p></div>
+		{/await}
 	</main>
 
 	<button class="fab" onclick={() => goto('/search')} aria-label="Search">
@@ -386,7 +417,6 @@
 	{#if filterOpen}
 		<FilterSheet
 			filters={data.filters}
-			allServices={data.allServices}
 			subscribed={data.subscribed}
 			onchange={applyFilters}
 			onclose={() => (filterOpen = false)}

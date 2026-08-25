@@ -3,6 +3,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Poster from '$lib/components/Poster.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -39,11 +40,15 @@
 		max && max > 0 ? Math.min(100, (p / max) * 100) : 0;
 </script>
 
-<PageHeader
-	title={TITLES[data.mediaType] ?? 'Library'}
-	subtitle={`${data.total} ${data.total === 1 ? 'title' : 'titles'} · ${data.viewLabel}`}
-	onback={() => history.back()}
-/>
+{#await data.page then page}
+	<PageHeader
+		title={TITLES[data.mediaType] ?? 'Library'}
+		subtitle={`${page.total} ${page.total === 1 ? 'title' : 'titles'} · ${data.viewLabel}`}
+		onback={() => history.back()}
+	/>
+{:catch}
+	<PageHeader title={TITLES[data.mediaType] ?? 'Library'} onback={() => history.back()} />
+{/await}
 
 <main>
 	<div class="controls">
@@ -73,13 +78,18 @@
 		/>
 	{/if}
 
-	{#if data.error}
-		<div class="empty"><h2>Can't load your library</h2><p>{data.error}</p></div>
-	{:else if !data.rows.length}
-		<div class="empty"><h2>Nothing here</h2><p>No titles with that status.</p></div>
-	{:else}
+	{#await data.page}
 		<ul class="grid">
-			{#each data.rows as row (row.source + row.mediaId)}
+			{#each Array(12) as _, i (i)}
+				<li><Skeleton height="156px" radius={9} /><Skeleton height="12px" /></li>
+			{/each}
+		</ul>
+	{:then page}
+		{#if !page.rows.length}
+			<div class="empty"><h2>Nothing here</h2><p>No titles with that status.</p></div>
+		{:else}
+		<ul class="grid">
+			{#each page.rows as row (row.source + row.mediaId)}
 				<li>
 					<button onclick={() => goto(`/show/${row.source}/${row.mediaId}`)}>
 						<Poster src={row.poster} width={104} height={156} radius={9} />
@@ -92,7 +102,10 @@
 				</li>
 			{/each}
 		</ul>
-	{/if}
+		{/if}
+	{:catch err}
+		<div class="empty"><h2>Can't load your library</h2><p>{err.message}</p></div>
+	{/await}
 </main>
 
 <style>
@@ -118,6 +131,7 @@
 		gap: 18px 12px; margin: 0; padding: 0; list-style: none;
 	}
 	.grid button { width: 100%; text-align: left; }
+	.grid li :global(.sk + .sk) { margin-top: 7px; }
 	.cap {
 		display: -webkit-box; margin-top: 7px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
 		overflow: hidden; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;

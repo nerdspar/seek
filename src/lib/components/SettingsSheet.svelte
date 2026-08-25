@@ -6,22 +6,24 @@
 	 *  API rather than localStorage — the same values drive the server render. */
 	type Props = {
 		prefs: Prefs;
-		/** Services seen across the library, for the subscription picker (§6.3). */
-		allServices?: string[];
 		/** The built-in mood chips, used when the user has not customised them. */
 		defaultPresets?: string[];
 		floppyUrl?: string | null;
 		onsaved: (p: Prefs) => void;
 		onclose: () => void;
 	};
-	let {
-		prefs,
-		allServices = [],
-		defaultPresets = [],
-		floppyUrl = null,
-		onsaved,
-		onclose
-	}: Props = $props();
+	let { prefs, defaultPresets = [], floppyUrl = null, onsaved, onclose }: Props = $props();
+
+	/* Fetched here rather than in the page load: building this list pages the
+	   whole library, and awaiting it on Profile blocked that page for 11s on a
+	   cold cache for data only this sheet reads. */
+	let allServices = $state<string[]>([]);
+	$effect(() => {
+		fetch('/api/services')
+			.then((r) => (r.ok ? r.json() : { services: [] }))
+			.then((b) => (allServices = b.services ?? []))
+			.catch(() => {});
+	});
 
 	/* Optimistic edit layered over the prop, so a save that fails simply reverts
 	   by clearing it. */

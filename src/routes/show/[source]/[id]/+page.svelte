@@ -29,6 +29,30 @@
 	const complete = (s: SeasonSummary) =>
 		s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress;
 
+	/**
+	 * What to badge a show with.
+	 *
+	 * While a show is still running, the network is how you think of it — Below
+	 * Deck Mediterranean is on Bravo, not on "fuboTV, Peacock, YouTube TV", which
+	 * are just bundles that happen to carry Bravo. Once it has ended the network
+	 * stops being actionable and where it streams is the useful answer: Buffy is
+	 * on Hulu, and that it once aired on The WB does not help you watch it.
+	 */
+	function whereToWatch(
+		show: ShowDetail,
+		extras: { networks: { name: string; logo: string | null }[]; services: { name: string; logo: string | null }[] }
+	) {
+		const finished = show.status === 'Ended' || show.status === 'Canceled';
+		const preferred = finished
+			? extras.services.length
+				? extras.services
+				: extras.networks
+			: extras.networks.length
+				? extras.networks
+				: extras.services;
+		return preferred.slice(0, 3);
+	}
+
 	function yearLabel(show: ShowDetail): string {
 		const years = [
 			year(show.firstAirDate),
@@ -162,11 +186,10 @@
 				</p>
 
 				{#await data.extras then extras}
-					{#if extras.services.length || extras.networks.length}
-						<!-- Where it streams now, falling back to the broadcast network
-						     for older shows that are on no service. -->
+					{@const where = whereToWatch(show, extras)}
+					{#if where.length}
 						<p class="where">
-							{#each (extras.services.length ? extras.services : extras.networks).slice(0, 3) as w (w.name)}
+							{#each where as w (w.name)}
 								<span class="badge">
 									{#if w.logo}<img src={w.logo} alt="" />{/if}
 									{w.name}

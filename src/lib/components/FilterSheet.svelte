@@ -6,14 +6,23 @@
 
 	type Props = {
 		filters: Filters;
-		/** Every service seen in the library, commonest first. */
-		allServices: string[];
 		/** Services the household subscribes to (§8); offered first when set. */
 		subscribed: string[];
 		onchange: (f: Filters) => void;
 		onclose: () => void;
 	};
-	let { filters, allServices, subscribed, onchange, onclose }: Props = $props();
+	let { filters, subscribed, onchange, onclose }: Props = $props();
+
+	/* Fetched here rather than in the page load: building this list pages the
+	   whole library, and awaiting it on the watchlist — the launch screen —
+	   blocked first paint for 14s on a cold cache. */
+	let allServices = $state<string[]>([]);
+	$effect(() => {
+		fetch('/api/services')
+			.then((r) => (r.ok ? r.json() : { services: [] }))
+			.then((b) => (allServices = b.services ?? []))
+			.catch(() => {});
+	});
 
 	const STATUSES = [
 		{ id: 'in_progress', label: 'In progress' },

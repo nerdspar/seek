@@ -11,17 +11,10 @@ export const load: PageServerLoad = async ({ url }) => {
 	   cheap. */
 	const offset = Math.max(0, Number(url.searchParams.get('offset') ?? 0) || 0);
 
-	try {
-		const result = await memo(`diary:${offset}`, 5 * 60 * 1000, () => getDiary(offset, PAGE));
-		return { ...result, offset, pageSize: PAGE, error: null };
-	} catch (err) {
-		return {
-			days: [],
-			hasMore: false,
-			total: 0,
-			offset,
-			pageSize: PAGE,
-			error: err instanceof Error ? err.message : String(err)
-		};
-	}
+	// Streamed: only offset 0 is ever warm, so paging back would otherwise block.
+	return {
+		offset,
+		pageSize: PAGE,
+		result: memo(`diary:${offset}`, 5 * 60 * 1000, () => getDiary(offset, PAGE))
+	};
 };

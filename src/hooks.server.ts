@@ -1,7 +1,7 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { COOKIE, gateEnabled, verify } from '$lib/server/session';
 import { warmCaches } from '$lib/server/upcoming';
-import { getWatchlist } from '$lib/server/watchlist';
+import { getWatchlist, knownServices } from '$lib/server/watchlist';
 import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import { getStats } from '$lib/server/stats';
 import { getDiscoverRows } from '$lib/server/discover';
@@ -36,6 +36,7 @@ void (async () => {
 	await step('discover', () =>
 		memo('discover:tv', 30 * 60 * 1000, () => getDiscoverRows('tv'))
 	);
+	await step('services', () => memo('services:all', 6 * 60 * 60 * 1000, knownServices));
 	// Collection views are the slowest cold path — two 200-row pages each.
 	for (const mediaType of ['tv', 'movie'] as const) {
 		await step(`library:${mediaType}`, () =>

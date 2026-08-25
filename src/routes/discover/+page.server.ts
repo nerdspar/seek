@@ -15,23 +15,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	const prefs = await getPrefs();
 	const presets = prefs.moodPresets ?? DEFAULT_PRESET_LABELS();
 
-	try {
-		return {
-			mediaType,
-			presets,
-			// Floppy builds these rows on its own schedule and they change slowly,
-			// so a stale read is fine and a blocking rebuild is not.
-			rows: await memo(`discover:${mediaType}`, 30 * 60 * 1000, () => getDiscoverRows(mediaType)),
-			moodAvailable: tmdbConfigured(),
-			error: null
-		};
-	} catch (err) {
-		return {
-			mediaType,
-			presets,
-			rows: [],
-			moodAvailable: tmdbConfigured(),
-			error: err instanceof Error ? err.message : String(err)
-		};
-	}
+	return {
+		mediaType,
+		presets,
+		moodAvailable: tmdbConfigured(),
+		/* Streamed. Floppy builds these rows on its own schedule and they change
+		   slowly, so a stale read is fine and a blocking rebuild is not — and the
+		   movie side is not warmed at all. */
+		rows: memo(`discover:${mediaType}`, 30 * 60 * 1000, () => getDiscoverRows(mediaType))
+	};
 };

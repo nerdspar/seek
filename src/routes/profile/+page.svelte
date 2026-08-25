@@ -182,7 +182,6 @@
 	{#if settingsOpen}
 		<SettingsSheet
 			{prefs}
-			allServices={data.allServices}
 			defaultPresets={data.defaultPresets}
 			floppyUrl={data.floppyUrl}
 			onsaved={(p) => (saved = p)}

@@ -2,9 +2,7 @@ import { getUpcoming } from '$lib/server/upcoming';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
-	try {
-		return { items: await getUpcoming(), error: null };
-	} catch (err) {
-		return { items: [], error: err instanceof Error ? err.message : String(err) };
-	}
+	/* Streamed. The cold path builds a library index — ~13s — and while the boot
+	   warmup covers it, a cold container should still paint the tab instantly. */
+	return { items: getUpcoming() };
 };

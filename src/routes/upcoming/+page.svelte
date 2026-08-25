@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { dayKey, dayLabel, epLabel, formatAirDate, relativeWhen } from '$lib/format';
 	import type { UpcomingItem } from '$lib/types';
 	import type { PageData } from './$types';
@@ -13,33 +14,37 @@
 
 	type Group = { key: string; label: string; iso: string; items: UpcomingItem[] };
 
-	const groups = $derived(
-		data.items.reduce<Group[]>((acc, item) => {
+	const groupBy = (items: UpcomingItem[]) =>
+		items.reduce<Group[]>((acc, item) => {
 			const key = dayKey(item.start);
 			const last = acc[acc.length - 1];
 			if (last?.key === key) last.items.push(item);
 			else acc.push({ key, label: dayLabel(item.start, now), iso: item.start, items: [item] });
 			return acc;
-		}, [])
-	);
+		}, []);
 </script>
 
 <div class="app">
 	<header><h1>Upcoming</h1></header>
 
 	<main>
-		{#if data.error}
-			<div class="empty">
-				<h2>Can't load the calendar</h2>
-				<p>{data.error}</p>
+		{#await data.items}
+			<div class="skdays">
+				{#each Array(3) as _, g (g)}
+					<Skeleton width="38%" height="13px" />
+					{#each Array(3) as _, i (i)}
+						<Skeleton height="81px" radius={10} />
+					{/each}
+				{/each}
 			</div>
-		{:else if !data.items.length}
-			<div class="empty">
-				<h2>Nothing scheduled</h2>
-				<p>No upcoming episodes for anything you're tracking.</p>
-			</div>
-		{:else}
-			{#each groups as group (group.key)}
+		{:then items}
+			{#if !items.length}
+				<div class="empty">
+					<h2>Nothing scheduled</h2>
+					<p>No upcoming episodes for anything you're tracking.</p>
+				</div>
+			{:else}
+			{#each groupBy(items) as group (group.key)}
 				<section>
 					<div class="day">
 						<span class="label">{group.label}</span>
@@ -79,8 +84,14 @@
 					</ul>
 				</section>
 			{/each}
-			<p class="count tnum">{data.items.length} upcoming</p>
-		{/if}
+			<p class="count tnum">{items.length} upcoming</p>
+			{/if}
+		{:catch err}
+			<div class="empty">
+				<h2>Can't load the calendar</h2>
+				<p>{err.message}</p>
+			</div>
+		{/await}
 	</main>
 
 	<TabBar current="upcoming" />
@@ -103,6 +114,8 @@
 	main {
 		padding: 4px var(--gutter) calc(var(--tabbar-h) + var(--safe-b) + 32px);
 	}
+
+	.skdays { display: flex; flex-direction: column; gap: 8px; }
 
 	.day {
 		display: flex;

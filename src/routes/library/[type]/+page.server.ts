@@ -36,38 +36,26 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	const sortKey = url.searchParams.get('sort') ?? 'alphabetical';
 	const sortDef = SORTS[sortKey] ?? SORTS.alphabetical;
 
-	try {
-		const page = await memo(`library:${mediaType}:${viewKey}:${sortKey}`, 60 * 1000, () =>
-			getWatchlist(mediaType, {
-				statuses: view.statuses,
-				sort: sortDef.sort,
-				direction: sortDef.direction,
-				// The grid shows poster, title and progress only — no next-up — so
-				// paging the whole library is cheap without per-row enrichment.
-				all: true,
-				enrich: false
-			})
-		);
-		return {
-			mediaType,
-			viewKey,
-			viewLabel: view.label,
-			sortKey,
-			sortOptions: Object.entries(SORTS).map(([key, v]) => ({ key, label: v.label })),
-			...page,
-			error: null
-		};
-	} catch (err) {
-		return {
-			mediaType,
-			viewKey,
-			viewLabel: view.label,
-			sortKey,
-			sortOptions: Object.entries(SORTS).map(([key, v]) => ({ key, label: v.label })),
-			rows: [],
-			total: 0,
-			hasMore: false,
-			error: err instanceof Error ? err.message : String(err)
-		};
-	}
+	/* Streamed: only the 'all' view of each type is warmed, so any other
+	   view/sort combination would otherwise block on a cold build. */
+	const page = memo(`library:${mediaType}:${viewKey}:${sortKey}`, 60 * 1000, () =>
+		getWatchlist(mediaType, {
+			statuses: view.statuses,
+			sort: sortDef.sort,
+			direction: sortDef.direction,
+			// The grid shows poster, title and progress only — no next-up — so
+			// paging the whole library is cheap without per-row enrichment.
+			all: true,
+			enrich: false
+		})
+	);
+
+	return {
+		mediaType,
+		viewKey,
+		viewLabel: view.label,
+		sortKey,
+		sortOptions: Object.entries(SORTS).map(([key, v]) => ({ key, label: v.label })),
+		page
+	};
 };

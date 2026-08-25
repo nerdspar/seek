@@ -134,6 +134,24 @@ export const MOOD_PRESETS: { label: string; keywords: number[] }[] = [
 	{ label: 'Competition', keywords: [7312, 18035] }
 ];
 
+/**
+ * Live-TV bundles carry hundreds of channels, so listing them as "where to
+ * watch" is noise: fuboTV is the answer for almost everything currently airing,
+ * which makes it the answer for nothing.
+ */
+const LIVE_TV_CARRIERS = new Set([
+	'fuboTV',
+	'YouTube TV',
+	'Hulu Live TV',
+	'Sling TV',
+	'DirecTV',
+	'DIRECTV',
+	'Philo',
+	'Spectrum On Demand',
+	'Xfinity',
+	'Fubo TV'
+]);
+
 export type ShowExtras = {
 	/** Broadcast networks (The WB, AMC) — what a show "airs on". */
 	networks: { name: string; logo: string | null }[];
@@ -185,7 +203,7 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 		const services: { name: string; logo: string | null }[] = [];
 		for (const p of data['watch/providers']?.results?.US?.flatrate ?? []) {
 			const name = normaliseServiceName(p.provider_name);
-			if (seen.has(name)) continue;
+			if (seen.has(name) || LIVE_TV_CARRIERS.has(name)) continue;
 			seen.add(name);
 			services.push({ name, logo: p.logo_path ? `https://image.tmdb.org/t/p/w92${p.logo_path}` : null });
 		}

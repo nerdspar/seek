@@ -3,6 +3,7 @@
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import AddButton from '$lib/components/AddButton.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import type { TmdbResult } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -122,12 +123,23 @@
 					{/each}
 				</ul>
 			{/if}
-		{:else if data.error}
-			<div class="empty"><h2>Can't load Discover</h2><p>{data.error}</p></div>
-		{:else if !data.rows.length}
-			<div class="empty"><h2>Nothing to suggest yet</h2><p>Floppy builds these rows from your history.</p></div>
 		{:else}
-			{#each data.rows as row (row.key)}
+			{#await data.rows}
+				{#each Array(3) as _, g (g)}
+					<section class="shelf">
+						<div class="skhead"><Skeleton width="46%" height="16px" /><Skeleton width="66%" height="12px" /></div>
+						<ul class="rail">
+							{#each Array(4) as _, i (i)}
+								<li><Skeleton height="165px" radius={10} /><Skeleton height="12px" /></li>
+							{/each}
+						</ul>
+					</section>
+				{/each}
+			{:then rows}
+				{#if !rows.length}
+					<div class="empty"><h2>Nothing to suggest yet</h2><p>Floppy builds these rows from your history.</p></div>
+				{:else}
+				{#each rows as row (row.key)}
 				<section class="shelf">
 					<h2>{row.title}</h2>
 					{#if row.why}<p class="why">{row.why}</p>{/if}
@@ -145,7 +157,11 @@
 						{/each}
 					</ul>
 				</section>
-			{/each}
+				{/each}
+				{/if}
+			{:catch err}
+				<div class="empty"><h2>Can't load Discover</h2><p>{err.message}</p></div>
+			{/await}
 		{/if}
 	</main>
 
@@ -198,6 +214,8 @@
 	.clear { font-size: 13px; font-weight: 600; color: var(--signal-solid); }
 
 	.shelf { margin-bottom: 26px; }
+	.skhead { display: flex; flex-direction: column; gap: 6px; padding: 0 var(--gutter); }
+	.rail li :global(.sk + .sk) { margin-top: 7px; }
 	.shelf h2 { margin: 0 var(--gutter) 2px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
 	.why { margin: 0 var(--gutter) 2px; font-size: 12.5px; color: var(--text-dim); }
 	.signal { margin: 0 var(--gutter) 8px; font-size: 11.5px; color: var(--signal-solid); opacity: 0.85; }
