@@ -245,8 +245,14 @@ Seek does not depend on it.
 
 #### Tunnel setup
 
-Add `cloudflared` to this same compose file so it shares the stack's network and
-can reach Seek by container name. Nothing about Seek's own config changes.
+Add `cloudflared` to this same compose file. Nothing about Seek's own config
+changes.
+
+The `networks:` key is not optional. Compose puts a service on the default
+network *only* while it names no networks of its own — and `seek` names
+`floppy-net`, so it is not on the default one. Omit this and `cloudflared` lands
+somewhere `seek` isn't, the hostname fails to resolve, and the Cloudflare
+dashboard shows the Host leg in error while the tunnel itself looks healthy.
 
 ```yaml
   cloudflared:
@@ -257,6 +263,15 @@ can reach Seek by container name. Nothing about Seek's own config changes.
     environment:
       # Zero Trust → Networks → Tunnels → Create a tunnel → Docker → copy the token.
       TUNNEL_TOKEN: "PASTE_TUNNEL_TOKEN_HERE" # ⬅ TUNNEL_TOKEN
+    networks:
+      - floppy-net # must match seek's, or it cannot resolve `seek`
+```
+
+Confirm they landed together before debugging anything else:
+
+```bash
+docker inspect -f '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}} {{end}}' seek seek-tunnel
+docker exec seek-tunnel sh -c 'wget -qO- http://seek:8100/api/health'   # {"ok":true}
 ```
 
 In the Zero Trust dashboard, give the tunnel one public hostname:
