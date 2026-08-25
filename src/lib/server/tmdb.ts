@@ -31,6 +31,18 @@ const img = (p: string | null) => (p ? `https://image.tmdb.org/t/p/w500${p}` : n
 const yearOf = (d?: string) => (d && d.length >= 4 ? Number(d.slice(0, 4)) : null);
 
 /** Free text → keyword ids. Chips bypass this by carrying their id already. */
+/**
+ * Drop repeated titles from a result list.
+ *
+ * The pages key their `{#each}` blocks on mediaId, and Svelte treats a duplicate
+ * key as fatal: it aborts the update and leaves the view stuck on its loading
+ * state permanently. Any list handed to the client goes through here.
+ */
+export function dedupe(items: TmdbResult[]): TmdbResult[] {
+	const seen = new Set<string>();
+	return items.filter((i) => !seen.has(i.mediaId) && seen.add(i.mediaId));
+}
+
 export async function keywordIds(query: string): Promise<number[]> {
 	const q = query.trim().toLowerCase();
 	if (!q) return [];
@@ -103,8 +115,9 @@ export async function discoverByKeyword(opts: MoodOptions): Promise<TmdbResult[]
 			rating: typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
 		})
 	);
-	discoverCache.set(cacheKey, results);
-	return results;
+	const unique = dedupe(results);
+	discoverCache.set(cacheKey, unique);
+	return unique;
 }
 
 /**
@@ -285,8 +298,9 @@ export async function discoverByProvider(
 				rating: typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
 			})
 		);
-		providerRowCache.set(key, results);
-		return results;
+		const unique = dedupe(results);
+		providerRowCache.set(key, unique);
+		return unique;
 	} catch {
 		return [];
 	}
@@ -359,15 +373,19 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 					.filter((s) => typeof s.season_number === 'number' && typeof s.episode_count === 'number')
 					.map((s) => [s.season_number, s.episode_count])
 			),
-			similar: (data.recommendations?.results ?? []).slice(0, 12).map((r) => ({
-				mediaId: String(r.id),
-				source: 'tmdb' as const,
-				mediaType: 'tv' as const,
-				title: r.name ?? 'Untitled',
-				poster: img(r.poster_path),
-				year: yearOf(r.first_air_date),
-				rating: typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
-			}))
+			// Deduplicate before trimming so a repeat does not cost one of the 12 slots.
+			similar: dedupe(
+				(data.recommendations?.results ?? []).map((r) => ({
+					mediaId: String(r.id),
+					source: 'tmdb' as const,
+					mediaType: 'tv' as const,
+					title: r.name ?? 'Untitled',
+					poster: img(r.poster_path),
+					year: yearOf(r.first_air_date),
+					rating:
+						typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
+				}))
+			).slice(0, 12)
 		};
 
 		extrasCache.set(mediaId, extras);

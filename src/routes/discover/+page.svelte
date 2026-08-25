@@ -47,13 +47,17 @@
 
 	const MODE_LABEL: Record<string, string> = { trending: 'Trending on', new: 'New on' };
 
+	type Section = { kind: string; title: string; why: string | null; items: TmdbResult[] };
+
 	let mood = $state<string | null>(null);
 	let freeText = $state('');
 	let moodResults = $state<TmdbResult[] | null>(null);
+	let sections = $state<Section[] | null>(null);
 	let moodBusy = $state(false);
 
 	async function runMood(params: URLSearchParams) {
 		moodBusy = true;
+		sections = null;
 		try {
 			params.set('type', data.mediaType);
 			const res = await fetch(`/api/mood?${params}`);
@@ -62,6 +66,22 @@
 		} catch (err) {
 			note = err instanceof Error ? err.message : String(err);
 			moodResults = null;
+		} finally {
+			moodBusy = false;
+		}
+	}
+
+	/** The search box answers whatever the query happens to mean. */
+	async function runSearch(q: string) {
+		moodBusy = true;
+		moodResults = null;
+		sections = null;
+		try {
+			const res = await fetch(`/api/explore?q=${encodeURIComponent(q)}&type=${data.mediaType}`);
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			sections = (await res.json()).sections;
+		} catch (err) {
+			note = err instanceof Error ? err.message : String(err);
 		} finally {
 			moodBusy = false;
 		}
@@ -86,13 +106,14 @@
 		if (!q) return;
 		submitFreeTextClearsPlatform();
 		mood = null;
-		runMood(new URLSearchParams({ q }));
+		runSearch(q);
 	}
 
 	function clearMood() {
 		mood = null;
 		freeText = '';
 		moodResults = null;
+		sections = null;
 	}
 
 	function submitFreeTextClearsPlatform() {
@@ -120,7 +141,41 @@
 		</div>
 	</header>
 
+<!-- Every slow path shows the same breathing shelves rather than a line of text,
+     so a tap always produces something that reads as work in progress. -->
+{#snippet skeletonShelves(count: number)}
+	{#each Array(count) as _, g (g)}
+		<section class="shelf">
+			<div class="skhead"><Skeleton width="46%" height="16px" /><Skeleton width="66%" height="12px" /></div>
+			<ul class="rail">
+				{#each Array(4) as _, i (i)}
+					<li><Skeleton height="165px" radius={10} /><Skeleton height="12px" /></li>
+				{/each}
+			</ul>
+		</section>
+	{/each}
+{/snippet}
+
 	<main>
+		{#if data.moodAvailable}
+			<section class="mood">
+				<form onsubmit={submitFreeText}>
+					<input
+						bind:value={freeText}
+						type="search"
+						placeholder="Actor, title, genre, mood, service…"
+						autocapitalize="off"
+						enterkeyhint="search"
+					/>
+				</form>
+				<div class="chips">
+					{#each data.presets as preset (preset)}
+						<button class:on={mood === preset} onclick={() => pickPreset(preset)}>{preset}</button>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
 		{#await data.platforms then platforms}
 			{#if platforms.length}
 				<section class="platforms">
@@ -136,27 +191,8 @@
 			{/if}
 		{/await}
 
-		{#if data.moodAvailable}
-			<section class="mood">
-				<form onsubmit={submitFreeText}>
-					<input
-						bind:value={freeText}
-						type="search"
-						placeholder="A mood or theme — slow burn, heist, found family"
-						autocapitalize="off"
-						enterkeyhint="search"
-					/>
-				</form>
-				<div class="chips">
-					{#each data.presets as preset (preset)}
-						<button class:on={mood === preset} onclick={() => pickPreset(preset)}>{preset}</button>
-					{/each}
-				</div>
-			</section>
-		{/if}
-
 		{#if platformBusy}
-			<p class="msg">Looking at {platform?.name ?? 'that service'}…</p>
+			{@render skeletonShelves(2)}
 		{:else if platformRows}
 			<div class="moodhead">
 				<h2>{platform?.name}</h2>
@@ -183,7 +219,34 @@
 				<p class="msg">Nothing found on {platform?.name}.</p>
 			{/if}
 		{:else if moodBusy}
-			<p class="msg">Looking…</p>
+			{@render skeletonShelves(2)}
+		{:else if sections}
+			<div class="moodhead">
+				<h2>“{freeText.trim()}”</h2>
+				<button class="clear" onclick={clearMood}>Clear</button>
+			</div>
+			{#if !sections.length}
+				<p class="msg">Nothing matched that — try an actor, a title, a genre or a service.</p>
+			{:else}
+				{#each sections as section (section.kind + section.title)}
+					<section class="shelf">
+						<h2>{section.title}</h2>
+						{#if section.why}<p class="why">{section.why}</p>{/if}
+						<ul class="rail">
+							{#each section.items as item (item.mediaId)}
+								<li>
+									<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
+										<Poster src={item.poster} width={110} height={165} radius={10} />
+										<span class="add"><AddButton mediaType={item.mediaType} source={item.source} mediaId={item.mediaId} title={item.title} onerror={(m) => (note = m)} /></span>
+									</button>
+									<span class="cap">{item.title}</span>
+									<span class="sub tnum">{[item.year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join(' · ')}</span>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/each}
+			{/if}
 		{:else if moodResults}
 			<div class="moodhead">
 				<h2>{mood ?? `“${freeText.trim()}”`}</h2>
@@ -207,16 +270,7 @@
 			{/if}
 		{:else}
 			{#await data.rows}
-				{#each Array(3) as _, g (g)}
-					<section class="shelf">
-						<div class="skhead"><Skeleton width="46%" height="16px" /><Skeleton width="66%" height="12px" /></div>
-						<ul class="rail">
-							{#each Array(4) as _, i (i)}
-								<li><Skeleton height="165px" radius={10} /><Skeleton height="12px" /></li>
-							{/each}
-						</ul>
-					</section>
-				{/each}
+				{@render skeletonShelves(3)}
 			{:then rows}
 				{#if !rows.length}
 					<div class="empty"><h2>Nothing to suggest yet</h2><p>Floppy builds these rows from your history.</p></div>
