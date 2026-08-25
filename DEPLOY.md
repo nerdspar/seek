@@ -243,6 +243,67 @@ curl -s -X POST https://seek.nerdspar.com/login \
 Cloudflare's own rate limiting on `/login` is worth adding as a second layer, but
 Seek does not depend on it.
 
+#### Tunnel setup
+
+Add `cloudflared` to this same compose file so it shares the stack's network and
+can reach Seek by container name. Nothing about Seek's own config changes.
+
+```yaml
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: seek-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      # Zero Trust → Networks → Tunnels → Create a tunnel → Docker → copy the token.
+      TUNNEL_TOKEN: "PASTE_TUNNEL_TOKEN_HERE" # ⬅ TUNNEL_TOKEN
+```
+
+In the Zero Trust dashboard, give the tunnel one public hostname:
+
+| Field | Value |
+|---|---|
+| Subdomain / domain | `seek` / `nerdspar.com` |
+| Type | `HTTP` |
+| URL | `seek:8100` |
+
+`HTTP` is correct on that last row — the hop is container-to-container inside the
+NAS, and Cloudflare terminates TLS at the edge. Seek still sees `https` because
+`ORIGIN` says so, which is what sets the cookie's `Secure` flag.
+
+**Keep LAN traffic off the internet.** Creating the hostname replaces the DNS
+record with a proxied CNAME, so without this step every request from the couch
+would leave the house and come back. Add a local override on whatever resolves
+DNS for the LAN:
+
+```
+seek.nerdspar.com  →  10.0.1.14
+```
+
+That is also worth doing on its own account: publishing an A record for a private
+address tells anyone who asks how the inside of the network is laid out.
+
+**Then verify, in this order:**
+
+```bash
+# 1. From outside (phone on cellular): the tunnel is up and the gate holds.
+curl -s -o /dev/null -w '%{http_code}\n' https://seek.nerdspar.com/     # 303 → /login
+
+# 2. The address header survives the extra hop. A 500 here means cloudflared
+#    does not send what ADDRESS_HEADER names — adapter-node throws when the
+#    configured header is missing, which takes down every route, not just this
+#    one. Switch ADDRESS_HEADER to cf-connecting-ip if so.
+curl -s -w '\n%{http_code}\n' https://seek.nerdspar.com/api/health      # {"ok":true} 200
+
+# 3. From the LAN: still resolving locally, not via Cloudflare.
+dig +short seek.nerdspar.com                                            # 10.0.1.14
+```
+
+Remote clients may share one throttle bucket, because the forwarded-for chain is
+a hop longer through the tunnel than it is over the LAN and `XFF_DEPTH` can only
+match one of them. The throttle still works; it is just coarser for traffic from
+outside. LAN clients stay individually counted.
+
 ### Revoking access
 
 There is one shared secret and no per-device records, so a lost phone means
