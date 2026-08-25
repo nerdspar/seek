@@ -78,7 +78,7 @@ Fill in the three values marked ⬅ :
 
 | Setting | Where it comes from |
 |---|---|
-| `FLOPPY_URL` | `http://floppy:8000` if Floppy runs on this same Docker host — note 8000 is the *internal* port, not the published one (see below). Otherwise its LAN address, e.g. `http://10.0.1.14:8007` |
+| `FLOPPY_URL` | `http://floppy:8000` if Floppy runs on this same Docker host — note 8000 is the *internal* port, not the published one (see below). Otherwise its LAN address, e.g. `http://192.168.1.10:8007` |
 | `FLOPPY_TOKEN` | Floppy → Settings → Integrations → API Token |
 | `SEEK_SESSION_SECRET` | `openssl rand -hex 32` |
 
@@ -127,7 +127,7 @@ docker compose exec seek node -e \
 ```
 
 To skip all of this, comment out both `networks:` blocks and set `FLOPPY_URL`
-back to the LAN address (`http://10.0.1.14:8007`). It works fine; it just
+back to the LAN address (`http://192.168.1.10:8007`). It works fine; it just
 hairpins through the router.
 
 ## 4. Launch
@@ -209,14 +209,14 @@ a plain-HTTP deployment rejects its own login page.
 
 Reach Seek by the **same hostname inside and outside** the LAN and one value
 covers both — the alternative is an origin that is right for one path and wrong
-for the other. Seek is already served at `https://seek.nerdspar.com`, and that
+for the other. Seek is already served at `https://seek.example.com`, and that
 name resolves to the NAS on the internal network, so:
 
 ```yaml
-ORIGIN: "https://seek.nerdspar.com"
+ORIGIN: "https://seek.example.com"
 ```
 
-Then use that URL on the phone too, not `http://10.0.1.14:8100`.
+Then use that URL on the phone too, not `http://192.168.1.10:8100`.
 
 ### Exposing it beyond the LAN
 
@@ -234,9 +234,9 @@ have. In order:
 Verify after cutover — the cookie must come back marked `Secure`:
 
 ```bash
-curl -s -X POST https://seek.nerdspar.com/login \
+curl -s -X POST https://seek.example.com/login \
   -H 'content-type: application/x-www-form-urlencoded' \
-  -H 'Origin: https://seek.nerdspar.com' \
+  -H 'Origin: https://seek.example.com' \
   --data-urlencode 'passphrase=YOUR_PASSPHRASE' -D - -o /dev/null | grep -i set-cookie
 ```
 
@@ -278,7 +278,7 @@ In the Zero Trust dashboard, give the tunnel one public hostname:
 
 | Field | Value |
 |---|---|
-| Subdomain / domain | `seek` / `nerdspar.com` |
+| Subdomain / domain | `seek` / `example.com` |
 | Type | `HTTP` |
 | URL | `seek:8100` |
 
@@ -292,7 +292,7 @@ would leave the house and come back. Add a local override on whatever resolves
 DNS for the LAN:
 
 ```
-seek.nerdspar.com  →  10.0.1.14
+seek.example.com  →  192.168.1.10
 ```
 
 That is also worth doing on its own account: publishing an A record for a private
@@ -302,16 +302,16 @@ address tells anyone who asks how the inside of the network is laid out.
 
 ```bash
 # 1. From outside (phone on cellular): the tunnel is up and the gate holds.
-curl -s -o /dev/null -w '%{http_code}\n' https://seek.nerdspar.com/     # 303 → /login
+curl -s -o /dev/null -w '%{http_code}\n' https://seek.example.com/     # 303 → /login
 
 # 2. The address header survives the extra hop. A 500 here means cloudflared
 #    does not send what ADDRESS_HEADER names — adapter-node throws when the
 #    configured header is missing, which takes down every route, not just this
 #    one. Switch ADDRESS_HEADER to cf-connecting-ip if so.
-curl -s -w '\n%{http_code}\n' https://seek.nerdspar.com/api/health      # {"ok":true} 200
+curl -s -w '\n%{http_code}\n' https://seek.example.com/api/health      # {"ok":true} 200
 
 # 3. From the LAN: still resolving locally, not via Cloudflare.
-dig +short seek.nerdspar.com                                            # 10.0.1.14
+dig +short seek.example.com                                            # 192.168.1.10
 ```
 
 Remote clients may share one throttle bucket, because the forwarded-for chain is

@@ -1,216 +1,146 @@
 # Seek
 
-Self-hosted PWA front-ending [Floppy](https://github.com/dannyvfilms/Floppy) for fast
-episode marking. See [seek-spec.md](seek-spec.md) for the full specification.
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Container](https://img.shields.io/badge/ghcr.io-nerdspar%2Fseek-2496ed)](https://github.com/nerdspar/seek/pkgs/container/seek)
+[![Built with SvelteKit](https://img.shields.io/badge/SvelteKit-5-ff3e00)](https://svelte.dev/)
 
-**Status: build order §13 steps 1–3 complete.** Watchlist + swipe-to-mark + undo.
-Stop point is deliberate — the interaction gets a day of real use before anything
-else is built.
+A phone-first web app for [Floppy](https://github.com/dannyvfilms/Floppy), the self-hosted media tracker. Add it to your iPhone home screen and it behaves like a native app: one swipe to mark an episode watched, a calendar of what is coming, and discovery that actually knows what you have already seen.
 
-## Running it
+Floppy is an excellent tracker with a web UI built for a desktop. Seek is the thing you reach for on the sofa.
 
-```bash
-npm install
-cp .env.example .env   # fill in FLOPPY_TOKEN
-npm run dev            # http://<your-lan-ip>:8100
+> **Floppy stays the source of truth.** Seek stores nothing but your own display preferences. Every play, every status, every rating lives in Floppy exactly as it did before — point Seek at your instance and point it away again, and nothing has changed.
+
+## What it does
+
+- **Mark an episode in one swipe.** The row slides away, the next episode slides back in its place, and a 6-second undo sits at the bottom in case your thumb was faster than your brain. Swipe direction is configurable.
+- **See what is coming.** A calendar rail grouped by day, with real air times where Floppy knows them and a date where it does not.
+- **Find something to watch.** Floppy's own recommendation rows, plus a search box that answers whatever you type at it — an actor, a title you want more things like, a genre, a mood, or a streaming service.
+- **Browse by show.** Season list with per-season progress, cast, episode list with air times, mark-all, and a sheet that opens over the list rather than navigating away.
+- **Know your habits.** Hours, plays, streaks, most-watched, top genres and networks, and a scrollable diary of everything you have watched.
+- **Never feel slow.** Every route streams its shell immediately and fills in with skeletons; results are cached server-side and refreshed in the background, and the expensive queries are warmed at startup so no tap ever pays for them.
+
+## Requirements
+
+- A [Floppy](https://github.com/dannyvfilms/Floppy) instance, and its API token
+- Docker, on `linux/amd64` (see [below](#running-on-arm) for ARM)
+- Optional: a [TMDB API key](https://www.themoviedb.org/settings/api) for search and discovery, and Floppy's calendar token for the Upcoming tab
+
+## Quick start
+
+```yaml
+services:
+  seek:
+    image: ghcr.io/nerdspar/seek:latest
+    container_name: seek
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    volumes:
+      - ./data:/data
+    environment:
+      # Floppy's address as this container can reach it. A LAN address always
+      # works; see DEPLOY.md for reaching it by container name instead, which
+      # needs a shared Docker network.
+      FLOPPY_URL: "http://192.168.1.10:8007"
+      FLOPPY_TOKEN: "your-floppy-api-token"
+      SEEK_SESSION_SECRET: "run: openssl rand -hex 32"
+      TZ: "America/New_York"
 ```
 
-Production / container:
-
-```bash
-mkdir -p data
-docker compose up -d --build
+```sh
+mkdir -p data && chown -R 1000:1000 data
+docker compose up -d
 ```
 
-Then open `http://<docker-host>:8100` on the phone and add it to the home screen.
+The image is public, so no `docker login` is needed. Open `http://<host>:8100` on your phone, then **Share → Add to Home Screen**.
 
-`compose.yaml` defaults to whatever `FLOPPY_URL` is in `.env`, so it runs from any
-host on the LAN. To run it on Floppy's own Docker host instead — the spec §2 shape,
-reaching Floppy by container name rather than traversing the LAN — set
-`FLOPPY_URL=http://floppy:8000` in `.env` and uncomment the `floppy-net` blocks at
-the bottom of `compose.yaml`.
+Check it came up cleanly:
 
-The runtime image carries only `build/` and `package.json`: adapter-node bundles its
-own dependencies, verified by running the build with no `node_modules` present.
-
-Health check: `GET /api/health` — reports Floppy reachability, its build version,
-and whether the API token is accepted.
-
-## What is built
-
-All eight steps of §13.
-
-- **Watchlist** (§4) — segments, poster, episode pill, gradient progress, "N left".
-  Swipe to mark with the row sliding fully off and returning with the next
-  episode; 6s undo toast. Direction configurable.
-- **Show page / season list / episode sheet** (§4.4, §6.1) — seasons with
-  per-season progress and completion checks, cast, episode list with real air
-  times, toggle-to-watch, mark-all. The sheet opens over the list, never as a
-  navigation.
-- **Search and add** (§6.4) — live 1s-debounced provider search, Best Match / TV /
-  Movies, inline add showing what is already tracked.
-- **Upcoming** (§5) — server-fetched iCal feed, cached 45 min, gradient rail
-  grouped by day with absolute air times where Floppy knows them.
-- **Discover** (§6) — Floppy's own personalised rows with their `why` and
-  `match_signal`, plus TMDB mood/theme search with preset chips and free text.
-- **Profile** (§7) — range-scoped stats read entirely from Floppy, binge rhythm,
-  streaks, most watched, genres, networks, and the diary.
-- **Deployment** — GHCR image built by CI, TrueNAS compose, optional passphrase gate.
-
-Not built: filters (§4.6), sort (§4.5), the joint/solo tag (§11), and the
-watchlist re-sort after marking. See [BACKLOG.md](BACKLOG.md).
-
-## API findings
-
-Verified live against Floppy **v26.8.20**. These differ from, or add to, spec §3 —
-re-verify against `GET /api/openapi.yaml` if behaviour changes, since Floppy ships
-daily.
-
-| Finding | Detail |
-|---|---|
-| `DELETE` on the watch path works | Absent from `openapi.yaml` (documented POST-only), but returns 204 and pops exactly the newest play. Measured: 2 plays → DELETE → the newer `consumption_id` was gone, the older remained. This is undo. |
-| Don't use the episode-path DELETE for undo | `DELETE /{media_type}/{source}/{id}/{season}/{episode}/` is documented as deleting the tracked episode *item*. On a rewatched episode that takes more than the one play undo means to reverse. |
-| `max_progress` is absent from the list response | The show's episode total arrives as `item.number_of_pages`. Overloaded name, but it matches `max_progress` from show detail exactly. Avoids an N+1. |
-| `next_episode.title` is unreliable | Sometimes the SHOW title, not the episode's (Outer Banks S05E01 reports "Outer Banks", not "The Crossing"). Real titles come from the episode endpoint and are cached. |
-| `next_episode` exists ONLY on the list endpoint | Show detail omits it, and the watch POST responds about the *episode* (`item_media_type: "episode"`, `progress: 1` = one play). Post-write refresh must go back to the list. |
-| The list has no id filter | Refresh narrows by `search` then matches on `media_id` — `search=Below Deck` returns three different shows. |
-| `sort` is a closed enum | Floppy 400s on anything else. There is no `progressed_at`; `updated` backs "Recently watched". |
-| Air times are mostly placeholders | Most `air_date` values end `T11:59:59.999999Z` — a padded date, not a real time. Relevant to §5.2 and open question §14.2. |
-| `POST /api/v1/discover/refresh/` does not exist | GET only. (§6.1) |
-| `EpisodeDetails` is typed | `air_date`, `runtime`, `episode_number`, `season_number`, `episode_type` are stable. §12.6 still holds for show-level `details`/`related`. |
-| Undocumented endpoints | `GET /api/v1/home/` (returns `groups`), `GET /api/v1/media/` (all types at once), and `POST\|DELETE /api/v1/media/movie/{source}/{media_id}/watch/` (`MediaMovieWatchView` — mirrors episode watch semantics, optional `external_id` for idempotency). |
-| Never POST anime with `source=tmdb` | `POST /api/v1/media/anime/` skips the tracking-type resolver and creates an item that GET/PATCH/DELETE then reject. Grouped anime is `media_type=tv` + `library_media_type=anime`. See below. |
-
-### Calendar feed (§5.1) — verified
-
-```
-GET {FLOPPY_URL}/calendar/download/{token}?media_types=tv&media_types=season&media_types=movie&media_types=anime
+```sh
+curl -s http://<host>:8100/api/health
+# {"ok":true,"floppy":{"reachable":true,"version":"v26.8.20",...},"token":"accepted"}
 ```
 
-The token is the **path segment only** — everything after `?` is filtering. The
-token is itself the credential: the feed returns 200 with no API key, so treat
-the URL as a secret and regenerate it in Floppy if it leaks.
+[DEPLOY.md](DEPLOY.md) covers this in full, including running Seek on Floppy's own Docker network so traffic never touches the LAN.
 
-Confirmed against the live feed: 200 `text/calendar`, 163 `VEVENT`s, and the
-`media_types` filters are honoured (`media_types=movie` correctly returns 0 for a
-library with no movies). Still absent from `/api/v1/`, so §5.1's plan of fetching
-and parsing this server-side stands.
+## Configuration
 
-**Air times are real for only about a third of events — this changes §5.2.**
-Every event carries a full timestamp (none are `VALUE=DATE`), but the values are:
+All configuration is environment variables. Copy [`.env.example`](.env.example) for local development, or set them in your compose file.
 
-| DTSTART | Count | Meaning |
+| Variable | Required | Description |
 |---|---|---|
-| `11:59:59Z` | 97 of 163 | Placeholder — a date with no known time |
-| Genuine times (`01:00`, `03:00`, `14:00`, `19:00`, `21:00`, `03:29`…) | 57 | Real air times |
-| `00:00:00Z` | 9 | Ambiguous; can be a genuine 8pm ET slot |
+| `FLOPPY_URL` | **yes** | Floppy's base URL, as the *container* can reach it. A container name works and is preferred. |
+| `FLOPPY_TOKEN` | **yes** | Floppy → Settings → Integrations → API Token. |
+| `SEEK_SESSION_SECRET` | **yes** | `openssl rand -hex 32`. Signs the session cookie. |
+| `TMDB_API_KEY` | for search | Enables search, discovery and the universal search box. |
+| `FLOPPY_CALENDAR_TOKEN` | for Upcoming | The token in Floppy's `.ics` feed URL. |
+| `FLOPPY_PUBLIC_URL` | no | Floppy's *browser-reachable* address, for the one link the phone opens directly. Blank hides the link. |
+| `SEEK_PASSPHRASE` | see below | Enables the login gate. Blank means no gate. |
+| `ORIGIN` | if gated | The exact URL browsers use, protocol included. |
+| `TZ` | no | Affects how dates are displayed. |
 
-This matches what `next_episode.air_date` returns from the API, so the feed is not
-a better source of *times* — its value is covering every upcoming episode rather
-than only next-up.
+### Security
 
-So Upcoming must **render a time only when one is known**, and fall back to a
-date otherwise. Displaying the placeholder as "11:59 PM" would be wrong for 60% of
-rows. Detect it on `11:59:59` exactly; do not treat `00:00:00` as a placeholder.
+**Seek holds your Floppy API token and proxies every call server-side**, so the browser never sees it — but that also means anyone who can reach Seek can control your library. On a trusted LAN that is fine and `SEEK_PASSPHRASE` can stay empty.
 
-### Anime: how it actually works
+Before exposing Seek to the internet, set `SEEK_PASSPHRASE` and `ORIGIN`. With the gate on:
 
-Corrected after a first pass got this wrong. Floppy does support native anime for
-a TMDB-sourced library — the earlier conclusion tested the wrong creation path.
+- one passphrase per device, then a year-long signed cookie — you do not log in again
+- sessions expire server-side, so a copied cookie dies rather than lasting forever
+- failed attempts are throttled, escalating to a two-hour lockout
+- the cookie is marked `Secure` automatically when the request is HTTPS
 
-`get_tracking_media_type(anime, source=tmdb)` returns **`tv`**
-(`services/metadata_resolution.py:164`). So a correct grouped-anime item is:
+See [DEPLOY.md](DEPLOY.md#security) for the full setup, including a Cloudflare Tunnel walkthrough and the `ORIGIN` trap that will otherwise 403 your own login form.
 
+## Development
+
+```sh
+npm install
+cp .env.example .env    # fill in FLOPPY_URL and FLOPPY_TOKEN
+npm run dev             # http://<your-lan-ip>:8100
 ```
-media_type = tv          library_media_type = anime          source = tmdb
+
+```sh
+npm run check           # svelte-check
+npm run build           # production build
+node build              # run it
 ```
 
-That shape works with every route Seek needs, because `tmdb` is a valid source for
-`media_type=tv`: show detail, the episode watch POST/DELETE, and the list endpoint
-all behave normally. It also appears in `GET /api/v1/media/anime/`, which is what
-backs an Anime segment. **Marking is unaffected — it keeps using the tv routes.**
+Seek is [SvelteKit](https://svelte.dev/) 2 with Svelte 5 runes, `adapter-node`, and no client-side state library. A few things are worth knowing before changing it:
 
-The broken artifact from the first pass was `media_type=anime, source=tmdb`, which
-`POST /api/v1/media/anime/` creates because it skips the resolver the web UI
-applies. `VALID_SOURCES[anime]` is `["mal","manual"]`, so GET/PATCH/DELETE on that
-item all 400 with "Cannot query `tmdb` for `anime` media type" — creatable but
-unmanageable. **Never POST to `/api/v1/media/anime/` with `source=tmdb`.**
+- **Nothing secret reaches the browser.** Floppy and TMDB are only ever called from `src/lib/server/`; the client talks to Seek's own routes.
+- **Routes stream.** `load` returns promises rather than awaiting them, so the shell renders immediately and content fills in behind skeletons.
+- **The cache serves stale while it refreshes.** `src/lib/server/memo.ts` returns a stale entry instantly and revalidates behind it, which is why switching filters feels instant.
+- **Expensive queries are warmed at boot.** See the top of `src/hooks.server.ts`. Floppy needs ~13s to page a full library and ~9s for an all-time statistics overview; neither should ever land on a tap.
 
-Two things gate a working setup:
+### Running on ARM
 
-1. **`anime_library_mode` must be `both`** (or `anime`). Verified empirically: with
-   `tv`, a grouped-anime item appears in **neither** list — the TV query excludes
-   `library_media_type=anime` unless the mode is `both`, and the anime query only
-   includes grouped rows when the mode is `anime`/`both`. `both` puts each show
-   once in the TV list and once in the Anime list.
+The published image is `linux/amd64` only, because it is built for TrueNAS SCALE. On a Raspberry Pi or an ARM NAS, build it yourself:
 
-2. **The import source has to separate anime.** This is why a Trakt-imported
-   library is entirely `library_media_type=tv` — Trakt does not distinguish anime.
+```sh
+git clone https://github.com/nerdspar/seek && cd seek
+docker build -t seek .
+```
 
-   | Importer | Anime classification |
-   |---|---|
-   | Simkl | Explicit `anime_destination` param, default `anime`; Simkl's own catalogue separates anime |
-   | Plex | Section title: `"anime" in section.title.lower()` |
-   | MAL / AniList / Kitsu | Native, but **flat** — `next_episode: null`, no per-episode marking, progress counter only |
-   | Stremio | Has anime handling |
-   | Trakt | **None** |
-   | Jellyfin (playback reporting) | **None** — no section-name logic despite Jellyfin library separation |
+Then use `image: seek` in your compose file instead of the GHCR one.
 
-Imports are dispatchable via `POST /api/v1/imports/{service}/` (free-form body,
-returns a `task_id` pollable at `GET /api/v1/tasks/{task_id}/`).
+## Project notes
 
-**None of the self-hosted importers classify anime.** Sonarr does not read its own
-`seriesType`; Floppy's Jellyfin importer has no section-name logic. Only Plex does,
-via section title. So for a self-hosted setup the bucket has to be set directly
-rather than imported — see the migration below.
+- **[docs/floppy-api-notes.md](docs/floppy-api-notes.md)** — what was learned driving Floppy's API hard enough to migrate ~13,000 plays through it. Where the OpenAPI schema is wrong or silent, which endpoints are undocumented, how anime classification actually works, and which mistakes cost real data. Worth reading before writing anything against Floppy yourself.
+- **[seek-spec.md](seek-spec.md)** — the original specification. Section markers (§) throughout the code refer to it.
+- **[BACKLOG.md](BACKLOG.md)** — what is not built yet, and why.
 
-### Anime bucket migration
+## Contributing
 
-**Parked** — prepared but not run.
+Issues and pull requests are welcome. Please run `npm run check` before opening a PR.
 
-`scripts/anime-list.mjs` (read-only) regenerates `anime-list.txt`, the reviewable
-list of shows to move. Anime means **Japanese-produced animation**, not animation
-generally: the list is a curated set matched by title, because Floppy's metadata
-is wrong in both directions (it misses Naruto and SPY x FAMILY, and marks Star
-Wars: Visions Japanese). Currently 18 shows, with 7 borderline titles — Blood of
-Zeus, Blue Eye Samurai, Lord of Mysteries, Pantheon, Star Wars: Visions, Tomb
-Raider, Twilight of the Gods — commented out rather than silently included. `scripts/anime-migration-sql.mjs` turns that list into
-`migrate-anime.sql`. **The generator never connects to a database and runs
-nothing**; the SQL ends in `ROLLBACK` until deliberately changed to `COMMIT`.
+If you change anything that talks to Floppy, verify it against a live instance rather than the schema — [docs/floppy-api-notes.md](docs/floppy-api-notes.md) exists because the schema is not reliable, and it is worth adding to when you find something new.
 
-One `UPDATE` per show is sufficient: a show, its seasons and its episodes are all
-`app_item` rows sharing `(source, media_id)`, and Floppy's `_child_bucket` rule is
-that children follow the show's bucket, so they move together.
+## Related
 
-The update is collision-free only while there are no existing anime-bucket rows —
-every `app_item` uniqueness constraint includes `library_media_type`. The generated
-SQL checks for that first and expects 0 rows.
+- [Floppy](https://github.com/dannyvfilms/Floppy) — the tracker Seek front-ends
+- [MMM-seek](https://github.com/nerdspar/MMM-seek) — a MagicMirror² module showing the same upcoming episodes
 
-`anime_library_mode` must be set to `both` (or `anime`) for any of this to be
-visible. Floppy's own CSV export/import also round-trips `library_media_type`, but
-the importer's lookup includes the bucket, so an edited CSV adds a second copy
-rather than moving the item.
+## Licence
 
-Because `Item` is unique on `(media_id, source, media_type, library_media_type)`,
-the same show can legitimately exist in both the tv and anime buckets — see
-`imports/helpers.py:find_item_across_buckets`. Re-importing anime without removing
-the tv-bucket copies leaves duplicates.
-
-### Known traps (§12) as implemented
-
-- **§12.1** anime bucket — this instance reports `anime_library_mode: "tv"`, so the
-  UNIQUE-constraint path is dormant. The retry with `library_media_type: "anime"`
-  is implemented and guarded on that exact error anyway.
-- **§12.2** `media_id` is the show's TMDB id. The client only echoes back what the
-  row carried.
-- **§12.3** POST appends. There is **no retry** on the watch call. `FloppyUnreachable`
-  (connect-stage failure, provably nothing sent) is distinguished from a timeout,
-  which is ambiguous and never retried.
-- **§12.4** season/episode numbering always comes from `next_episode`, never computed.
-
-## Scripts
-
-`scripts/*.mjs` are one-off probes used to establish the findings above. `probe.mjs`,
-`probe2.mjs`, `probe3.mjs`, `probe4.mjs`, `probe6.mjs` and `baseline.mjs` are
-read-only. `probe-undo.mjs` and `probe5.mjs` write, but only to a throwaway show
-they add and then delete.
+[MIT](LICENSE)

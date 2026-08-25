@@ -47,7 +47,7 @@ services:
       #    only the published port. Re-check if Floppy is ever redeployed:
       #        docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
       #
-      #  • Floppy anywhere else: use its LAN address, e.g. http://10.0.1.14:8007
+      #  • Floppy anywhere else: use its LAN address, e.g. http://192.168.1.10:8007
       FLOPPY_URL: "http://floppy:8000" # ⬅ FLOPPY_URL
 
       # Floppy → Settings → Integrations → API Token.
@@ -65,7 +65,7 @@ services:
       # Browser-reachable Floppy address, for the one settings link the phone
       # opens directly. Every other call is proxied, so FLOPPY_URL can stay a
       # container name. Blank hides the link.
-      FLOPPY_PUBLIC_URL: "https://floppy.nerdspar.com" # ⬅ FLOPPY_PUBLIC_URL (optional)
+      FLOPPY_PUBLIC_URL: "https://floppy.example.com" # ⬅ FLOPPY_PUBLIC_URL (optional)
 
       # --- Required whenever SEEK_PASSPHRASE is set ---------------------------
       # The address browsers actually use, protocol included. SvelteKit compares
@@ -78,7 +78,7 @@ services:
       # so a plain-HTTP deployment rejects its own login page.
       #
       # Use the SAME hostname on the LAN as from outside so one value covers both.
-      ORIGIN: "https://seek.nerdspar.com" # ⬅ ORIGIN (required if gated)
+      ORIGIN: "https://seek.example.com" # ⬅ ORIGIN (required if gated)
 
       # Lets the login throttle tell clients apart. Without it every request
       # carries the proxy's address and the throttle becomes one global bucket —
@@ -132,7 +132,7 @@ services:
 #
 # To skip all of this and reach Floppy over the LAN instead, comment out this
 # whole block AND the service's `networks:` above, then set FLOPPY_URL back to
-# http://10.0.1.14:8007.
+# http://192.168.1.10:8007.
 networks:
   floppy-net:
     external: true
