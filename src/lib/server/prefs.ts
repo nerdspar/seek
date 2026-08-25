@@ -29,13 +29,19 @@ export type Prefs = {
 	 *  show's poster for every season, so it is usually a column of identical
 	 *  images — but some shows do have per-season art. */
 	seasonArtwork: boolean;
+	/** §10 ships one theme, but the token sets are swappable from day one. */
+	theme: 'midnight';
+	/** Services the household actually pays for (§6.3, §8). Empty means "all". */
+	services: string[];
 };
 
 export const DEFAULTS: Prefs = {
 	markDirection: 'rtl',
 	sort: {},
 	defaultTab: 'watchlist',
-	seasonArtwork: false
+	seasonArtwork: false,
+	theme: 'midnight',
+	services: []
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */
@@ -70,7 +76,7 @@ export async function getPrefs(): Promise<Prefs> {
 		};
 	} catch {
 		// Missing or unreadable file is the normal first-run case.
-		cache = { ...DEFAULTS, sort: {} };
+		cache = { ...DEFAULTS, sort: {}, services: [] };
 	}
 	return cache;
 }
@@ -80,7 +86,10 @@ export async function setPrefs(patch: Partial<Prefs>): Promise<Prefs> {
 	const next: Prefs = {
 		...current,
 		...patch,
-		sort: { ...current.sort, ...(patch.sort ?? {}) }
+		sort: { ...current.sort, ...(patch.sort ?? {}) },
+		// Replaced wholesale rather than merged — deselecting a service has to
+		// actually remove it.
+		services: patch.services ?? current.services
 	};
 
 	const path = file();

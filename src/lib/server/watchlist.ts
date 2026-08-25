@@ -25,6 +25,7 @@
  */
 import { floppy } from './floppy';
 import { TTLCache } from './cache';
+import { companyQuery, type Company } from './tags';
 import type { MediaType, TrackedMedia, WatchlistRow } from '$lib/types';
 
 type ListResponse = {
@@ -91,6 +92,29 @@ export async function episodeTitle(
 	}
 }
 
+/**
+ * Streaming services a title is on, from TMDB data Floppy already carries.
+ *
+ * Floppy's own `platform[]` filter is a no-op — passing any value returns the
+ * whole library — and `item.platforms` is empty on every row here. The real
+ * provider data lives under `item.watch_providers`, keyed by region, so service
+ * filtering happens in Seek rather than on the server.
+ */
+function servicesOf(item: Record<string, unknown>): string[] {
+	const providers = item.watch_providers;
+	if (!providers || typeof providers !== 'object') return [];
+	const us = (providers as Record<string, unknown>).US;
+	if (!us || typeof us !== 'object') return [];
+
+	const names = new Set<string>();
+	// `flatrate` is subscription streaming; rent/buy are not "on a service I pay for".
+	for (const entry of ((us as Record<string, unknown>).flatrate as unknown[]) ?? []) {
+		const name = (entry as Record<string, unknown>)?.provider_name;
+		if (typeof name === 'string') names.add(name);
+	}
+	return [...names];
+}
+
 function mapRow(r: TrackedMedia, mediaType: MediaType): WatchlistRow {
 	const item = (r.item ?? {}) as Record<string, unknown>;
 	const ne = r.next_episode;
@@ -103,6 +127,7 @@ function mapRow(r: TrackedMedia, mediaType: MediaType): WatchlistRow {
 		mediaType,
 		title: String(item.title ?? 'Untitled'),
 		poster: (item.image as string) ?? null,
+		services: servicesOf(item),
 		next:
 			ne && ne.season_number !== null
 				? { season: ne.season_number, episode: ne.episode_number, airDate: ne.air_date }
@@ -136,28 +161,94 @@ async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
 
 export type WatchlistPage = { rows: WatchlistRow[]; total: number; hasMore: boolean };
 
+export type WatchlistOptions = {
+	sort?: string;
+	direction?: 'asc' | 'desc';
+	limit?: number;
+	offset?: number;
+	/** User tracking status; defaults to the in-progress backlog (§4.1). */
+	statuses?: string[];
+	/** Solo / Joint / All (§11). */
+	company?: Company;
+	/** Subscription services to keep. Applied in Seek — see servicesOf. */
+	services?: string[];
+};
+
 export async function getWatchlist(
 	mediaType: MediaType,
-	{ sort = 'updated', direction = 'desc' as 'asc' | 'desc', limit = 20, offset = 0 } = {}
+	{
+		sort = 'updated',
+		direction = 'desc',
+		limit = 200,
+		offset = 0,
+		statuses = ['in_progress'],
+		company = 'all',
+		services = []
+	}: WatchlistOptions = {}
 ): Promise<WatchlistPage> {
+	// `not_caught_up` only makes sense for the in-progress backlog; asking for
+	// Completed and then filtering to "has an unwatched episode" returns nothing.
+	const onlyInProgress = statuses.length === 1 && statuses[0] === 'in_progress';
+
 	const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
 		query: {
-			status: ['in_progress'],
-			progress: 'not_caught_up',
+			status: statuses,
+			progress: onlyInProgress ? 'not_caught_up' : undefined,
 			sort,
 			direction,
 			limit,
-			offset
+			offset,
+			...companyQuery(company)
 		},
 		// ~1.2s warm, but slower while Floppy is serving a statistics query.
 		timeoutMs: 45_000
 	});
 
 	// Titles resolve in parallel; one slow lookup does not hold up the page.
-	const rows = await Promise.all((res.results ?? []).map((r) => enrich(mapRow(r, mediaType))));
+	let rows = await Promise.all((res.results ?? []).map((r) => enrich(mapRow(r, mediaType))));
+
+	if (services.length) {
+		const wanted = new Set(services);
+		rows = rows.filter((row) => row.services.some((s) => wanted.has(s)));
+	}
 
 	const p = res.pagination;
-	return { rows, total: p?.total ?? rows.length, hasMore: Boolean(p?.next) };
+	return {
+		rows,
+		total: services.length ? rows.length : (p?.total ?? rows.length),
+		hasMore: Boolean(p?.next)
+	};
+}
+
+/** Every subscription service seen across the library, for the filter and the
+ *  settings picker. Cached — provider data moves slowly. */
+const servicesCache = new TTLCache<string[]>(6 * 60 * 60 * 1000, 4);
+
+export async function knownServices(): Promise<string[]> {
+	const hit = servicesCache.get('all');
+	if (hit) return hit;
+
+	const found = new Map<string, number>();
+	for (const mediaType of ['tv', 'movie'] as const) {
+		try {
+			const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
+				query: { status: ['all'], limit: 200 },
+				timeoutMs: 60_000
+			});
+			for (const r of res.results ?? []) {
+				for (const name of servicesOf((r.item ?? {}) as Record<string, unknown>)) {
+					found.set(name, (found.get(name) ?? 0) + 1);
+				}
+			}
+		} catch {
+			// A partial list is better than none.
+		}
+	}
+
+	// Commonest first — the household's actual services float to the top.
+	const names = [...found.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+	servicesCache.set('all', names);
+	return names;
 }
 
 /**

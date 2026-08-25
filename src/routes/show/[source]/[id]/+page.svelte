@@ -19,6 +19,38 @@
 	let busy = $state<Set<number>>(new Set());
 	let note = $state<string | null>(null);
 
+	/* §11: joint vs solo is show-level in this household, so a tag on the item is
+	   the whole mechanism — no Floppy changes, no per-play attribution. */
+	let jointEdit = $state<boolean | null>(null);
+	const joint = $derived(jointEdit ?? data.joint);
+	let jointBusy = $state(false);
+
+	async function toggleJoint() {
+		if (jointBusy) return;
+		const before = jointEdit;
+		const next = !joint;
+		jointBusy = true;
+		jointEdit = next;
+		try {
+			const res = await fetch('/api/tags', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					mediaType: 'tv',
+					source: show.source,
+					mediaId: show.mediaId,
+					joint: next
+				})
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		} catch (err) {
+			jointEdit = before;
+			note = `Couldn't update — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			jointBusy = false;
+		}
+	}
+
 	function setBusy(n: number, on: boolean) {
 		const next = new Set(busy);
 		on ? next.add(n) : next.delete(n);
@@ -118,6 +150,15 @@
 			{/if}
 		</div>
 	</section>
+
+	<button class="joint" class:on={joint} disabled={jointBusy} aria-pressed={joint} onclick={toggleJoint}>
+		<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+			<circle cx="9" cy="8" r="3.2" />
+			<circle cx="16.5" cy="9.5" r="2.6" />
+			<path d="M3.2 19a6 6 0 0 1 11.6 0M16 13.6a5 5 0 0 1 4.8 4.2" />
+		</svg>
+		<span>{joint ? 'Watched together' : 'Watched alone'}</span>
+	</button>
 
 	{#if show.synopsis}
 		<p class="synopsis">{show.synopsis}</p>
@@ -262,6 +303,27 @@
 		height: 100%;
 		border-radius: 3px;
 		background: var(--signal);
+	}
+
+	.joint {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		min-height: var(--tap);
+		padding: 0 14px;
+		margin: 0 0 16px;
+		border-radius: var(--radius);
+		background: var(--surface);
+		font-size: 14px;
+		font-weight: 600;
+		color: var(--text-dim);
+	}
+	.joint.on {
+		background: var(--signal);
+		color: #fff;
+	}
+	.joint:disabled {
+		opacity: 0.6;
 	}
 
 	.synopsis {

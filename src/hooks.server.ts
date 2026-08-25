@@ -20,7 +20,11 @@ void (async () => {
 		const prefs = await getPrefs();
 		const key = sortFor(prefs, 'tv');
 		const { sort, direction } = SORTS[key];
-		return memo(`watchlist:tv:${key}`, 60 * 1000, () => getWatchlist('tv', { sort, direction }));
+		// Same key shape the page load builds, so the warmup actually lands on the
+		// entry the default view will read.
+		return memo(`watchlist:tv:${key}:in_progress:all:`, 60 * 1000, () =>
+			getWatchlist('tv', { sort, direction })
+		);
 	});
 	await step(() => memo('stats:all_time', 30 * 60 * 1000, () => getStats('all_time')));
 	await step(async () => warmCaches());

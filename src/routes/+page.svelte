@@ -5,6 +5,7 @@
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
+	import FilterSheet, { type Filters } from '$lib/components/FilterSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { SortKey } from '$lib/server/prefs';
@@ -177,6 +178,25 @@
 	];
 
 	let sortOpen = $state(false);
+	let filterOpen = $state(false);
+
+	/* Filters are URL state, so back/forward work and a filtered view is
+	   shareable between segments. */
+	function applyFilters(f: Filters) {
+		const params = new URLSearchParams();
+		if (data.mediaType !== 'tv') params.set('type', data.mediaType);
+		if (f.status !== 'in_progress') params.set('status', f.status);
+		if (f.company !== 'all') params.set('company', f.company);
+		for (const s of f.services) params.append('service', s);
+		overrides = {};
+		goto(`/${params.toString() ? `?${params}` : ''}`, { noScroll: true, keepFocus: true });
+	}
+
+	const filtersActive = $derived(
+		data.filters.status !== 'in_progress' ||
+			data.filters.company !== 'all' ||
+			data.filters.services.length > 0
+	);
 
 	async function chooseSort(key: SortKey) {
 		sortOpen = false;
@@ -233,6 +253,12 @@
 			</svg>
 		</button>
 
+		<button class="sort" class:on={filtersActive} onclick={() => (filterOpen = true)} aria-label="Filter">
+			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M3 5h18l-7 8v6l-4 2v-8z" />
+			</svg>
+		</button>
+
 	</header>
 
 	<main>
@@ -246,6 +272,8 @@
 				<h2>Nothing here</h2>
 				{#if data.mediaType === 'movie'}
 					<p>Your Floppy movie library is empty — 0 movies tracked under any status.</p>
+				{:else if filtersActive}
+					<p>Nothing matches these filters. <button class="link" onclick={() => applyFilters({ status: 'in_progress', company: 'all', services: [] })}>Reset them</button>.</p>
 				{:else}
 					<p>No shows in progress with an unwatched episode.</p>
 				{/if}
@@ -274,6 +302,16 @@
 	</button>
 
 	<TabBar current="watchlist" />
+
+	{#if filterOpen}
+		<FilterSheet
+			filters={data.filters}
+			allServices={data.allServices}
+			subscribed={data.subscribed}
+			onchange={applyFilters}
+			onclose={() => (filterOpen = false)}
+		/>
+	{/if}
 
 	{#if sortOpen}
 		<SortSheet
@@ -335,12 +373,18 @@
 		flex: none;
 		display: grid;
 		place-items: center;
-		width: var(--tap);
+		width: 38px;
 		height: var(--tap);
-		margin-left: 6px;
-		margin-right: -8px;
 		border-radius: 11px;
 		color: var(--text-dim);
+	}
+	.sort:last-of-type {
+		margin-right: -8px;
+	}
+	/* The accent marks that the list is narrowed — otherwise a filtered
+	   watchlist looks like a short library. */
+	.sort.on {
+		color: var(--signal-solid);
 	}
 
 	.segments {
@@ -399,6 +443,11 @@
 		font-size: 14px;
 		line-height: 1.5;
 		color: var(--text-dim);
+	}
+	.link {
+		color: var(--signal-solid);
+		font-weight: 600;
+		text-decoration: underline;
 	}
 	.fab {
 		position: fixed;

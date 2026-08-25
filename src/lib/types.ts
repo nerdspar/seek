@@ -105,6 +105,8 @@ export type WatchlistRow = {
 	progress: number;
 	maxProgress: number | null;
 	left: number | null;
+	/** US subscription services, from TMDB data Floppy already carries. */
+	services: string[];
 };
 
 /* ── Detail views (§4.4, §6.1) ────────────────────────────────────────────
