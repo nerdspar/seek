@@ -62,6 +62,19 @@
 		};
 	});
 
+	/** Null while the current filter combination is still loading. */
+	let resultCount = $state<number | null>(null);
+	$effect(() => {
+		resultCount = null;
+		let cancelled = false;
+		data.page
+			.then((p) => !cancelled && (resultCount = p.total))
+			.catch(() => !cancelled && (resultCount = 0));
+		return () => {
+			cancelled = true;
+		};
+	});
+
 	let loadFailed = $state<string | null>(null);
 	$effect(() => {
 		data.page.catch((e) => (loadFailed = e instanceof Error ? e.message : String(e)));
@@ -418,6 +431,7 @@
 		<FilterSheet
 			filters={data.filters}
 			subscribed={data.subscribed}
+			{resultCount}
 			onchange={applyFilters}
 			onclose={() => (filterOpen = false)}
 		/>

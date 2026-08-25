@@ -37,6 +37,28 @@ void (async () => {
 		memo('discover:tv', 30 * 60 * 1000, () => getDiscoverRows('tv'))
 	);
 	await step('services', () => memo('services:all', 6 * 60 * 60 * 1000, knownServices));
+
+	/* Each filter is its own cache key, and Floppy needs ~4.5s to return 200
+	   completed rows — so a first tap on a status chip was paying full price.
+	   These are the combinations reachable in a single tap from the default view. */
+	for (const status of ['planning', 'completed', 'paused', 'dropped', 'all']) {
+		await step(`filter:${status}`, () =>
+			memo(`watchlist:tv:${sortKey}:${status}:all:`, 60 * 1000, () =>
+				getWatchlist('tv', {
+					sort,
+					direction,
+					statuses: status === 'all' ? ['all'] : [status]
+				})
+			)
+		);
+	}
+	for (const company of ['joint', 'solo']) {
+		await step(`filter:${company}`, () =>
+			memo(`watchlist:tv:${sortKey}:in_progress:${company}:`, 60 * 1000, () =>
+				getWatchlist('tv', { sort, direction, company: company as 'joint' | 'solo' })
+			)
+		);
+	}
 	// Collection views are the slowest cold path — two 200-row pages each.
 	for (const mediaType of ['tv', 'movie'] as const) {
 		await step(`library:${mediaType}`, () =>

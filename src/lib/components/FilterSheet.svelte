@@ -8,10 +8,12 @@
 		filters: Filters;
 		/** Services the household subscribes to (§8); offered first when set. */
 		subscribed: string[];
+		/** How many titles the current filters match; null while that is loading. */
+		resultCount: number | null;
 		onchange: (f: Filters) => void;
 		onclose: () => void;
 	};
-	let { filters, subscribed, onchange, onclose }: Props = $props();
+	let { filters, subscribed, resultCount, onchange, onclose }: Props = $props();
 
 	/* Fetched here rather than in the page load: building this list pages the
 	   whole library, and awaiting it on the watchlist — the launch screen —
@@ -84,7 +86,19 @@
 <Sheet label="Filter" {onclose} scrollable>
 	<div class="pad">
 		<div class="head">
-			<h2>Filter</h2>
+			<div class="heading">
+				<h2>Filter</h2>
+				<!-- The list is behind this sheet, so without a count here a slow
+				     filter looks like nothing happened — which is what makes people
+				     tap it again. -->
+				<span class="count tnum" class:pending={resultCount === null}>
+					{#if resultCount === null}
+						Counting…
+					{:else}
+						{resultCount} {resultCount === 1 ? 'title' : 'titles'}
+					{/if}
+				</span>
+			</div>
 			{#if active}
 				<button class="reset" onclick={() => onchange({ status: 'in_progress', company: 'all', services: [] })}>
 					Reset
@@ -148,7 +162,11 @@
 <style>
 	.pad { padding: 0 var(--gutter); }
 	.head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+	.heading { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 	h2 { margin: 0; font-size: 18px; font-weight: 600; }
+	.count { font-size: 13px; font-weight: 600; color: var(--signal-solid); }
+	.count.pending { color: var(--text-dim); animation: breathe 1.4s ease-in-out infinite; }
+	@keyframes breathe { 50% { opacity: 0.5; } }
 	.reset { font-size: 13px; font-weight: 600; color: var(--signal-solid); }
 
 	section { margin-bottom: 20px; }
