@@ -65,7 +65,7 @@ services:
       # Browser-reachable Floppy address, for the one settings link the phone
       # opens directly. Every other call is proxied, so FLOPPY_URL can stay a
       # container name. Blank hides the link.
-      FLOPPY_PUBLIC_URL: "http://10.0.1.14:8007" # ⬅ FLOPPY_PUBLIC_URL (optional)
+      FLOPPY_PUBLIC_URL: "https://floppy.nerdspar.com" # ⬅ FLOPPY_PUBLIC_URL (optional)
 
       # Not used yet — both are for build steps that aren't written.
       # Calendar token (Upcoming, step 6): Floppy's calendar page, the token in

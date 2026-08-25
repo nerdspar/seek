@@ -45,6 +45,9 @@ export const load: PageServerLoad = async ({ url }) => {
 		counts,
 		prefs: await getPrefs(),
 		defaultPresets: DEFAULT_PRESET_LABELS(),
-		floppyUrl: publicUrl ? `${publicUrl}/settings/` : null
+		/* Verified against the running instance: Floppy has no bare /settings/ route
+		   and its settings paths carry no trailing slash, so `/settings/` 404s. The
+		   link lands on notifications because that is what this row points people at. */
+		floppyUrl: publicUrl ? `${publicUrl}/settings/notifications` : null
 	};
 };
