@@ -213,7 +213,7 @@
 	);
 </script>
 
-<li class="row" class:pending>
+<div class="row" class:pending>
 	<!-- Reveal sits behind the content and is only visible through the gap the
 	     content leaves as it slides. While dragging it holds a floor so the
 	     intent is legible early; on commit it simply tracks the row, so it is
@@ -282,12 +282,11 @@
 			</div>
 		</div>
 	</div>
-</li>
+</div>
 
 <style>
 	.row {
 		position: relative;
-		list-style: none;
 		border-radius: var(--radius-lg);
 		overflow: hidden;
 		background: var(--bg);

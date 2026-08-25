@@ -55,6 +55,37 @@
 	</header>
 
 	<main>
+		<section class="collection">
+			<h2>Collection</h2>
+			<ul class="links">
+				{#await data.counts}
+					<li><button disabled><span>My TV Shows</span><span class="chev">›</span></button></li>
+					<li><button disabled><span>My Movies</span><span class="chev">›</span></button></li>
+					<li><button disabled><span>Archive</span><span class="chev">›</span></button></li>
+				{:then counts}
+					<li>
+						<button onclick={() => goto('/library/tv')}>
+							<span>My TV Shows</span>
+							<span class="count tnum">{counts.tv}<span class="chev">›</span></span>
+						</button>
+					</li>
+					<li>
+						<button onclick={() => goto('/library/movie')}>
+							<span>My Movies</span>
+							<span class="count tnum">{counts.movie}<span class="chev">›</span></span>
+						</button>
+					</li>
+					<li>
+						<button onclick={() => goto('/library/tv?view=archive')}>
+							<span>Archive</span><span class="chev">›</span>
+						</button>
+					</li>
+				{:catch}
+					<li><button onclick={() => goto('/library/tv')}><span>My TV Shows</span><span class="chev">›</span></button></li>
+				{/await}
+			</ul>
+		</section>
+
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">
@@ -151,6 +182,8 @@
 	{#if settingsOpen}
 		<SettingsSheet
 			{prefs}
+			allServices={data.allServices}
+			floppyUrl={data.floppyUrl}
 			onsaved={(p) => (saved = p)}
 			onclose={() => (settingsOpen = false)}
 		/>
@@ -220,6 +253,17 @@
 		overflow: hidden; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
 	}
 	.sub2 { display: block; font-size: 11px; color: var(--text-dim); }
+
+	.collection { margin-bottom: 24px; }
+	.links { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+	.links button {
+		display: flex; align-items: center; justify-content: space-between; gap: 12px;
+		width: 100%; min-height: var(--tap); padding: 8px 14px;
+		border-radius: var(--radius); background: var(--surface); font-size: 14px;
+	}
+	.links button:disabled { opacity: 0.5; }
+	.count { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 13px; }
+	.chev { color: var(--text-dim); font-size: 18px; }
 
 	.list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 	.list li {

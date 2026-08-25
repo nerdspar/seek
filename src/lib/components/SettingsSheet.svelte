@@ -4,8 +4,15 @@
 
 	/** Preferences live server-side in /data (§8), so this edits them through the
 	 *  API rather than localStorage — the same values drive the server render. */
-	type Props = { prefs: Prefs; onsaved: (p: Prefs) => void; onclose: () => void };
-	let { prefs, onsaved, onclose }: Props = $props();
+	type Props = {
+		prefs: Prefs;
+		/** Services seen across the library, for the subscription picker (§6.3). */
+		allServices?: string[];
+		floppyUrl?: string | null;
+		onsaved: (p: Prefs) => void;
+		onclose: () => void;
+	};
+	let { prefs, allServices = [], floppyUrl = null, onsaved, onclose }: Props = $props();
 
 	/* Optimistic edit layered over the prop, so a save that fails simply reverts
 	   by clearing it. */
@@ -60,6 +67,48 @@
 		</section>
 
 		<section>
+			<h3>Default tab</h3>
+			<div class="chips">
+				{#each [{ id: 'watchlist', label: 'Watchlist' }, { id: 'upcoming', label: 'Upcoming' }, { id: 'discover', label: 'Discover' }, { id: 'profile', label: 'Profile' }] as tab (tab.id)}
+					<button
+						class:on={local.defaultTab === tab.id}
+						onclick={() => patch({ defaultTab: tab.id as Prefs['defaultTab'] })}
+					>{tab.label}</button>
+				{/each}
+			</div>
+		</section>
+
+		<section>
+			<h3>Theme</h3>
+			<div class="chips">
+				<!-- §10 ships Midnight only, but the tokens are swappable, so the
+				     control exists rather than being retrofitted later. -->
+				<button class="on">Midnight</button>
+				<button disabled>More soon</button>
+			</div>
+		</section>
+
+		{#if allServices.length}
+			<section>
+				<h3>Your streaming services</h3>
+				<p class="hint">Picked here, these are offered first when filtering.</p>
+				<div class="chips wrap">
+					{#each allServices as name (name)}
+						<button
+							class:on={local.services.includes(name)}
+							onclick={() =>
+								patch({
+									services: local.services.includes(name)
+										? local.services.filter((s) => s !== name)
+										: [...local.services, name]
+								})}
+						>{name}</button>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		<section>
 			<h3>Show page</h3>
 			<button
 				class="row"
@@ -77,7 +126,23 @@
 
 		{#if failed}<p class="error">{failed}</p>{/if}
 
-		<p class="note">Theme, default tab and streaming services are still to come.</p>
+		<section>
+			<h3>Floppy</h3>
+			{#if floppyUrl}
+				<a class="out" href={floppyUrl} target="_blank" rel="noreferrer">
+					<span class="rowtext">
+						<span class="label">Floppy settings</span>
+						<span class="hint">Notifications and integrations live there (§9)</span>
+					</span>
+					<span class="chev">↗</span>
+				</a>
+			{:else}
+				<p class="hint">
+					Set <code>FLOPPY_PUBLIC_URL</code> to link out to Floppy's own settings — notifications
+					are configured there, not here.
+				</p>
+			{/if}
+		</section>
 	</div>
 </Sheet>
 
@@ -116,6 +181,22 @@
 	}
 	.toggle.on .knob { transform: translateX(18px); background: #fff; }
 
+	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+	.chips.wrap { flex-wrap: wrap; overflow: visible; }
+	.chips button {
+		flex: none; min-height: 36px; padding: 0 13px; border-radius: 9px;
+		background: var(--surface-raised); font-size: 13px; font-weight: 600; color: var(--text-dim);
+	}
+	.chips button.on { background: var(--signal); color: #fff; }
+	.chips button:disabled { opacity: 0.4; }
+
+	.out {
+		display: flex; align-items: center; justify-content: space-between; gap: 14px;
+		min-height: var(--tap); padding: 9px 14px;
+		border-radius: var(--radius); background: var(--surface-raised);
+	}
+	.chev { color: var(--text-dim); font-size: 16px; }
+	code { padding: 1px 5px; border-radius: 5px; background: var(--surface-raised); font-size: 11.5px; }
+
 	.error { margin: 0 0 12px; font-size: 13px; color: #ff8a8a; }
-	.note { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
 </style>

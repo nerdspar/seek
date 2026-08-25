@@ -3,6 +3,7 @@ import { memo } from '$lib/server/memo';
 import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import type { Company } from '$lib/server/tags';
 import type { MediaType } from '$lib/types';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 const TYPES: MediaType[] = ['tv', 'movie', 'anime'];
@@ -19,6 +20,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	   putting them in the URL makes back/forward behave and keeps them shareable
 	   between the two segments. */
 	const prefs = await getPrefs();
+
+	/* §8's default tab. Only redirect on a bare visit — never when the URL is
+	   already carrying filters or a segment, or a filtered link would bounce. */
+	if (prefs.defaultTab !== 'watchlist' && url.search === '') {
+		redirect(307, `/${prefs.defaultTab}`);
+	}
+
 	const sortKey = sortFor(prefs, mediaType);
 	const { sort, direction } = SORTS[sortKey];
 

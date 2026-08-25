@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
+	import { flip } from 'svelte/animate';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import WatchRow from '$lib/components/WatchRow.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
@@ -22,7 +24,60 @@
 	   "Nothing here" before hydration. On a home-screen PWA that flash is the
 	   first thing you see, and this screen is judged on how fast it appears. */
 	let overrides = $state<Record<string, WatchlistRow>>({});
-	const rows = $derived(data.rows.map((r) => overrides[key(r)] ?? r));
+
+	/* Order is owned locally once a mark lands, so a row can move to where the
+	   active sort says it now belongs (BACKLOG.md's top item). Null means "use
+	   the server's order", which is the case on every fresh load. */
+	let order = $state<string[] | null>(null);
+
+	const rows = $derived.by(() => {
+		const mapped = data.rows.map((r) => overrides[key(r)] ?? r);
+		if (!order) return mapped;
+		const byKey = new Map(mapped.map((r) => [key(r), r]));
+		const sorted = order.map((k) => byKey.get(k)).filter((r): r is WatchlistRow => Boolean(r));
+		// Anything the server sent that the local order predates goes on the end.
+		for (const r of mapped) if (!order.includes(key(r))) sorted.push(r);
+		return sorted;
+	});
+
+	// A new server payload supersedes any local ordering.
+	$effect(() => {
+		data.rows;
+		order = null;
+	});
+
+	/**
+	 * Where a row belongs after being marked, under the active sort.
+	 *
+	 * Only the orderings Seek can evaluate from data already on the row are
+	 * handled. `updated` (Recently watched) is the default and the one that
+	 * actually moves on a mark — the row just became the most recently touched.
+	 * Sorts keyed on values Floppy computes server-side are left alone rather
+	 * than guessed at; the next load corrects them.
+	 */
+	function reorderAfterMark(k: string) {
+		const current = rows;
+		const from = current.findIndex((r) => key(r) === k);
+		if (from < 0) return;
+
+		let to = from;
+		if (data.sortKey === 'recently_watched') {
+			to = 0;
+		} else if (data.sortKey === 'episodes_left') {
+			const left = (r: WatchlistRow) => r.left ?? Number.POSITIVE_INFINITY;
+			const moved = current[from];
+			to = current.filter((_, i) => i !== from).findIndex((r) => left(r) < left(moved));
+			if (to < 0) to = current.length - 1;
+		} else {
+			return; // Alphabetical and total-episodes don't change when you mark.
+		}
+
+		if (to === from) return;
+		const keys = current.map(key);
+		const [moved] = keys.splice(from, 1);
+		keys.splice(to, 0, moved);
+		order = keys;
+	}
 
 	/* Anime is deliberately NOT a segment. Floppy files it inside the TV library,
 	   so a third tab would either sit empty or split the list on a distinction
@@ -47,6 +102,8 @@
 		/** The episode actually written — what undo must reverse. */
 		marked: { season: number; episode: number };
 		snapshot: WatchlistRow;
+		/** Undo has to put the row back where it was, not just restore its data. */
+		orderBefore: string[] | null;
 		title: string;
 		label: string;
 	};
@@ -73,6 +130,7 @@
 		if (inFlight.has(k)) return;
 
 		const snapshot = { ...row, next: row.next ? { ...row.next } : null };
+		const orderBefore = order ? [...order] : null;
 		const marked = { season: row.next.season, episode: row.next.episode };
 		const label = `S${String(marked.season).padStart(2, '0')}E${String(marked.episode).padStart(2, '0')}`;
 
@@ -108,8 +166,9 @@
 			// than a guess. If the refresh failed the optimistic counts stand and
 			// the row corrects itself on the next load.
 			if (body.row) setRow(k, body.row);
+			reorderAfterMark(k);
 
-			toast = { rowKey: k, marked, snapshot, title: row.title, label };
+			toast = { rowKey: k, marked, snapshot, orderBefore, title: row.title, label };
 		} catch (err) {
 			// Roll the row back to exactly what it was; nothing was recorded, or we
 			// cannot prove it was, and the user needs to see the truth either way.
@@ -144,6 +203,7 @@
 			// Prefer the server's re-read; fall back to the pre-swipe snapshot if
 			// the refresh failed, since the play itself is confirmed removed.
 			setRow(t.rowKey, body.row ?? t.snapshot);
+			order = t.orderBefore;
 			toast = null;
 		} catch (err) {
 			note = `Undo failed — ${err instanceof Error ? err.message : err}. The play is still recorded.`;
@@ -279,8 +339,11 @@
 				{/if}
 			</div>
 		{:else}
+			<!-- animate: moves a row to its new position instead of teleporting it,
+			     which is what makes the re-sort legible rather than confusing. -->
 			<ul class="rows">
 				{#each rows as row (key(row))}
+					<li animate:flip={{ duration: prefersReducedMotion.current ? 0 : 320 }}>
 					<WatchRow
 						{row}
 						markDirection={data.markDirection}
@@ -289,6 +352,7 @@
 						onepisode={openEpisode}
 						onshow={openShow}
 					/>
+					</li>
 				{/each}
 			</ul>
 			<p class="count-note tnum">{rows.length} of {data.total}</p>
@@ -420,6 +484,7 @@
 		gap: 8px;
 		margin: 8px 0 0;
 		padding: 0;
+		list-style: none;
 	}
 
 	.count-note {

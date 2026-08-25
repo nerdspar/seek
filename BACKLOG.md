@@ -3,13 +3,12 @@
 Things flagged but deliberately not built yet. Build order is in
 [seek-spec.md](seek-spec.md) §13.
 
-## Swipe commit animation and re-sort
+## Swipe commit animation and re-sort — DONE
 
-*Flagged after the first real use, 2026-08-24. This is the highest-value item —
-it is the core interaction.*
+*Flagged after the first real use, 2026-08-24. Both halves have shipped: the row
+slides off screen, and it now moves to its new sorted position.*
 
-Today the row snaps back to its resting position the moment the mark commits.
-It should instead:
+The original description, kept for context:
 
 1. **Continue sliding all the way off screen** rather than springing back. The
    gesture should complete the direction it was going.
@@ -59,14 +58,9 @@ needs a separate LAN-reachable address — add a `FLOPPY_PUBLIC_URL` env var
 
 ## Not yet built from the spec
 
-- **Filters** (§4.6) — status and platform, plus the anime chip once the bucket
-  migration lands.
-- **Joint/solo tag** (§11) — `tag[]`/`tag_mode` on the list endpoint and
-  `PUT .../tags/` already support it; the payload is the Solo/Joint/All filter.
-- **Collection rows** (§7.2) — My TV Shows / My Movies / Archive with View All.
-- **Remaining settings** (§8) — theme, default tab, subscribed streaming
-  services. The store exists (`$lib/server/prefs.ts`, one JSON file in /data);
-  only swipe direction and per-type sort are wired to it so far.
+Everything in §13's build order plus the filters, collection, tags and settings
+above has shipped. What remains is the anime bucket migration (above), which is
+parked by choice rather than blocked.
 
 ## Smaller items
 
@@ -74,6 +68,10 @@ needs a separate LAN-reachable address — add a `FLOPPY_PUBLIC_URL` env var
   (mark-all-season, add show). Marking already toasts because undo needs it.
   Raised because iOS Safari has no Vibration API, so §4.2's haptic cannot fire —
   see `src/lib/haptics.ts`.
+- Re-sort currently moves a row for "Recently watched" and "Episodes left" only.
+  The other orderings either do not change when you mark (Alphabetical, Total
+  episodes) or key on values Floppy computes server-side, which are left to the
+  next load rather than guessed at.
 - The statistics endpoint ignores `range=` and `period=`; only explicit
   `start_date`/`end_date` narrow the window. §7.1 guessed that binge rhythm,
   streaks and finish rate would be missing — they are not, Floppy reports all of

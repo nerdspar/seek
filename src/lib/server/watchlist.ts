@@ -172,6 +172,11 @@ export type WatchlistOptions = {
 	company?: Company;
 	/** Subscription services to keep. Applied in Seek — see servicesOf. */
 	services?: string[];
+	/** Page past Floppy's 200-row ceiling to fetch the whole list. */
+	all?: boolean;
+	/** Resolve next-episode titles and missing episode counts. The library grid
+	 *  shows neither, and skipping it avoids one lookup per row. */
+	enrich?: boolean;
 };
 
 export async function getWatchlist(
@@ -183,29 +188,49 @@ export async function getWatchlist(
 		offset = 0,
 		statuses = ['in_progress'],
 		company = 'all',
-		services = []
+		services = [],
+		all = false,
+		enrich: shouldEnrich = true
 	}: WatchlistOptions = {}
 ): Promise<WatchlistPage> {
 	// `not_caught_up` only makes sense for the in-progress backlog; asking for
 	// Completed and then filtering to "has an unwatched episode" returns nothing.
 	const onlyInProgress = statuses.length === 1 && statuses[0] === 'in_progress';
 
-	const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-		query: {
-			status: statuses,
-			progress: onlyInProgress ? 'not_caught_up' : undefined,
-			sort,
-			direction,
-			limit,
-			offset,
-			...companyQuery(company)
-		},
-		// ~1.2s warm, but slower while Floppy is serving a statistics query.
-		timeoutMs: 45_000
-	});
+	const page = (o: number) =>
+		floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
+			query: {
+				status: statuses,
+				progress: onlyInProgress ? 'not_caught_up' : undefined,
+				sort,
+				direction,
+				limit,
+				offset: o,
+				...companyQuery(company)
+			},
+			// ~1.2s warm, but slower while Floppy is serving a statistics query.
+			timeoutMs: 45_000
+		});
+
+	const res = await page(offset);
+	const collected = [...(res.results ?? [])];
+
+	// Floppy caps `limit` at 200, so a larger library needs paging — otherwise the
+	// header reports 370 titles above a grid of 200.
+	if (all) {
+		const total = res.pagination?.total ?? collected.length;
+		for (let o = offset + limit; collected.length < total && o < total; o += limit) {
+			const next = await page(o);
+			const rows = next.results ?? [];
+			if (!rows.length) break;
+			collected.push(...rows);
+		}
+	}
 
 	// Titles resolve in parallel; one slow lookup does not hold up the page.
-	let rows = await Promise.all((res.results ?? []).map((r) => enrich(mapRow(r, mediaType))));
+	let rows = shouldEnrich
+		? await Promise.all(collected.map((r) => enrich(mapRow(r, mediaType))))
+		: collected.map((r) => mapRow(r, mediaType));
 
 	if (services.length) {
 		const wanted = new Set(services);
@@ -215,8 +240,8 @@ export async function getWatchlist(
 	const p = res.pagination;
 	return {
 		rows,
-		total: services.length ? rows.length : (p?.total ?? rows.length),
-		hasMore: Boolean(p?.next)
+		total: services.length || all ? rows.length : (p?.total ?? rows.length),
+		hasMore: !all && Boolean(p?.next)
 	};
 }
 
