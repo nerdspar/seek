@@ -31,11 +31,33 @@
 	];
 
 	/* Subscribed services first — that is the list the household actually cares
-	   about — then everything else the library has seen. */
-	const services = $derived([
+	   about — then everything else the library has seen, commonest first. */
+	const ordered = $derived([
 		...subscribed.filter((s) => allServices.includes(s)),
 		...allServices.filter((s) => !subscribed.includes(s))
 	]);
+
+	/* Even collapsed, the library spans ~29 services with a long tail of
+	   one-offs. Showing them all as chips buried the two filters above it, so
+	   only a handful are offered and the rest are reachable by typing. */
+	let serviceQuery = $state('');
+	const SHOWN = 6;
+
+	const matches = $derived(
+		serviceQuery.trim()
+			? ordered.filter((s) => s.toLowerCase().includes(serviceQuery.trim().toLowerCase()))
+			: ordered
+	);
+	// Anything already selected stays visible even when it falls outside the top few.
+	const visibleServices = $derived(
+		serviceQuery.trim()
+			? matches.slice(0, 20)
+			: [
+					...matches.filter((s) => filters.services.includes(s)),
+					...matches.filter((s) => !filters.services.includes(s))
+				].slice(0, SHOWN)
+	);
+	const hiddenCount = $derived(Math.max(0, matches.length - visibleServices.length));
 
 	const toggleService = (name: string) =>
 		onchange({
@@ -84,16 +106,31 @@
 			</div>
 		</section>
 
-		{#if services.length}
+		{#if ordered.length}
 			<section>
 				<h3>Streaming service</h3>
-				<div class="chips wrap">
-					{#each services as name (name)}
-						<button class:on={filters.services.includes(name)} onclick={() => toggleService(name)}>
-							{name}
-						</button>
-					{/each}
-				</div>
+				<input
+					bind:value={serviceQuery}
+					type="search"
+					placeholder="Search {ordered.length} services"
+					autocapitalize="off"
+					autocorrect="off"
+					spellcheck="false"
+				/>
+				{#if visibleServices.length}
+					<div class="chips wrap">
+						{#each visibleServices as name (name)}
+							<button class:on={filters.services.includes(name)} onclick={() => toggleService(name)}>
+								{name}
+							</button>
+						{/each}
+					</div>
+					{#if hiddenCount}
+						<p class="more tnum">{hiddenCount} more — type to find them</p>
+					{/if}
+				{:else}
+					<p class="more">No service matches “{serviceQuery.trim()}”.</p>
+				{/if}
 			</section>
 		{/if}
 	</div>
@@ -109,6 +146,16 @@
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	.hint { margin: -4px 0 8px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
 	code { padding: 1px 5px; border-radius: 5px; background: var(--surface-raised); font-size: 11.5px; }
+
+	input {
+		width: 100%; height: 40px; padding: 0 12px; margin-bottom: 8px;
+		border: none; border-radius: var(--radius);
+		background: var(--surface-raised); color: var(--text);
+		font: inherit; font-size: 16px; outline: none;
+		-webkit-appearance: none; appearance: none;
+	}
+	input::-webkit-search-cancel-button { display: none; }
+	.more { margin: 8px 0 0; font-size: 12px; color: var(--text-dim); }
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 	.chips.wrap { flex-wrap: wrap; overflow: visible; }

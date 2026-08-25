@@ -18,6 +18,19 @@
 	   by clearing it. */
 	let edited = $state<Prefs | null>(null);
 	const local = $derived(edited ?? prefs);
+
+	/* Same reason as the filter sheet: the library spans ~29 services, and an
+	   undifferentiated wall of chips buries everything below it. Selected ones
+	   stay pinned so you can always see and unpick what you chose. */
+	let serviceQuery = $state('');
+	const visibleServices = $derived.by(() => {
+		const q = serviceQuery.trim().toLowerCase();
+		const matched = q ? allServices.filter((s) => s.toLowerCase().includes(q)) : allServices;
+		return [
+			...matched.filter((s) => local.services.includes(s)),
+			...matched.filter((s) => !local.services.includes(s))
+		].slice(0, q ? 20 : 10);
+	});
 	let failed = $state<string | null>(null);
 
 	const DIRECTIONS: { id: MarkDirection; label: string; hint: string }[] = [
@@ -46,7 +59,7 @@
 	}
 </script>
 
-<Sheet label="Settings" {onclose}>
+<Sheet label="Settings" {onclose} scrollable>
 	<div class="pad">
 		<h2>Settings</h2>
 
@@ -92,8 +105,16 @@
 			<section>
 				<h3>Your streaming services</h3>
 				<p class="hint">Picked here, these are offered first when filtering.</p>
+				<input
+					bind:value={serviceQuery}
+					type="search"
+					placeholder="Search {allServices.length} services"
+					autocapitalize="off"
+					autocorrect="off"
+					spellcheck="false"
+				/>
 				<div class="chips wrap">
-					{#each allServices as name (name)}
+					{#each visibleServices as name (name)}
 						<button
 							class:on={local.services.includes(name)}
 							onclick={() =>
@@ -197,6 +218,15 @@
 	}
 	.chev { color: var(--text-dim); font-size: 16px; }
 	code { padding: 1px 5px; border-radius: 5px; background: var(--surface-raised); font-size: 11.5px; }
+
+	input {
+		width: 100%; height: 40px; padding: 0 12px; margin-bottom: 8px;
+		border: none; border-radius: var(--radius);
+		background: var(--surface-raised); color: var(--text);
+		font: inherit; font-size: 16px; outline: none;
+		-webkit-appearance: none; appearance: none;
+	}
+	input::-webkit-search-cancel-button { display: none; }
 
 	.error { margin: 0 0 12px; font-size: 13px; color: #ff8a8a; }
 </style>

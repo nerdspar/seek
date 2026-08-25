@@ -100,6 +100,38 @@ export async function episodeTitle(
  * provider data lives under `item.watch_providers`, keyed by region, so service
  * filtering happens in Seek rather than on the server.
  */
+/**
+ * TMDB lists the same service many times over: resale channels ("HBO Max Amazon
+ * Channel"), ad tiers ("Netflix Standard with Ads") and plan tiers ("Paramount
+ * Plus Premium", "Paramount Plus Essential"). Untouched that is 43 entries of
+ * near-duplicates, which is unusable as a filter. Collapsing them to the service
+ * you actually subscribe to gets it to roughly 20.
+ */
+const RESELLER = /\s+(?:Amazon Channel|Apple TV Channel|Roku Premium Channel|Channel)$/i;
+const AD_TIER = /\s+(?:Standard |Basic )?with Ads$/i;
+const PLAN_TIER = /\s+(?:Premium\+|Premium Plus|Premium|Essential|Standard|Basic|Plus)$/i;
+
+export function normaliseService(name: string): string {
+	let out = name.replace(RESELLER, '').replace(AD_TIER, '').trim();
+	// "Paramount Plus" and "Paramount+" are the same thing; settle on the symbol
+	// before stripping tiers, so "Paramount Plus Premium" does not become
+	// "Paramount".
+	out = out.replace(/\bPlus\b/g, '+').replace(/\s+\+/g, '+');
+	out = out.replace(PLAN_TIER, '').trim();
+	out = out.replace(/\+\s*\+/g, '+');
+	return out;
+}
+
+/** Case-insensitive canonical form, so "BritBox" and "Britbox" are one entry. */
+const canonical = new Map<string, string>();
+function dedupeKey(name: string): string {
+	const key = name.toLowerCase().replace(/[^a-z0-9+]/g, '');
+	const seen = canonical.get(key);
+	if (seen) return seen;
+	canonical.set(key, name);
+	return name;
+}
+
 function servicesOf(item: Record<string, unknown>): string[] {
 	const providers = item.watch_providers;
 	if (!providers || typeof providers !== 'object') return [];
@@ -110,7 +142,7 @@ function servicesOf(item: Record<string, unknown>): string[] {
 	// `flatrate` is subscription streaming; rent/buy are not "on a service I pay for".
 	for (const entry of ((us as Record<string, unknown>).flatrate as unknown[]) ?? []) {
 		const name = (entry as Record<string, unknown>)?.provider_name;
-		if (typeof name === 'string') names.add(name);
+		if (typeof name === 'string') names.add(dedupeKey(normaliseService(name)));
 	}
 	return [...names];
 }

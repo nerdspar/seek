@@ -201,7 +201,7 @@
 		padding-bottom: calc(var(--safe-b) + 16px);
 		background: var(--surface);
 		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-		/* Vertical drags are ours; the browser keeps horizontal. */
+		/* Non-scrolling sheets hand every vertical drag to the dismiss gesture. */
 		touch-action: pan-x;
 		will-change: transform;
 		animation: rise 240ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -209,6 +209,12 @@
 	.sheet.scrollable {
 		overflow-y: auto;
 		overscroll-behavior: contain;
+		/* A scrolling sheet must let the browser scroll it — pan-x here meant the
+		   content simply could not move, which is what made the filter sheet feel
+		   stuck. Dismissal still works: the drag handler only claims the gesture
+		   when the content is already at the top, where there is nothing to
+		   scroll anyway. */
+		touch-action: pan-y;
 	}
 	.sheet.settling {
 		transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
