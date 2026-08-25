@@ -287,8 +287,7 @@
 		padding: 8px var(--gutter);
 		padding-top: calc(8px + var(--safe-t));
 		margin-top: calc(-1 * var(--safe-t));
-		background: color-mix(in srgb, var(--bg) 88%, transparent);
-		backdrop-filter: blur(12px);
+		background: var(--bg);
 	}
 
 	.segments {

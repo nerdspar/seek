@@ -25,8 +25,7 @@
 		gap: 4px;
 		padding: 6px var(--gutter) 6px 4px;
 		padding-top: calc(6px + var(--safe-t));
-		background: color-mix(in srgb, var(--bg) 88%, transparent);
-		backdrop-filter: blur(12px);
+		background: var(--bg);
 	}
 	.back {
 		flex: none;

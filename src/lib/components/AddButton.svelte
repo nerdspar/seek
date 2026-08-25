@@ -61,8 +61,7 @@
 		display: grid;
 		place-items: center;
 		border-radius: 50%;
-		background: color-mix(in srgb, var(--bg) 78%, transparent);
-		backdrop-filter: blur(6px);
+		background: color-mix(in srgb, var(--bg) 88%, transparent);
 		color: var(--text);
 		box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
 	}

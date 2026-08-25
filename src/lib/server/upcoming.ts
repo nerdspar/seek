@@ -11,6 +11,7 @@ import { env } from '$env/dynamic/private';
 import { floppy } from './floppy';
 import { FLOPPY_URL } from './env';
 import { parseIcal, type IcalEvent } from './ical';
+import { memo } from './memo';
 import type { UpcomingItem } from '$lib/types';
 
 
@@ -37,8 +38,19 @@ async function fetchFeed(): Promise<IcalEvent[]> {
 
 type ListResponse = { results?: { item?: Record<string, unknown> }[] };
 
-/** Title → poster and ids, for attaching artwork to feed events. */
-async function libraryIndex(): Promise<Map<string, { poster: string | null; mediaId: string; source: string }>> {
+/**
+ * Title → poster and ids, for attaching artwork to feed events.
+ *
+ * This is the expensive part of Upcoming by a wide margin: Floppy needs ~3.6s
+ * and 1.9 MB per page of 100, so indexing a 370-item library costs ~13s. It is
+ * cached hard and warmed at boot (see warmCaches) precisely so no tap ever pays
+ * for it. The data barely moves — titles and posters of things already tracked.
+ */
+function libraryIndex() {
+	return memo('upcoming:index', 6 * 60 * 60 * 1000, buildLibraryIndex);
+}
+
+async function buildLibraryIndex(): Promise<Map<string, { poster: string | null; mediaId: string; source: string }>> {
 	const index = new Map<string, { poster: string | null; mediaId: string; source: string }>();
 
 	for (const mediaType of ['tv', 'movie'] as const) {
@@ -87,6 +99,16 @@ async function build(): Promise<UpcomingItem[]> {
 				source: hit?.source ?? null
 			};
 		});
+}
+
+/**
+ * Warms the slow caches in the background at startup, so the first person to
+ * open a tab after a container restart doesn't absorb the cold cost. Failures
+ * are ignored: this is an optimisation, and every caller still works without it.
+ */
+export function warmCaches(): void {
+	void libraryIndex().catch(() => {});
+	void getUpcoming().catch(() => {});
 }
 
 /** Cached read. Concurrent callers share one in-flight refresh. */

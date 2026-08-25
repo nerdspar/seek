@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { markEpisodeWatched } from '$lib/server/api';
 import { getRow } from '$lib/server/watchlist';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
+import { invalidate } from '$lib/server/memo';
 import type { MediaType } from '$lib/types';
 import type { RequestHandler } from './$types';
 
@@ -39,6 +40,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw err;
 	}
 
+	// The library changed, so the cached watchlist page is now wrong.
+	invalidate('watchlist:');
+
 	// The write succeeded. Re-read the show row for its new next-up (§4.2).
 	// Deliberately outside the try above: a refresh failure must not be reported
 	// as a failed mark, or the client would roll back a play that was recorded.
@@ -69,6 +73,7 @@ export const DELETE: RequestHandler = async ({ request }) => {
 
 	try {
 		await floppy(path, { method: 'DELETE' });
+		invalidate('watchlist:');
 	} catch (err) {
 		if (err instanceof FloppyError && err.status === 405) {
 			error(502, 'Floppy no longer accepts DELETE on the watch path; undo is unavailable.');

@@ -26,9 +26,8 @@
 		{ id: 'all_time', label: 'All time' }
 	];
 
-	const stats = $derived(data.stats);
-	const peak = $derived(Math.max(1, ...(stats?.weekday ?? []).map((d) => d.hours)));
 	const fmt = (n: number) => n.toLocaleString();
+	const peakOf = (weekday: { hours: number }[]) => Math.max(1, ...weekday.map((d) => d.hours));
 </script>
 
 <div class="app">
@@ -45,94 +44,102 @@
 	</header>
 
 	<main>
-		{#if data.error || !stats}
-			<div class="empty"><h2>Can't load stats</h2><p>{data.error}</p></div>
-		{:else}
-			<!-- §7.1: every number below is read from Floppy's overview endpoint.
-			     Seek computes nothing except the date window. -->
-			<section class="headline">
-				<span class="big tnum">{fmt(stats.hours)}</span>
-				<span class="unit">hours logged · {stats.rangeLabel}</span>
-			</section>
-
-			<ul class="tiles">
-				<li><span class="n tnum">{fmt(stats.plays)}</span><span class="l">Plays</span></li>
-				<li><span class="n tnum">{fmt(stats.counts.tv)}</span><span class="l">Shows</span></li>
-				<li><span class="n tnum">{fmt(stats.counts.movie)}</span><span class="l">Movies</span></li>
-				<li><span class="n tnum">{fmt(stats.completed)}</span><span class="l">Completed</span></li>
-			</ul>
-
-			{#if stats.weekday.length}
-				<section>
-					<h2>Binge rhythm</h2>
-					{#if stats.mostActiveDay}
-						<p class="sub">
-							{stats.mostActiveDay} is your heaviest day{stats.mostActiveDayPct ? ` — ${stats.mostActiveDayPct}% of everything` : ''}.
-						</p>
-					{/if}
-					<div class="bars">
-						{#each stats.weekday as d (d.label)}
-							<div class="bar">
-								<div class="col"><div class="fill" style:height={`${Math.max(2, (d.hours / peak) * 100)}%`}></div></div>
-								<span class="lab">{d.label}</span>
-							</div>
-						{/each}
-					</div>
+		{#await data.stats}
+			<!-- The shell is already on screen; only the numbers are pending. -->
+			<div class="loading">
+				<div class="sk headline"></div>
+				<div class="sk tiles"></div>
+				<div class="sk block"></div>
+			</div>
+		{:then stats}
+			<!-- stats is non-null here: the load rejects rather than resolving null. -->
+				<!-- §7.1: every number below is read from Floppy's overview endpoint.
+				     Seek computes nothing except the date window. -->
+				<section class="headline">
+					<span class="big tnum">{fmt(stats.hours)}</span>
+					<span class="unit">hours logged · {stats.rangeLabel}</span>
 				</section>
-			{/if}
 
-			<section class="streaks">
-				<div><span class="n tnum">{stats.currentStreak}</span><span class="l">Current streak</span></div>
-				<div><span class="n tnum">{stats.longestStreak}</span><span class="l">Longest streak</span></div>
-			</section>
-
-			{#if stats.topTitles.length}
-				<section>
-					<h2>Most watched</h2>
-					<ul class="rail">
-						{#each stats.topTitles as t (t.mediaId)}
-							<li>
-								<button onclick={() => goto(`/show/${t.source}/${t.mediaId}`)}>
-									<Poster src={t.poster} width={92} height={138} radius={9} />
-									<span class="cap">{t.title}</span>
-									<span class="sub2 tnum">{t.duration}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				</section>
-			{/if}
-
-			{#if stats.topGenres.length}
-				<section>
-					<h2>Favourite genres</h2>
-					<ul class="list">
-						{#each stats.topGenres as g (g.name)}
-							<li><span>{g.name}</span><span class="dim tnum">{g.duration}</span></li>
-						{/each}
-					</ul>
-				</section>
-			{/if}
-
-			{#if stats.topStudios.length}
-				<section>
-					<h2>Top networks</h2>
-					<ul class="list">
-						{#each stats.topStudios as s (s.name)}
-							<li><span>{s.name}</span><span class="dim tnum">{s.watched}</span></li>
-						{/each}
-					</ul>
-				</section>
-			{/if}
-
-			<section>
-				<h2>Collection</h2>
-				<ul class="links">
-					<li><button onclick={() => goto('/profile/diary')}><span>Diary</span><span class="chev">›</span></button></li>
-					<li><button onclick={() => (settingsOpen = true)}><span>Settings</span><span class="chev">›</span></button></li>
+				<ul class="tiles">
+					<li><span class="n tnum">{fmt(stats.plays)}</span><span class="l">Plays</span></li>
+					<li><span class="n tnum">{fmt(stats.counts.tv)}</span><span class="l">Shows</span></li>
+					<li><span class="n tnum">{fmt(stats.counts.movie)}</span><span class="l">Movies</span></li>
+					<li><span class="n tnum">{fmt(stats.completed)}</span><span class="l">Completed</span></li>
 				</ul>
-			</section>
-		{/if}
+
+				{#if stats.weekday.length}
+					<section>
+						<h2>Binge rhythm</h2>
+						{#if stats.mostActiveDay}
+							<p class="sub">
+								{stats.mostActiveDay} is your heaviest day{stats.mostActiveDayPct ? ` — ${stats.mostActiveDayPct}% of everything` : ''}.
+							</p>
+						{/if}
+						<div class="bars">
+							{#each stats.weekday as d (d.label)}
+								<div class="bar">
+									<div class="col"><div class="fill" style:height={`${Math.max(2, (d.hours / peakOf(stats.weekday)) * 100)}%`}></div></div>
+									<span class="lab">{d.label}</span>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
+				<section class="streaks">
+					<div><span class="n tnum">{stats.currentStreak}</span><span class="l">Current streak</span></div>
+					<div><span class="n tnum">{stats.longestStreak}</span><span class="l">Longest streak</span></div>
+				</section>
+
+				{#if stats.topTitles.length}
+					<section>
+						<h2>Most watched</h2>
+						<ul class="rail">
+							{#each stats.topTitles as t (t.mediaId)}
+								<li>
+									<button onclick={() => goto(`/show/${t.source}/${t.mediaId}`)}>
+										<Poster src={t.poster} width={92} height={138} radius={9} />
+										<span class="cap">{t.title}</span>
+										<span class="sub2 tnum">{t.duration}</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
+				{#if stats.topGenres.length}
+					<section>
+						<h2>Favourite genres</h2>
+						<ul class="list">
+							{#each stats.topGenres as g (g.name)}
+								<li><span>{g.name}</span><span class="dim tnum">{g.duration}</span></li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
+				{#if stats.topStudios.length}
+					<section>
+						<h2>Top networks</h2>
+						<ul class="list">
+							{#each stats.topStudios as s (s.name)}
+								<li><span>{s.name}</span><span class="dim tnum">{s.watched}</span></li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
+				<section>
+					<h2>Collection</h2>
+					<ul class="links">
+						<li><button onclick={() => goto('/profile/diary')}><span>Diary</span><span class="chev">›</span></button></li>
+						<li><button onclick={() => (settingsOpen = true)}><span>Settings</span><span class="chev">›</span></button></li>
+					</ul>
+				</section>
+		{:catch err}
+			<div class="empty"><h2>Can't load stats</h2><p>{err.message}</p></div>
+		{/await}
 	</main>
 
 	<TabBar current="profile" />
@@ -208,6 +215,13 @@
 	}
 	.dim { color: var(--text-dim); font-size: 12.5px; }
 	.chev { color: var(--text-dim); font-size: 18px; }
+
+	.loading { display: flex; flex-direction: column; gap: 16px; }
+	.sk { border-radius: var(--radius); background: var(--surface); animation: pulse 1.4s ease-in-out infinite; }
+	.sk.headline { height: 62px; width: 62%; }
+	.sk.tiles { height: 72px; }
+	.sk.block { height: 150px; }
+	@keyframes pulse { 50% { opacity: 0.55; } }
 
 	.empty { margin-top: 20vh; text-align: center; }
 	.empty h2 { margin: 0 0 8px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); }

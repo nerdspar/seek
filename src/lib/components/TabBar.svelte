@@ -47,8 +47,7 @@
 		grid-template-columns: repeat(4, 1fr);
 		height: calc(var(--tabbar-h) + var(--safe-b));
 		padding-bottom: var(--safe-b);
-		background: color-mix(in srgb, var(--bg) 92%, transparent);
-		backdrop-filter: blur(12px);
+		background: var(--bg);
 		border-top: 1px solid var(--surface);
 	}
 	.tabbar button {
