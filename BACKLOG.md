@@ -54,7 +54,7 @@ the Floppy host, port, or API key, and the only external host the page loads is
 A settings link is different, because it makes the *phone* navigate to Floppy
 directly, and `floppy:8000` does not resolve outside Docker. So that one link
 needs a separate LAN-reachable address — add a `FLOPPY_PUBLIC_URL` env var
-(e.g. `http://10.0.1.14:8007`) and omit the link when it is unset.
+(e.g. `http://192.168.1.10:8007`) and omit the link when it is unset.
 
 ## Not yet built from the spec
 
