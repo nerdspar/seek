@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Seek">
+  <!-- Maskable variant. Android crops this to a circle or squircle of its
+       choosing, so the tile is full-bleed (no rx) and the mark is scaled to sit
+       inside the 80% safe zone.
+
+       The check's far tip is the constraint, not the disc: at 512 it sits about
+       252px from centre once the 46px stroke is counted, against a safe radius
+       of 205. Scaling the mark to 0.75 brings it to 189 and leaves room to
+       spare. Derived from seek-icon.svg — if that changes, re-derive rather
+       than hand-editing, and keep the gradients identical so the check's
+       overshoot still paints the background exactly. -->
+  <defs>
+    <linearGradient id="tile" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0" stop-color="#1C1B32"/>
+      <stop offset="1" stop-color="#08080C"/>
+    </linearGradient>
+    <linearGradient id="sig" gradientUnits="userSpaceOnUse" x1="110" y1="110" x2="402" y2="402">
+      <stop offset="0" stop-color="#5B6CFF"/>
+      <stop offset="1" stop-color="#B36BFF"/>
+    </linearGradient>
+    <!-- The check is stroked in the tile gradient so its overshoot paints the
+         background exactly. Inside a scaled group that no longer holds: a
+         userSpaceOnUse gradient inherits the group's transform, so the two
+         gradients drift apart and the overshoot reappears as a pale tip. This
+         is the same gradient with the group's transform inverted, putting it
+         back in the background's coordinate space. -->
+    <linearGradient id="tileUnscaled" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="512"
+                    gradientTransform="translate(256 256) scale(1.3333333) translate(-256 -256)">
+      <stop offset="0" stop-color="#1C1B32"/>
+      <stop offset="1" stop-color="#08080C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#tile)"/>
+  <g transform="translate(256 256) scale(0.75) translate(-256 -256)">
+    <circle cx="256" cy="256" r="146" fill="url(#sig)"/>
+    <path d="M180 258 L236 314 L430 106" fill="none" stroke="url(#tileUnscaled)"
+          stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

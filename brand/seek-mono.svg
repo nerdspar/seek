@@ -1,11 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Seek">
-  <g fill="none" stroke="currentColor" stroke-linecap="round">
-    <circle cx="256" cy="268" r="150" stroke-width="14" opacity="0.35"/>
-    <circle cx="256" cy="268" r="106" stroke-width="14" opacity="0.35"/>
-    <path d="M217.2 123.1 A150 150 0 0 1 405.4 254.9" stroke-width="24"/>
-    <path d="M408 52 L346 141" stroke-width="22" opacity="0.75"/>
-  </g>
-  <rect x="312" y="115" width="60" height="60" rx="15"
-        transform="rotate(45 342 145)" fill="currentColor"/>
-  <rect x="222" y="234" width="68" height="68" rx="13" fill="currentColor"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" fill="currentColor"
+        d="M256 110a146 146 0 1 0 0 292 146 146 0 0 0 0-292Zm-99.6 165.5a23 23 0 0 1 32.5-32.5l47.1 47.1 177.6-190.4 33.6 31.3-193.5 207.5a23 23 0 0 1-33.1.6l-64.2-63.6Z"/>
 </svg>

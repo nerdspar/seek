@@ -1,30 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Seek">
   <defs>
-    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2E2858"/>
-      <stop offset="1" stop-color="#14102A"/>
+    <!-- userSpaceOnUse so the same gradient can paint both the tile and the
+         check. The check is stroked in the tile gradient, so wherever it
+         overshoots the disc it matches the background exactly - no clip
+         needed, and no gradient fringe left showing past the stroke. -->
+    <linearGradient id="tile" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="512">
+      <stop offset="0" stop-color="#1C1B32"/>
+      <stop offset="1" stop-color="#08080C"/>
     </linearGradient>
-    <linearGradient id="signal" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFD067"/>
-      <stop offset="1" stop-color="#F08A12"/>
+    <linearGradient id="sig" gradientUnits="userSpaceOnUse" x1="110" y1="110" x2="402" y2="402">
+      <stop offset="0" stop-color="#5B6CFF"/>
+      <stop offset="1" stop-color="#B36BFF"/>
     </linearGradient>
   </defs>
 
-  <rect width="512" height="512" rx="116" fill="url(#shell)"/>
-
-  <g fill="none" stroke="#95A2C2" stroke-linecap="round">
-    <circle cx="256" cy="268" r="150" stroke-width="12" opacity="0.30"/>
-    <circle cx="256" cy="268" r="106" stroke-width="12" opacity="0.50"/>
-  </g>
-
-  <path d="M217.2 123.1 A150 150 0 0 1 405.4 254.9" fill="none"
-        stroke="url(#signal)" stroke-width="20" stroke-linecap="round"/>
-
-  <path d="M408 52 L346 141" stroke="#CAD3E4" stroke-width="20" stroke-linecap="round"/>
-
-  <rect x="312" y="115" width="60" height="60" rx="15"
-        transform="rotate(45 342 145)" fill="url(#signal)"/>
-
-  <rect x="222" y="234" width="68" height="68" rx="13" fill="#CAD3E4"/>
-  <rect x="222" y="234" width="30" height="68" rx="13" fill="#14102A" opacity="0.55"/>
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+  <circle cx="256" cy="256" r="146" fill="url(#sig)"/>
+  <path d="M180 258 L236 314 L430 106" fill="none" stroke="url(#tile)"
+        stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
