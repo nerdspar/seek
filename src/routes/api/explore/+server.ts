@@ -1,4 +1,4 @@
-import { withoutTracked } from '$lib/server/search';
+import { markTracked, withoutTracked } from '$lib/server/search';
 import { json, error } from '@sveltejs/kit';
 import { explore } from '$lib/server/explore';
 import { tmdbConfigured } from '$lib/server/tmdb';
@@ -13,13 +13,16 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (!q) return json({ sections: [] });
 
 	try {
-		/* Sections are suggestions, so already-tracked titles are dropped; a
-		   section emptied by that is dropped with them. */
+		/* Suggestions drop what you already have; a filmography marks it.
+		   "Shows like The Office" is a discovery question and a tracked answer is
+		   noise, but "what has this actor been in" is a lookup, and the show you
+		   are trying to remember is quite likely one you already watched. */
 		const sections = await Promise.all(
-			(await explore(q, mediaType)).map(async (sec) => ({
-				...sec,
-				items: await withoutTracked(mediaType, sec.items)
-			}))
+			(await explore(q, mediaType)).map(async (sec) =>
+				sec.kind === 'person'
+					? { ...sec, items: await markTracked(mediaType, sec.items) }
+					: { ...sec, items: await withoutTracked(mediaType, sec.items) }
+			)
 		);
 		return json({ sections: sections.filter((s) => s.items.length) });
 	} catch (err) {

@@ -220,4 +220,7 @@ export type TmdbResult = {
 	poster: string | null;
 	year: number | null;
 	rating: number | null;
+	/** Already in the library. Set only where results are marked rather than
+	 *  filtered — see markTracked in server/search.ts. */
+	tracked?: boolean;
 };

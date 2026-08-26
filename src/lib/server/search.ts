@@ -149,3 +149,19 @@ export async function withoutTracked<T extends { mediaId: string }>(
 	const tracked = await allTrackedIds(mediaType);
 	return items.filter((i) => !tracked.has(i.mediaId));
 }
+
+/**
+ * Flag what is already in the library instead of hiding it.
+ *
+ * For a filmography, hiding is wrong: a show you have already watched is
+ * exactly what you might be hunting for, and nothing else in the app can find
+ * one by actor — Search is title-only and the library browses by title. So a
+ * person's credits keep everything and tick what you have.
+ */
+export async function markTracked<T extends { mediaId: string }>(
+	mediaType: MediaType,
+	items: T[]
+): Promise<(T & { tracked: boolean })[]> {
+	const tracked = await allTrackedIds(mediaType);
+	return items.map((i) => ({ ...i, tracked: tracked.has(i.mediaId) }));
+}
