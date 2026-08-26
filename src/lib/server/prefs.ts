@@ -113,7 +113,24 @@ export async function getPrefs(): Promise<Prefs> {
 	return cache;
 }
 
-export async function setPrefs(patch: Partial<Prefs>): Promise<Prefs> {
+/* Writes are serialised. Each one is a read-modify-write over the whole file, so
+   two in flight together both read the same starting state and the second
+   overwrites the first's change — and the loser is still handed a success
+   response describing values that never reached disk. Two quick taps in Settings
+   is enough to hit it. */
+let writes: Promise<unknown> = Promise.resolve();
+
+export function setPrefs(patch: Partial<Prefs>): Promise<Prefs> {
+	const run = writes.then(
+		() => write(patch),
+		() => write(patch)
+	);
+	// Keep the chain alive even when a write rejects, or every later one is lost.
+	writes = run.catch(() => {});
+	return run;
+}
+
+async function write(patch: Partial<Prefs>): Promise<Prefs> {
 	const current = await getPrefs();
 	const next: Prefs = clamp({
 		...current,

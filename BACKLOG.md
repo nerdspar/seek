@@ -1,85 +1,49 @@
 # Backlog
 
-Things flagged but deliberately not built yet. Build order is in
-[seek-spec.md](seek-spec.md) §13.
+Things flagged but deliberately not built. Build order is in
+[seek-spec.md](seek-spec.md) §13; API behaviour is in
+[docs/floppy-api-notes.md](docs/floppy-api-notes.md).
 
-## Swipe commit animation and re-sort — DONE
+Everything in §13's build order has shipped, along with filters, sort, the
+joint/solo tag, the collection views, settings, deployment, the session gate,
+themes, and movie marking. What is left is below.
 
-*Flagged after the first real use, 2026-08-24. Both halves have shipped: the row
-slides off screen, and it now moves to its new sorted position.*
+## Anime bucket migration — parked by choice
 
-The original description, kept for context:
+`anime-list.txt` (18 shows) and `migrate-anime.sql` are generated and **unrun**.
+The SQL ends in `ROLLBACK` until deliberately changed. It needs Floppy's
+`anime_library_mode` set to `both` (or `anime`) and a database backup first — see
+[docs/floppy-api-notes.md](docs/floppy-api-notes.md#anime-bucket-migration) for
+why the bucket cannot simply be imported.
 
-1. **Continue sliding all the way off screen** rather than springing back. The
-   gesture should complete the direction it was going.
-2. Then resolve where the row belongs, using the show's *new* next episode:
-   - if it still sorts ahead of everything else in the list, it **stays in
-     place** and slides back in;
-   - otherwise it **animates to its correct position** under the active sort.
+Once migrated, anime belongs in the **filter control** (§4.6) alongside status
+and service — explicitly *not* a top-level segment. The segmented control stays
+TV Shows / Movies.
 
-Notes for whoever builds this:
+## Movie watch history is mostly absent
 
-- The authoritative post-mark state already arrives from `POST /api/watch`,
-  which re-reads the show row server-side. No extra call is needed to decide
-  the new position.
-- Re-sorting client-side means replicating Floppy's `sort` semantics locally.
-  Cheaper and more honest: reorder using the same field the active sort names,
-  and let the next server load be the tiebreak.
-- Respect `prefers-reduced-motion` — the reorder should be instant, not
-  animated, when that is set.
-- The undo toast has to survive the reorder: undo must put the row back where
-  it was, not merely restore its data.
+Floppy's statistics count **9** of the 53 tracked movies — 1,118 minutes against
+roughly 8,500 hours of television. The other 44 arrived from the Trakt import as
+`status=completed` with an `end_date` but **no play record**, so they contribute
+nothing to hours, and the Movies tile reads 0 for every range except all-time.
 
-## Anime
-
-- **Bucket migration is parked.** `anime-list.txt` (18 shows) and
-  `migrate-anime.sql` are generated and unrun. See README → "Anime bucket
-  migration".
-- Once migrated, anime belongs in the **filter control** (§4.6) alongside status
-  and platform — explicitly *not* a top-level segment. The segmented control
-  stays TV Shows / Movies.
-
-## Settings
-
-The settings sheet currently holds only the swipe direction. §8 also calls for
-theme, default tab, default sort, subscribed streaming services, and a link out
-to Floppy's own settings.
-
-One wrinkle, and it applies **only** to that outbound link. Every other Floppy
-call is proxied server-side, so `FLOPPY_URL=http://floppy:8000` is correct and
-the browser never resolves it — verified: nothing served to the client mentions
-the Floppy host, port, or API key, and the only external host the page loads is
-`image.tmdb.org` for posters.
-
-A settings link is different, because it makes the *phone* navigate to Floppy
-directly, and `floppy:8000` does not resolve outside Docker. So that one link
-needs a separate LAN-reachable address — add a `FLOPPY_PUBLIC_URL` env var
-(e.g. `http://192.168.1.10:8007`) and omit the link when it is unset.
-
-## Not yet built from the spec
-
-Everything in §13's build order plus the filters, collection, tags and settings
-above has shipped. What remains is the anime bucket migration (above), which is
-parked by choice rather than blocked.
+Worth checking Trakt itself before assuming the importer dropped them: Hobi,
+which reads Trakt, also reported "0 Movies watched" for the same year. If Trakt
+holds no movie plays either, there is nothing to re-import and those 53 are
+watchlist entries rather than history.
 
 ## Smaller items
 
-- Confirmation-toast setting for actions that have no undo of their own
-  (mark-all-season, add show). Marking already toasts because undo needs it.
-  Raised because iOS Safari has no Vibration API, so §4.2's haptic cannot fire —
-  see `src/lib/haptics.ts`.
-- Re-sort currently moves a row for "Recently watched" and "Episodes left" only.
-  The other orderings either do not change when you mark (Alphabetical, Total
-  episodes) or key on values Floppy computes server-side, which are left to the
-  next load rather than guessed at.
-- The statistics endpoint ignores `range=` and `period=`; only explicit
-  `start_date`/`end_date` narrow the window. §7.1 guessed that binge rhythm,
-  streaks and finish rate would be missing — they are not, Floppy reports all of
-  them, so they ship.
-- Movies use a different watch endpoint:
-  `POST|DELETE /api/v1/media/movie/{source}/{media_id}/watch/`, undocumented but
-  mirroring episode semantics with an optional `external_id`. Wire it up when the
-  movie library is populated.
-- Upcoming must render an air **time** only when one is genuinely known —
-  roughly a third of feed events carry a real time and the rest are a
-  `11:59:59Z` placeholder. See README → "Calendar feed".
+- **Confirmation toast for actions with no undo of their own** — mark-all-season
+  and adding a show. Marking an episode already toasts because undo needs it.
+  Raised because iOS Safari has no Vibration API, so §4.2's haptic cannot fire
+  on the one platform Seek targets; see `src/lib/haptics.ts`.
+- **Re-sort after marking covers two orderings**, "Recently watched" and
+  "Episodes left". The others either do not move when you mark (Alphabetical,
+  Total episodes) or key on values Floppy computes server-side, which are left to
+  the next load rather than guessed at.
+- **Saturday Night Live is inherently slow.** Floppy needs ~1.07s for its 1.4 MB,
+  53-season payload. Nothing in Seek can fix that; it is a Floppy-side cost.
+- **The diary date jump is approximate.** Floppy pages history by *days with
+  activity* rather than calendar days, so jumping lands near a date rather than
+  on it.

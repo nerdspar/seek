@@ -7,9 +7,6 @@ import {
 	type Stats
 } from '$lib/server/stats';
 import { memo } from '$lib/server/memo';
-import { getPrefs } from '$lib/server/prefs';
-import { FLOPPY_PUBLIC_URL } from '$lib/server/env';
-import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
 import type { PageServerLoad } from './$types';
 
 const RANGES: RangeKey[] = ['this_month', 'this_year', 'last_year', 'all_time'];
@@ -28,17 +25,9 @@ export const load: PageServerLoad = async ({ url }) => {
 	// Counts for the Collection rows (§7.2), warmed at boot — see hooks.server.ts.
 	const counts = memo(COUNTS_KEY, COUNTS_TTL, getCollectionCounts);
 
-	const publicUrl = FLOPPY_PUBLIC_URL();
-
 	return {
 		range,
 		stats,
-		counts,
-		prefs: await getPrefs(),
-		defaultPresets: DEFAULT_PRESET_LABELS(),
-		/* Verified against the running instance: Floppy has no bare /settings/ route
-		   and its settings paths carry no trailing slash, so `/settings/` 404s. The
-		   link lands on notifications because that is what this row points people at. */
-		floppyUrl: publicUrl ? `${publicUrl}/settings/notifications` : null
+		counts
 	};
 };

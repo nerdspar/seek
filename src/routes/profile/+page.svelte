@@ -2,17 +2,12 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import SettingsSheet from '$lib/components/SettingsSheet.svelte';
-	import type { Prefs } from '$lib/server/prefs';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	let settingsOpen = $state(false);
 	/* Derived from the server payload, overridden only once a save comes back —
 	   no effect needed, and it re-syncs automatically on navigation. */
-	let saved = $state<Prefs | null>(null);
-	const prefs = $derived(saved ?? data.prefs);
 
 	const RANGES = [
 		{ id: 'this_month', label: 'This month' },
@@ -36,7 +31,7 @@
 					<path d="M8 3v18M11.5 8.5h4M11.5 12h4" />
 				</svg>
 			</button>
-			<button class="gear" onclick={() => (settingsOpen = true)} aria-label="Settings">
+			<button class="gear" onclick={() => goto('/profile/settings')} aria-label="Settings">
 				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7">
 					<circle cx="12" cy="12" r="3.1" />
 					<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -179,15 +174,6 @@
 
 	<TabBar current="profile" />
 
-	{#if settingsOpen}
-		<SettingsSheet
-			{prefs}
-			defaultPresets={data.defaultPresets}
-			floppyUrl={data.floppyUrl}
-			onsaved={(p) => (saved = p)}
-			onclose={() => (settingsOpen = false)}
-		/>
-	{/if}
 </div>
 
 <style>

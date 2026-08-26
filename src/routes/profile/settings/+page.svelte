@@ -1,18 +1,15 @@
 <script lang="ts">
-	import Sheet from './Sheet.svelte';
+	import { goto } from '$app/navigation';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import type { Accent, Appearance, MarkDirection, Prefs } from '$lib/server/prefs';
+	import type { PageData } from './$types';
 
 	/** Preferences live server-side in /data (§8), so this edits them through the
 	 *  API rather than localStorage — the same values drive the server render. */
-	type Props = {
-		prefs: Prefs;
-		/** The built-in mood chips, used when the user has not customised them. */
-		defaultPresets?: string[];
-		floppyUrl?: string | null;
-		onsaved: (p: Prefs) => void;
-		onclose: () => void;
-	};
-	let { prefs, defaultPresets = [], floppyUrl = null, onsaved, onclose }: Props = $props();
+	let { data }: { data: PageData } = $props();
+	const prefs = $derived(data.prefs);
+	const defaultPresets = $derived(data.defaultPresets ?? []);
+	const floppyUrl = $derived(data.floppyUrl ?? null);
 
 	/* Fetched here rather than in the page load: building this list pages the
 	   whole library, and awaiting it on Profile blocked that page for 11s on a
@@ -143,7 +140,6 @@
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const next = (await res.json()) as Prefs;
 			edited = next;
-			onsaved(next);
 			failed = null;
 		} catch (err) {
 			edited = before;
@@ -152,197 +148,200 @@
 	}
 </script>
 
-<Sheet label="Settings" {onclose} scrollable>
-	<div class="pad">
-		<h2>Settings</h2>
+<PageHeader title="Settings" onback={() => goto('/profile')} />
 
-		<section>
-			<h3>Swipe to mark watched</h3>
-			<div class="choices">
-				{#each DIRECTIONS as opt (opt.id)}
-					<button
-						class:selected={local.markDirection === opt.id}
-						aria-pressed={local.markDirection === opt.id}
-						onclick={() => patch({ markDirection: opt.id })}
-					>
-						<span class="label">{opt.label}</span>
-						<span class="hint">{opt.hint}</span>
-					</button>
-				{/each}
-			</div>
-		</section>
+<main>
 
-		<section>
-			<h3>Default tab</h3>
-			<div class="chips">
-				{#each [{ id: 'watchlist', label: 'Watchlist' }, { id: 'upcoming', label: 'Upcoming' }, { id: 'discover', label: 'Discover' }, { id: 'profile', label: 'Profile' }] as tab (tab.id)}
-					<button
-						class:on={local.defaultTab === tab.id}
-						onclick={() => patch({ defaultTab: tab.id as Prefs['defaultTab'] })}
-					>{tab.label}</button>
-				{/each}
-			</div>
-		</section>
+	<section>
+		<h3>Swipe to mark watched</h3>
+		<div class="choices">
+			{#each DIRECTIONS as opt (opt.id)}
+				<button
+					class:selected={local.markDirection === opt.id}
+					aria-pressed={local.markDirection === opt.id}
+					onclick={() => patch({ markDirection: opt.id })}
+				>
+					<span class="label">{opt.label}</span>
+					<span class="hint">{opt.hint}</span>
+				</button>
+			{/each}
+		</div>
+	</section>
 
-		<section>
-			<h3>Appearance</h3>
-			<div class="chips">
-				{#each APPEARANCE_OPTIONS as opt (opt.id)}
-					<button
-						class:on={local.appearance === opt.id}
-						onclick={() => applyAppearance(opt.id)}
-					>{opt.label}</button>
-				{/each}
-			</div>
-			{#if local.appearance === 'system'}
-				<p class="hint">Follows your phone, including when it switches at sunset.</p>
-			{/if}
-		</section>
+	<section>
+		<h3>Default tab</h3>
+		<div class="chips">
+			{#each [{ id: 'watchlist', label: 'Watchlist' }, { id: 'upcoming', label: 'Upcoming' }, { id: 'discover', label: 'Discover' }, { id: 'profile', label: 'Profile' }] as tab (tab.id)}
+				<button
+					class:on={local.defaultTab === tab.id}
+					onclick={() => patch({ defaultTab: tab.id as Prefs['defaultTab'] })}
+				>{tab.label}</button>
+			{/each}
+		</div>
+	</section>
 
-		<section>
-			<h3>Accent</h3>
-			<div class="chips">
-				{#each ACCENT_OPTIONS as opt (opt.id)}
-					<button
-						class="accent"
-						class:on={local.accent === opt.id}
-						aria-label={opt.label}
-						onclick={() => applyAccent(opt.id)}
-					>
-						<span
-							class="swatch"
-							style="background: linear-gradient(100deg, {opt.from}, {opt.to})"
-						></span>
-						{opt.label}
-					</button>
-				{/each}
-			</div>
-		</section>
-
-		{#if allServices.length}
-			<section>
-				<h3>Your streaming services</h3>
-				<p class="hint">
-					Sorts the ones you have to the front — in Discover's service row, and in the
-					watchlist's service filter. Nothing is hidden either way.
-				</p>
-				<input
-					bind:value={serviceQuery}
-					type="search"
-					placeholder="Search {allServices.length} services"
-					autocapitalize="off"
-					autocorrect="off"
-					spellcheck="false"
-				/>
-				<div class="chips wrap">
-					{#each visibleServices as name (name)}
-						<button
-							class:on={local.services.includes(name)}
-							onclick={() =>
-								patch({
-									services: local.services.includes(name)
-										? local.services.filter((s) => s !== name)
-										: [...local.services, name]
-								})}
-						>{name}</button>
-					{/each}
-				</div>
-			</section>
+	<section>
+		<h3>Appearance</h3>
+		<div class="chips">
+			{#each APPEARANCE_OPTIONS as opt (opt.id)}
+				<button
+					class:on={local.appearance === opt.id}
+					onclick={() => applyAppearance(opt.id)}
+				>{opt.label}</button>
+			{/each}
+		</div>
+		{#if local.appearance === 'system'}
+			<p class="hint">Follows your phone, including when it switches at sunset.</p>
 		{/if}
+	</section>
 
-		<section>
-			<div class="sechead">
-				<h3>Discover chips</h3>
-				<button class="disclose" onclick={() => (editingPresets = !editingPresets)}>
-					{editingPresets ? 'Done' : 'Edit'}
+	<section>
+		<h3>Accent</h3>
+		<div class="chips">
+			{#each ACCENT_OPTIONS as opt (opt.id)}
+				<button
+					class="accent"
+					class:on={local.accent === opt.id}
+					aria-label={opt.label}
+					onclick={() => applyAccent(opt.id)}
+				>
+					<span
+						class="swatch"
+						style="background: linear-gradient(100deg, {opt.from}, {opt.to})"
+					></span>
+					{opt.label}
 				</button>
-			</div>
+			{/each}
+		</div>
+	</section>
+
+	{#if allServices.length}
+		<section>
+			<h3>Your streaming services</h3>
 			<p class="hint">
-				{presets.length} mood shortcut{presets.length === 1 ? '' : 's'} on Discover, in the order they appear.
+				Sorts the ones you have to the front — in Discover's service row, and in the
+				watchlist's service filter. Nothing is hidden either way.
 			</p>
-
-			{#if editingPresets}
-			<ul class="presets">
-				{#each presets as label, i (label)}
-					<li>
-						<span class="plabel">{label}</span>
-						<button
-							class="ctl"
-							disabled={i === 0}
-							aria-label={`Move ${label} up`}
-							onclick={() => movePreset(i, -1)}
-						>↑</button>
-						<button
-							class="ctl"
-							disabled={i === presets.length - 1}
-							aria-label={`Move ${label} down`}
-							onclick={() => movePreset(i, 1)}
-						>↓</button>
-						<button class="ctl remove" aria-label={`Remove ${label}`} onclick={() => removePreset(label)}>×</button>
-					</li>
+			<input
+				bind:value={serviceQuery}
+				type="search"
+				placeholder="Search {allServices.length} services"
+				autocapitalize="off"
+				autocorrect="off"
+				spellcheck="false"
+			/>
+			<div class="chips wrap">
+				{#each visibleServices as name (name)}
+					<button
+						class:on={local.services.includes(name)}
+						onclick={() =>
+							patch({
+								services: local.services.includes(name)
+									? local.services.filter((s) => s !== name)
+									: [...local.services, name]
+							})}
+					>{name}</button>
 				{/each}
-			</ul>
-
-			<form class="addrow" onsubmit={(e) => { e.preventDefault(); addPreset(); }}>
-				<input
-					bind:value={newPreset}
-					type="text"
-					placeholder="Add a mood — body swap, road trip"
-					autocapitalize="off"
-					autocorrect="off"
-				/>
-				<button type="submit" disabled={!newPreset.trim() || presetBusy}>
-					{presetBusy ? '…' : 'Add'}
-				</button>
-			</form>
-			{#if presetError}<p class="error">{presetError}</p>{/if}
-			{#if local.moodPresets}
-				<button class="reset" onclick={() => patch({ moodPresets: null })}>Reset to defaults</button>
-			{/if}
-			{/if}
+			</div>
 		</section>
+	{/if}
 
-		<section>
-			<h3>Show page</h3>
-			<button
-				class="row"
-				role="switch"
-				aria-checked={local.seasonArtwork}
-				onclick={() => patch({ seasonArtwork: !local.seasonArtwork })}
-			>
-				<span class="rowtext">
-					<span class="label">Season artwork</span>
-					<span class="hint">Most shows reuse the same poster for every season</span>
-				</span>
-				<span class="toggle" class:on={local.seasonArtwork}><span class="knob"></span></span>
+	<section>
+		<div class="sechead">
+			<h3>Discover chips</h3>
+			<button class="disclose" onclick={() => (editingPresets = !editingPresets)}>
+				{editingPresets ? 'Done' : 'Edit'}
 			</button>
-		</section>
+		</div>
+		<p class="hint">
+			{presets.length} mood shortcut{presets.length === 1 ? '' : 's'} on Discover, in the order they appear.
+		</p>
 
-		{#if failed}<p class="error">{failed}</p>{/if}
+		{#if editingPresets}
+		<ul class="presets">
+			{#each presets as label, i (label)}
+				<li>
+					<span class="plabel">{label}</span>
+					<button
+						class="ctl"
+						disabled={i === 0}
+						aria-label={`Move ${label} up`}
+						onclick={() => movePreset(i, -1)}
+					>↑</button>
+					<button
+						class="ctl"
+						disabled={i === presets.length - 1}
+						aria-label={`Move ${label} down`}
+						onclick={() => movePreset(i, 1)}
+					>↓</button>
+					<button class="ctl remove" aria-label={`Remove ${label}`} onclick={() => removePreset(label)}>×</button>
+				</li>
+			{/each}
+		</ul>
 
-		<section>
-			<h3>Floppy</h3>
-			{#if floppyUrl}
-				<a class="out" href={floppyUrl} target="_blank" rel="noreferrer">
-					<span class="rowtext">
-						<span class="label">Floppy settings</span>
-						<span class="hint">Notifications and integrations live there (§9)</span>
-					</span>
-					<span class="chev">↗</span>
-				</a>
-			{:else}
-				<p class="hint">
-					Set <code>FLOPPY_PUBLIC_URL</code> to link out to Floppy's own settings — notifications
-					are configured there, not here.
-				</p>
-			{/if}
-		</section>
-	</div>
-</Sheet>
+		<form class="addrow" onsubmit={(e) => { e.preventDefault(); addPreset(); }}>
+			<input
+				bind:value={newPreset}
+				type="text"
+				placeholder="Add a mood — body swap, road trip"
+				autocapitalize="off"
+				autocorrect="off"
+			/>
+			<button type="submit" disabled={!newPreset.trim() || presetBusy}>
+				{presetBusy ? '…' : 'Add'}
+			</button>
+		</form>
+		{#if presetError}<p class="error">{presetError}</p>{/if}
+		{#if local.moodPresets}
+			<button class="reset" onclick={() => patch({ moodPresets: null })}>Reset to defaults</button>
+		{/if}
+		{/if}
+	</section>
+
+	<section>
+		<h3>Show page</h3>
+		<button
+			class="row"
+			role="switch"
+			aria-checked={local.seasonArtwork}
+			onclick={() => patch({ seasonArtwork: !local.seasonArtwork })}
+		>
+			<span class="rowtext">
+				<span class="label">Season artwork</span>
+				<span class="hint">Most shows reuse the same poster for every season</span>
+			</span>
+			<span class="toggle" class:on={local.seasonArtwork}><span class="knob"></span></span>
+		</button>
+	</section>
+
+	{#if failed}<p class="error">{failed}</p>{/if}
+
+	<section>
+		<h3>Floppy</h3>
+		{#if floppyUrl}
+			<a class="out" href={floppyUrl} target="_blank" rel="noreferrer">
+				<span class="rowtext">
+					<span class="label">Floppy settings</span>
+					<span class="hint">Notifications and integrations live there (§9)</span>
+				</span>
+				<span class="chev">↗</span>
+			</a>
+		{:else}
+			<p class="hint">
+				Set <code>FLOPPY_PUBLIC_URL</code> to link out to Floppy's own settings — notifications
+				are configured there, not here.
+			</p>
+		{/if}
+	</section>
+</main>
 
 <style>
-	.pad { padding: 0 var(--gutter); }
-	h2 { margin: 0 0 18px; font-size: 18px; font-weight: 600; }
+	/* Sheet supplied the padding and the scroll container; a page has to do both
+	   itself, including clearing the tab bar and the home indicator. */
+	main {
+		padding: 4px var(--gutter) calc(var(--tabbar-h) + var(--safe-b) + 32px);
+	}
+
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	section { margin-bottom: 18px; }
 
