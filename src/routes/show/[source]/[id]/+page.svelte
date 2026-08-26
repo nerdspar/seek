@@ -131,7 +131,18 @@
 	function measureHero() {
 		const el = document.querySelector('[data-hero-title]');
 		// Absent while the shell is still loading — nothing to hide behind yet.
-		heroVisible = !el || el.getBoundingClientRect().bottom > 52;
+		if (!el) {
+			heroVisible = true;
+			return;
+		}
+		/* Measured, not assumed. This was hardcoded to 52 while the header is 66
+		   here and taller again on a phone, where it also carries the status-bar
+		   inset — so the swap happened well after the hero title had actually gone,
+		   and by a margin that varied per device. Comparing against the header's
+		   real bottom edge makes the handover exact in both directions. */
+		const header = document.querySelector('header');
+		const edge = header ? header.getBoundingClientRect().bottom : 0;
+		heroVisible = el.getBoundingClientRect().bottom > edge;
 	}
 
 	let sheetOpen = $state(false);
