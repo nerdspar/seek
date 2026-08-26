@@ -413,7 +413,7 @@
 						<li>
 							<!-- Tapping a face searches that name — how you find the other
 							     thing you know them from. -->
-							<button onclick={() => goto(`/search?q=${encodeURIComponent(person.name)}`)}>
+							<button onclick={() => goto(`/discover?q=${encodeURIComponent(person.name)}`)}>
 								<Poster src={person.image} width={78} height={78} radius={39} />
 								<span class="name">{person.name}</span>
 								{#if person.role}<span class="role">{person.role}</span>{/if}

@@ -51,6 +51,19 @@
 
 	let mood = $state<string | null>(null);
 	let freeText = $state('');
+
+	/* Run a query handed over in the URL, and re-run it when the URL changes so
+	   arriving from a second cast member actually searches again rather than
+	   leaving the first result on screen. Seeding freeText here rather than in
+	   its initialiser keeps a single path for both first load and navigation. */
+	let ranQuery = $state<string | null>(null);
+	$effect(() => {
+		const q = (data.query ?? '').trim();
+		if (!q || q === ranQuery) return;
+		ranQuery = q;
+		freeText = q;
+		runSearch(q);
+	});
 	let moodResults = $state<TmdbResult[] | null>(null);
 	let sections = $state<Section[] | null>(null);
 	let moodBusy = $state(false);

@@ -10,6 +10,11 @@ export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('type') as MediaType | null;
 	const mediaType: MediaType = requested === 'movie' ? 'movie' : 'tv';
 
+	/* Lets other pages hand Discover a search to run. Tapping a cast member is
+	   the reason: an actor's name means nothing to Floppy's title search, and
+	   the universal search here is the one thing that resolves people. */
+	const query = (url.searchParams.get('q') ?? '').trim();
+
 	/* Labels only — keyword ids stay server-side so the client never builds TMDB
 	   queries itself. Null means the user has not customised them, so they get
 	   whatever the current built-in list is. */
@@ -35,6 +40,7 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	return {
 		mediaType,
+		query,
 		presets,
 		platforms,
 		moodAvailable: tmdbConfigured(),
