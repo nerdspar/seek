@@ -33,6 +33,11 @@
 	/* Same reason as the filter sheet: the library spans ~29 services, and an
 	   undifferentiated wall of chips buries everything below it. Selected ones
 	   stay pinned so you can always see and unpick what you chose. */
+	/* Editing the chips is a rare, deliberate act, but the list is one row per
+	   preset and there are 18 by default — 967px of a 1597px sheet, more than a
+	   screenful, pushing everything after it out of sight. It opens on request. */
+	let editingPresets = $state(false);
+
 	let serviceQuery = $state('');
 	const visibleServices = $derived.by(() => {
 		const q = serviceQuery.trim().toLowerCase();
@@ -163,7 +168,10 @@
 		{#if allServices.length}
 			<section>
 				<h3>Your streaming services</h3>
-				<p class="hint">Picked here, these are offered first when filtering.</p>
+				<p class="hint">
+					Sorts the ones you have to the front — in Discover's service row, and in the
+					watchlist's service filter. Nothing is hidden either way.
+				</p>
 				<input
 					bind:value={serviceQuery}
 					type="search"
@@ -189,9 +197,17 @@
 		{/if}
 
 		<section>
-			<h3>Discover chips</h3>
-			<p class="hint">The mood shortcuts on Discover, in the order they appear.</p>
+			<div class="sechead">
+				<h3>Discover chips</h3>
+				<button class="disclose" onclick={() => (editingPresets = !editingPresets)}>
+					{editingPresets ? 'Done' : 'Edit'}
+				</button>
+			</div>
+			<p class="hint">
+				{presets.length} mood shortcut{presets.length === 1 ? '' : 's'} on Discover, in the order they appear.
+			</p>
 
+			{#if editingPresets}
 			<ul class="presets">
 				{#each presets as label, i (label)}
 					<li>
@@ -228,6 +244,7 @@
 			{#if presetError}<p class="error">{presetError}</p>{/if}
 			{#if local.moodPresets}
 				<button class="reset" onclick={() => patch({ moodPresets: null })}>Reset to defaults</button>
+			{/if}
 			{/if}
 		</section>
 
@@ -291,6 +308,9 @@
 	.rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 	.label { font-size: 15px; font-weight: 600; }
 	.hint { font-size: 12px; opacity: 0.7; }
+	.sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+	.sechead h3 { flex: 1; }
+	.disclose { flex: none; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
 
 	.toggle {
 		flex: none; width: 46px; height: 28px; padding: 3px;
