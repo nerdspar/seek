@@ -325,7 +325,6 @@
 	main { padding: 6px 0 calc(var(--tabbar-h) + var(--safe-b) + 32px); }
 
 	.platforms { margin-bottom: 14px; }
-	.platforms .chips { padding: 0 var(--gutter); }
 	.platform {
 		display: flex; align-items: center; gap: 7px;
 		flex: none; min-height: 38px; padding: 0 13px 0 5px; border-radius: 10px;
@@ -334,7 +333,11 @@
 	.platform img { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; }
 	.platform.on { background: var(--signal); color: #fff; }
 
-	.mood { padding: 0 var(--gutter); margin-bottom: 18px; }
+	/* The gutter belongs on the children, not here: this page is full-bleed
+	   (main has no horizontal padding) so that scrolling rows can run past the
+	   screen edge. Insetting the section would clip the chips short of it. */
+	.mood { margin-bottom: 18px; }
+	.mood form { padding: 0 var(--gutter); }
 	.mood input {
 		width: 100%; height: var(--tap); padding: 0 14px;
 		border: none; border-radius: var(--radius);
@@ -344,7 +347,10 @@
 	}
 	.mood input::-webkit-search-cancel-button { display: none; }
 
-	.chips { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; }
+	/* Padding inside the scroller, never margin around it — chips then sit level
+	   with the headings at rest but still scroll to the screen edge, matching
+	   .rail and the platform row. */
+	.chips { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding: 0 var(--gutter) 2px; }
 	.chips button {
 		flex: none; min-height: 34px; padding: 0 13px; border-radius: 9px;
 		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
