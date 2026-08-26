@@ -117,6 +117,38 @@
 		}
 	}
 
+	/* Library membership. Optimistic like everything else here, and re-synced
+	   from the server value whenever a fresh load arrives. */
+	let trackedEdit = $state<boolean | null>(null);
+	let trackBusy = $state(false);
+
+	async function toggleTracked(current: boolean) {
+		if (trackBusy) return;
+		const before = trackedEdit;
+		const next = !current;
+
+		/* Removing throws away whatever progress Floppy holds for the show, which
+		   is not something to discover afterwards. Adding needs no such warning. */
+		if (!next && !confirm('Remove this from your library? Any watched progress goes with it.')) return;
+
+		trackBusy = true;
+		trackedEdit = next;
+		try {
+			const res = await fetch('/api/library', {
+				method: next ? 'POST' : 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				// This route only ever renders TV; movies have no detail page yet.
+				body: JSON.stringify({ mediaType: 'tv', source: data.source, mediaId: data.mediaId })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		} catch (err) {
+			trackedEdit = before;
+			note = `Couldn't ${next ? 'add' : 'remove'} — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			trackBusy = false;
+		}
+	}
+
 	/* §11: joint vs solo is show-level in this household, so a tag on the item is
 	   the whole mechanism — no Floppy changes, no per-play attribution. */
 	let jointEdit = $state<boolean | null>(null);
@@ -172,6 +204,7 @@
 		</div>
 	</main>
 {:then show}
+	{@const tracked = trackedEdit ?? show.tracked}
 	<PageHeader title={show.title} subtitle={yearLabel(show) || null} onback={() => history.back()} />
 
 	<main>
@@ -212,6 +245,27 @@
 			</div>
 		</section>
 
+		<div class="actions">
+			<button
+				class="joint inlib"
+				class:on={tracked}
+				disabled={trackBusy}
+				aria-pressed={tracked}
+				onclick={() => toggleTracked(tracked)}
+			>
+				{#if tracked}
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+					<span>In your library</span>
+				{:else}
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+					<span>Add to library</span>
+				{/if}
+			</button>
+		</div>
+
+		<!-- Joint/solo is a tag on a tracked item, so it has nothing to attach to
+		     until the show is in the library. -->
+		{#if tracked}
 		{#await data.joint then serverJoint}
 			{@const joint = jointEdit ?? serverJoint}
 			<button class="joint" class:on={joint} disabled={jointBusy} aria-pressed={joint} onclick={() => toggleJoint(joint)}>
@@ -223,6 +277,7 @@
 				<span>{joint ? 'Watched together' : 'Watched alone'}</span>
 			</button>
 		{/await}
+		{/if}
 
 		{#if show.synopsis}
 			<p class="synopsis">{show.synopsis}</p>
@@ -364,6 +419,14 @@
 	}
 	.joint.on { background: var(--signal); color: #fff; }
 	.joint:disabled { opacity: 0.6; }
+
+	.actions { display: flex; gap: 8px; }
+	/* Being in the library is a statement of fact, not an active setting, so the
+	   tracked state stays quiet — the accent is reserved for "Add", which is the
+	   one thing here worth drawing the eye. */
+	/* Named to avoid .track, which is already the progress bar in this file. */
+	.inlib.on { background: var(--surface); color: var(--text-dim); }
+	.inlib:not(.on) { background: var(--signal); color: #fff; }
 
 	.synopsis { margin: 0 0 22px; font-size: 14.5px; line-height: 1.55; }
 
