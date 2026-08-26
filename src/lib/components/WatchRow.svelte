@@ -220,6 +220,11 @@
 			? Math.min(100, (row.progress / row.maxProgress) * 100)
 			: 0
 	);
+
+	/* Floppy reports no next_episode for a movie, so "has nothing next" cannot
+	   stand in for "finished" the way it does on a show — progress has to be
+	   read instead. */
+	const unwatchedMovie = $derived(row.mediaType === 'movie' && row.progress < (row.maxProgress ?? 1));
 </script>
 
 <div class="row" class:pending>
@@ -276,6 +281,11 @@
 						<circle cx="12" cy="7.75" r="0.9" fill="currentColor" stroke="none" />
 					</svg>
 				</div>
+			{:else if unwatchedMovie}
+				<!-- A movie has no next episode, so the absence of one is not the same
+				     as being finished. Saying "Caught up" over an unwatched film is
+				     simply wrong, and hides the only action the row offers. -->
+				<div class="pill" data-episode-pill><span class="ep">Not watched</span></div>
 			{:else}
 				<div class="pill caught-up" data-episode-pill><span class="ep">Caught up</span></div>
 			{/if}

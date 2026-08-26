@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { markEpisodeWatched } from '$lib/server/api';
+import { markEpisodeWatched, markMovieWatched, watchMoviePath } from '$lib/server/api';
 import { getRow } from '$lib/server/watchlist';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { patch, expire } from '$lib/server/memo';
@@ -19,20 +19,28 @@ type Body = {
 
 function parse(body: Body) {
 	const { source = 'tmdb', mediaId, season, episode, mediaType = 'tv', title = '' } = body;
-	// §12.2: mediaId is the SHOW's TMDB id. The client only ever sends what came
-	// back on the row, so there is no place for an episode id to sneak in.
-	if (!mediaId || typeof season !== 'number' || typeof episode !== 'number') {
+	if (!mediaId) error(400, 'mediaId is required');
+
+	/* A movie has nothing to address below itself, so it carries no season or
+	   episode and must not be held to them. Everything else does. */
+	const isMovie = mediaType === 'movie';
+	if (!isMovie && (typeof season !== 'number' || typeof episode !== 'number')) {
+		// §12.2: mediaId is the SHOW's TMDB id. The client only ever sends what
+		// came back on the row, so there is no place for an episode id to sneak in.
 		error(400, 'mediaId, season and episode are required');
 	}
-	return { source, mediaId, season, episode, mediaType, title };
+	return { source, mediaId, season, episode, mediaType, title, isMovie };
 }
 
 /** Mark watched. Appends one play (§12.3). */
 export const POST: RequestHandler = async ({ request }) => {
-	const { source, mediaId, season, episode, mediaType, title } = parse(await request.json());
+	const { source, mediaId, season, episode, mediaType, title, isMovie } = parse(
+		await request.json()
+	);
 
 	try {
-		await markEpisodeWatched(source, mediaId, season, episode);
+		if (isMovie) await markMovieWatched(source, mediaId);
+		else await markEpisodeWatched(source, mediaId, season as number, episode as number);
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) {
 			// Nothing was written — safe for the client to offer a retry.
@@ -87,9 +95,12 @@ export const POST: RequestHandler = async ({ request }) => {
  * it would take more than the single play this is meant to reverse.
  */
 export const DELETE: RequestHandler = async ({ request }) => {
-	const { source, mediaId, season, episode, mediaType, title } = parse(await request.json());
-	const path =
-		`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${season}/episodes/${episode}/watch/`;
+	const { source, mediaId, season, episode, mediaType, title, isMovie } = parse(
+		await request.json()
+	);
+	const path = isMovie
+		? watchMoviePath(source, mediaId)
+		: `/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${season}/episodes/${episode}/watch/`;
 
 	try {
 		await floppy(path, { method: 'DELETE' });

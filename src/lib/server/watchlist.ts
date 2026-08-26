@@ -52,7 +52,17 @@ const maxProgressCache = new TTLCache<number | null>(6 * 60 * 60 * 1000, 2000);
  * Show detail carries `max_progress` for every one of them, so this fills the
  * gap. It is an extra call per affected row on first load only, then cached.
  */
-async function maxProgressFor(source: string, mediaId: string): Promise<number | null> {
+async function maxProgressFor(
+	mediaType: MediaType,
+	source: string,
+	mediaId: string
+): Promise<number | null> {
+	/* A film is one thing; there is nothing to look up. This is not just an
+	   optimisation — the lookup below is hardcoded to the tv path, so asking it
+	   about a movie fetched whatever series happens to share that TMDB id and
+	   returned its episode count. Plan 9 from Outer Space came back as "0/24". */
+	if (mediaType === 'movie') return 1;
+
 	const key = `${source}:${mediaId}`;
 	const hit = maxProgressCache.get(key);
 	if (hit !== undefined) return hit;
@@ -179,7 +189,9 @@ async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
 		row.next
 			? episodeTitle(row.source, row.mediaId, row.next.season, row.next.episode)
 			: Promise.resolve(null),
-		row.maxProgress === null ? maxProgressFor(row.source, row.mediaId) : Promise.resolve(row.maxProgress)
+		row.maxProgress === null
+			? maxProgressFor(row.mediaType, row.source, row.mediaId)
+			: Promise.resolve(row.maxProgress)
 	]);
 
 	const out: WatchlistRow = { ...row };

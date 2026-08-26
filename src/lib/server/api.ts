@@ -39,6 +39,23 @@ export function getEpisode(source: string, mediaId: string, season: number, epis
 const ANIME_BUCKET_ERROR = /UNIQUE constraint failed:\s*app_tv\.user_id,\s*app_tv\.item_id/i;
 
 /**
+ * Mark a movie watched. Appends one play (§12.3), same as an episode.
+ *
+ * A separate endpoint because a movie has no season or episode to address, and
+ * it is undocumented — absent from openapi.yaml, which lists only the episode
+ * watch path. Verified against a live instance: POST returns 201 and creates the
+ * tracking entry as well as the play, so a movie that was never tracked can be
+ * marked in one call. DELETE returns 204 and pops the newest play.
+ */
+export function watchMoviePath(source: string, mediaId: string): string {
+	return `/api/v1/media/movie/${source}/${encodeURIComponent(mediaId)}/watch/`;
+}
+
+export async function markMovieWatched(source: string, mediaId: string): Promise<TrackedMedia> {
+	return floppy<TrackedMedia>(watchMoviePath(source, mediaId), { method: 'POST', body: {} });
+}
+
+/**
  * Record one play of an episode.
  *
  * §12.2 `mediaId` is the SHOW's TMDB id, never the episode's.

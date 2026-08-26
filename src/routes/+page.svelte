@@ -133,8 +133,9 @@
 
 	type Pending = {
 		rowKey: string;
-		/** The episode actually written — what undo must reverse. */
-		marked: { season: number; episode: number };
+		/** The episode actually written — what undo must reverse. Null for a
+		 *  movie, which is addressed by id alone. */
+		marked: { season: number; episode: number } | null;
 		snapshot: WatchlistRow;
 		/** Undo has to put the row back where it was, not just restore its data. */
 		orderBefore: string[] | null;
@@ -171,14 +172,21 @@
 	}
 
 	async function onmark(row: WatchlistRow) {
-		if (!row.next) return;
+		/* A movie has no next episode, so "nothing next" cannot gate it the way it
+		   gates a show — an unwatched film is exactly the case worth marking. */
+		const isMovie = row.mediaType === 'movie';
+		const movieUnwatched = isMovie && row.progress < (row.maxProgress ?? 1);
+		if (!row.next && !movieUnwatched) return;
+
 		const k = key(row);
 		if (inFlight.has(k)) return;
 
 		const snapshot = { ...row, next: row.next ? { ...row.next } : null };
 		const orderBefore = order ? [...order] : null;
-		const marked = { season: row.next.season, episode: row.next.episode };
-		const label = `S${String(marked.season).padStart(2, '0')}E${String(marked.episode).padStart(2, '0')}`;
+		const marked = row.next ? { season: row.next.season, episode: row.next.episode } : null;
+		const label = marked
+			? `S${String(marked.season).padStart(2, '0')}E${String(marked.episode).padStart(2, '0')}`
+			: 'Watched';
 
 		haptic();
 		setInFlight(k, true);
@@ -201,8 +209,8 @@
 						mediaId: row.mediaId,
 						mediaType: row.mediaType,
 						title: row.title,
-						season: marked.season,
-						episode: marked.episode
+						season: marked?.season,
+						episode: marked?.episode
 					})
 				})
 			);
@@ -242,8 +250,8 @@
 						mediaId: t.snapshot.mediaId,
 						mediaType: t.snapshot.mediaType,
 						title: t.snapshot.title,
-						season: t.marked.season,
-						episode: t.marked.episode
+						season: t.marked?.season,
+						episode: t.marked?.episode
 					})
 				})
 			);
