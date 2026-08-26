@@ -278,8 +278,11 @@
 			<Poster src={show.poster} width={104} height={156} radius={10} eager />
 			<div class="facts">
 				<h1 data-hero-title>{show.title}</h1>
-				{#if yearLabel(show)}<p class="years">{yearLabel(show)}</p>{/if}
+				<!-- The years sit with the chips rather than on their own line: it is
+				     the same kind of fact, and a line to itself pushed everything
+				     below it down for one short string. -->
 				<p class="chips tnum">
+					{#if yearLabel(show)}<span class="chip">{yearLabel(show)}</span>{/if}
 					{#if show.status}<span class="chip">{show.status}</span>{/if}
 					{#if show.score}<span class="chip">★ {show.score.toFixed(1)}</span>{/if}
 					{#if show.runtime}<span class="chip">{formatRuntime(show.runtime)}</span>{/if}
@@ -523,7 +526,6 @@
 	}
 	.add:disabled { opacity: 0.6; }
 
-	.years { margin: 2px 0 0; font-size: 13.5px; color: var(--text-dim); }
 
 	.synopsis { margin: 0 0 22px; font-size: 14.5px; line-height: 1.55; }
 
