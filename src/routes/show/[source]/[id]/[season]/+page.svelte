@@ -17,9 +17,6 @@
 	let note = $state<string | null>(null);
 	let toast = $state<{ episode: number; label: string; before: EpisodeRow } | null>(null);
 	let undoBusy = $state(false);
-	let bulkRunning = $state(false);
-	let bulkDone = $state(0);
-	let bulkTotal = $state(0);
 
 	const episodesOf = (s: SeasonDetail) => s.episodes.map((e) => overrides[e.episodeNumber] ?? e);
 	const watchedIn = (eps: EpisodeRow[]) => eps.filter((e) => e.plays > 0).length;
@@ -94,65 +91,6 @@
 		}
 	}
 
-	/* Fill or clear the whole season. Clearing is one DELETE on the season path;
-	   filling walks episodes sequentially, because these are appends against one
-	   show and Floppy resolves the season row per call (§12.1). */
-	async function toggleAll(season: SeasonDetail) {
-		const eps = episodesOf(season);
-		if (bulkRunning || !eps.length) return;
-		const all = watchedIn(eps) === eps.length;
-
-		if (all) {
-			if (!confirm(`Clear all ${eps.length} episodes of ${season.title}?`)) return;
-			bulkRunning = true;
-			bulkTotal = eps.length;
-			bulkDone = 0;
-			toast = null;
-			try {
-				const res = await fetch('/api/season', {
-					method: 'DELETE',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						source: data.source,
-						mediaId: data.mediaId,
-						season: data.seasonNumber
-					})
-				});
-				if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-				overrides = Object.fromEntries(eps.map((e) => [e.episodeNumber, { ...e, plays: 0 }]));
-				note = `Cleared ${eps.length} episodes.`;
-			} catch (err) {
-				note = `Couldn't clear the season — ${err instanceof Error ? err.message : err}`;
-			} finally {
-				bulkRunning = false;
-			}
-			return;
-		}
-
-		const targets = eps.filter((e) => e.plays === 0);
-		if (!confirm(`Mark ${targets.length} unwatched episode${targets.length === 1 ? '' : 's'} watched?`)) return;
-
-		bulkRunning = true;
-		bulkTotal = targets.length;
-		bulkDone = 0;
-		toast = null;
-		const failures: number[] = [];
-
-		for (const ep of targets) {
-			try {
-				await call('POST', ep.episodeNumber, season.showTitle ?? '');
-				put({ ...ep, plays: 1 });
-			} catch {
-				failures.push(ep.episodeNumber);
-			}
-			bulkDone += 1;
-		}
-
-		bulkRunning = false;
-		note = failures.length
-			? `Marked ${targets.length - failures.length} of ${targets.length}. Failed: ${failures.map((n) => `E${n}`).join(', ')}`
-			: `Marked ${targets.length} episode${targets.length === 1 ? '' : 's'} watched.`;
-	}
 </script>
 
 {#await data.season}
@@ -189,22 +127,6 @@
 				<span class="tnum">{watchedCount}/{episodes.length}</span>
 			</div>
 
-			<!-- One control that both fills and clears, mirroring the per-episode
-			     circle so the affordance reads the same. -->
-			<button
-				class="allcheck"
-				class:watched={allWatched}
-				disabled={bulkRunning || !episodes.length}
-				aria-pressed={allWatched}
-				aria-label={allWatched ? 'Clear the whole season' : 'Mark the whole season watched'}
-				onclick={() => toggleAll(season)}
-			>
-				{#if bulkRunning}
-					<span class="tnum mini">{bulkDone}/{bulkTotal}</span>
-				{:else}
-					<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width={allWatched ? 2.6 : 2.2} stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-				{/if}
-			</button>
 		</div>
 
 		<ul class="episodes">
@@ -226,7 +148,7 @@
 						aria-label={ep.plays > 0 ? `Unmark ${epLabel(ep.seasonNumber, ep.episodeNumber)}` : `Mark ${epLabel(ep.seasonNumber, ep.episodeNumber)} watched`}
 						aria-pressed={ep.plays > 0}
 						onclick={() => toggle(ep, season.showTitle ?? '')}
-						disabled={inFlight.has(ep.episodeNumber) || bulkRunning}
+						disabled={inFlight.has(ep.episodeNumber)}
 					>
 						{#if ep.plays > 0}
 							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
@@ -292,19 +214,6 @@
 		transition: width 260ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
-	.allcheck {
-		position: relative; display: grid; place-items: center;
-		width: 52px; height: var(--tap); justify-self: center;
-	}
-	.allcheck::before {
-		content: ''; position: absolute; width: 26px; height: 26px;
-		border-radius: 50%; border: 1.8px solid var(--surface-raised);
-	}
-	.allcheck.watched::before { border-color: transparent; background: var(--signal); }
-	.allcheck svg { position: relative; color: var(--text-dim); }
-	.allcheck.watched svg { color: #fff; }
-	.allcheck:disabled { opacity: 0.5; }
-	.mini { position: relative; font-size: 9.5px; font-weight: 700; color: var(--text-dim); }
 
 	.episodes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 	.episodes li {
