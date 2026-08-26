@@ -52,3 +52,18 @@ Then draw each glyph through a `TransformPen` carrying
 `Transform(0.14, 0, 0, -0.14, penX, 163)`, advancing `penX` by the glyph's
 width × 0.14 − 2. The negative y-scale is what flips the font's y-up outlines
 into SVG's y-down space.
+
+## Cache-busting the icons
+
+The icon URLs in `src/app.html` and `static/manifest.webmanifest` carry a
+`?v=` query. **Bump it whenever the artwork changes.**
+
+The filenames never change and the server sends `cache-control: max-age=14400`,
+so without a version a new icon behind an old URL stays invisible for four
+hours. That matters more than usual here: iOS captures a home-screen icon once,
+at the moment you add it, and never refreshes it afterwards — so a stale fetch
+during those four hours gets baked into the home screen permanently.
+
+Changing the version is not enough on its own for a device that already has the
+app installed. Delete the home-screen icon and add it again to pick up the new
+one.

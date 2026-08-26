@@ -16,13 +16,20 @@
 		<link rel="manifest" href="/manifest.webmanifest" />
 		<!-- iOS picks per device: 180 iPhone @3x, 167 iPad Pro, 152 iPad, 120
 		     iPhone @2x. Without the smaller entries it downsamples the 180 and
-		     the check loses its edge. -->
-		<link rel="apple-touch-icon" sizes="180x180" href="/seek-180.png" />
-		<link rel="apple-touch-icon" sizes="167x167" href="/seek-167.png" />
-		<link rel="apple-touch-icon" sizes="152x152" href="/seek-152.png" />
-		<link rel="apple-touch-icon" sizes="120x120" href="/seek-120.png" />
-		<link rel="icon" href="/seek-icon.svg" type="image/svg+xml" />
-		<link rel="icon" sizes="32x32" type="image/png" href="/seek-32.png" />
+		     the check loses its edge.
+
+		     The ?v= is not decoration. These are served with a four-hour
+		     max-age and the filenames never change, so a new icon behind an old
+		     URL stays invisible until the cache expires — and iOS captures a
+		     home-screen icon once at install and never refreshes it, so a stale
+		     fetch gets baked in for good. Bump the version whenever the artwork
+		     changes; see brand/README.md. -->
+		<link rel="apple-touch-icon" sizes="180x180" href="/seek-180.png?v=2" />
+		<link rel="apple-touch-icon" sizes="167x167" href="/seek-167.png?v=2" />
+		<link rel="apple-touch-icon" sizes="152x152" href="/seek-152.png?v=2" />
+		<link rel="apple-touch-icon" sizes="120x120" href="/seek-120.png?v=2" />
+		<link rel="icon" href="/seek-icon.svg?v=2" type="image/svg+xml" />
+		<link rel="icon" sizes="32x32" type="image/png" href="/seek-32.png?v=2" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<!-- Translucent on purpose: iOS blurs page content as it scrolls under the
 		     status bar, which is the effect we want. It does mean content must be
