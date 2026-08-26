@@ -279,7 +279,6 @@
 				<section class="shelf">
 					<h2>{row.title}</h2>
 					{#if row.why}<p class="why">{row.why}</p>{/if}
-					{#if row.matchSignal}<p class="signal">{row.matchSignal}</p>{/if}
 					<ul class="rail">
 						{#each row.items as item (item.mediaId)}
 							<li>
@@ -363,8 +362,7 @@
 	.skhead { display: flex; flex-direction: column; gap: 6px; padding: 0 var(--gutter); }
 	.rail li :global(.sk + .sk) { margin-top: 7px; }
 	.shelf h2 { margin: 0 var(--gutter) 2px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
-	.why { margin: 0 var(--gutter) 2px; font-size: 12.5px; color: var(--text-dim); }
-	.signal { margin: 0 var(--gutter) 8px; font-size: 11.5px; color: var(--signal-solid); opacity: 0.85; }
+	.why { margin: 0 var(--gutter) 8px; font-size: 12.5px; color: var(--text-dim); }
 
 	.rail, .grid { margin: 8px 0 0; padding: 0; list-style: none; }
 	.rail {

@@ -2,8 +2,12 @@
  * Discover (§6). Floppy's own rows come first — its personalisation is already
  * doing the work §6.1 describes, including "because you watched"-style rows
  * driven by local history ("Top Picks For You", "Comfort Rewatches"), each with
- * a `why` and a `match_signal` explaining itself. Rolling our own on top would
- * be worse and slower.
+ * a `why` explaining itself. Rolling our own on top would be worse and slower.
+ *
+ * Floppy also returns `match_signal`, which is deliberately dropped. Every row
+ * that has one phrases it as "Driven by your current <tags> phase" using the
+ * same handful of tags in a different order, so on screen the rows all appeared
+ * to say the same thing.
  */
 import { floppy } from './floppy';
 import type { MediaType } from '$lib/types';
@@ -23,7 +27,6 @@ export type DiscoverRow = {
 	title: string;
 	why: string | null;
 	/** Floppy's own explanation of what drove a personalised row. */
-	matchSignal: string | null;
 	items: DiscoverItem[];
 };
 
@@ -63,7 +66,6 @@ export async function getDiscoverRows(mediaType: MediaType): Promise<DiscoverRow
 				key: str(r.key) ?? str(r.title) ?? 'row',
 				title: str(r.title) ?? 'More',
 				why: str(r.why),
-				matchSignal: str(r.match_signal),
 				items
 			};
 		})
