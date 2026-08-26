@@ -1,6 +1,14 @@
 <script lang="ts">
-	type Props = { title: string; subtitle?: string | null; onback: () => void };
-	let { title, subtitle = null, onback }: Props = $props();
+	type Props = {
+		title: string;
+		subtitle?: string | null;
+		/** Hold the title back until the page's own heading scrolls away, so the
+		 *  same words are not on screen twice. The header still reserves its space,
+		 *  so nothing shifts when it appears. */
+		titleHidden?: boolean;
+		onback: () => void;
+	};
+	let { title, subtitle = null, titleHidden = false, onback }: Props = $props();
 </script>
 
 <header>
@@ -9,13 +17,16 @@
 			<path d="m15 18-6-6 6-6" />
 		</svg>
 	</button>
-	<div class="titles">
+	<div class="titles" class:hidden={titleHidden}>
 		<span class="title">{title}</span>
 		{#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
 	</div>
 </header>
 
 <style>
+	.titles { transition: opacity 160ms ease; }
+	.titles.hidden { opacity: 0; pointer-events: none; }
+
 	header {
 		position: sticky;
 		top: 0;

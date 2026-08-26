@@ -1,4 +1,5 @@
 import { getShow } from '$lib/server/detail';
+import { getTracking, UNTRACKED } from '$lib/server/tracking';
 import { getPrefs } from '$lib/server/prefs';
 import { getItemTags, JOINT_TAG } from '$lib/server/tags';
 import { getShowExtras } from '$lib/server/tmdb';
@@ -27,6 +28,13 @@ export const load: PageServerLoad = async ({ params }) => {
 		)
 	);
 
+	/* Status and score are not on the detail response — see tracking.ts — so this
+	   is a second read, streamed alongside rather than blocking the shell. It
+	   needs the title to search by, so it chains off the show. */
+	const tracking = show
+		.then((d) => getTracking('tv', params.source, params.id, d.title))
+		.catch(() => UNTRACKED);
+
 	const joint = getItemTags('tv', params.source, params.id)
 		.then((tags) => tags.includes(JOINT_TAG))
 		.catch(() => false);
@@ -36,6 +44,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		mediaId: params.id,
 		show,
 		extras,
+		tracking,
 		joint,
 		seasonArtwork: prefs.seasonArtwork
 	};
