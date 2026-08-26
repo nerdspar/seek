@@ -11,6 +11,8 @@
  * are matched on media_id. That is one extra call per search, not one per row.
  */
 import { floppy } from './floppy';
+import { memo } from './memo';
+import { getWatchlist } from './watchlist';
 import type { MediaType, SearchResult } from '$lib/types';
 
 type Rec = Record<string, unknown>;
@@ -31,10 +33,36 @@ async function trackedIds(mediaType: MediaType, query: string): Promise<Set<stri
 				.filter(Boolean)
 		);
 	} catch {
-		// A failed cross-reference must not fail the search; worst case a row
-		// offers "Add" for something already tracked, which Floppy tolerates.
+		/* A failed cross-reference must not fail the search. Worst case a row
+		   offers "Add" for something already tracked — which the add route now
+		   treats as success, so the user still ends up in the right place. */
 		return new Set();
 	}
+}
+
+/**
+ * Every tracked media_id for a type, for surfaces with no search term to narrow
+ * by — Discover in particular, whose rows are recommendations that can perfectly
+ * well include something already in the library.
+ *
+ * Reuses the collection view's cache key, which the boot warmup already fills,
+ * so this is normally free rather than another full pass over the library.
+ */
+export function allTrackedIds(mediaType: MediaType): Promise<Set<string>> {
+	return memo(`tracked:${mediaType}`, 5 * 60 * 1000, async () => {
+		try {
+			const page = await getWatchlist(mediaType, {
+				statuses: ['all'],
+				sort: 'title',
+				direction: 'asc',
+				all: true,
+				enrich: false
+			});
+			return new Set(page.rows.map((r) => r.mediaId).filter(Boolean));
+		} catch {
+			return new Set<string>();
+		}
+	});
 }
 
 async function searchOne(mediaType: MediaType, query: string, limit: number): Promise<SearchResult[]> {
@@ -103,4 +131,21 @@ export function removeMedia(mediaType: MediaType, source: string, mediaId: strin
 	return floppy(`/api/v1/media/${mediaType}/${source}/${encodeURIComponent(mediaId)}/`, {
 		method: 'DELETE'
 	});
+}
+
+/**
+ * Drop anything already in the library from a list of suggestions.
+ *
+ * Browsing surfaces — moods, a service's trending row, the universal search —
+ * are for finding something new. A title you already track is not a find, and
+ * its add button would only earn a 409 from Floppy. The Search *tab* is
+ * deliberately excluded: there you are checking whether you already have a
+ * specific thing, so it marks rather than hides.
+ */
+export async function withoutTracked<T extends { mediaId: string }>(
+	mediaType: MediaType,
+	items: T[]
+): Promise<T[]> {
+	const tracked = await allTrackedIds(mediaType);
+	return items.filter((i) => !tracked.has(i.mediaId));
 }

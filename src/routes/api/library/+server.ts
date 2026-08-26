@@ -18,13 +18,23 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { mediaType, source, mediaId } = parse(await request.json());
 	try {
 		await addMedia(mediaType, source, mediaId);
-		expire('watchlist:');
-		return json({ ok: true });
 	} catch (err) {
+		/* 409 "Media is already tracked" is the end state the caller asked for, so
+		   it is a success. It should be unreachable — every surface that offers an
+		   add now knows what is tracked — but a stale page in a backgrounded PWA
+		   can still send one, and that must not read as a failure. */
+		if (err instanceof FloppyError && err.status === 409) {
+			expire('tracked:');
+			return json({ ok: true, alreadyTracked: true });
+		}
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was added.');
 		if (err instanceof FloppyError) error(502, err.message);
 		throw err;
 	}
+	expire('watchlist:');
+	// Suggestions are filtered against this, so it has to move with the library.
+	expire('tracked:');
+	return json({ ok: true });
 };
 
 /** Undo an add. */
@@ -33,6 +43,7 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	try {
 		await removeMedia(mediaType, source, mediaId);
 		expire('watchlist:');
+		expire('tracked:');
 		return json({ ok: true });
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was removed.');

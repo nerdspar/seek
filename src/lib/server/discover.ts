@@ -10,6 +10,7 @@
  * to say the same thing.
  */
 import { floppy } from './floppy';
+import { allTrackedIds } from './search';
 import type { MediaType } from '$lib/types';
 
 export type DiscoverItem = {
@@ -20,6 +21,8 @@ export type DiscoverItem = {
 	poster: string | null;
 	year: number | null;
 	rating: number | null;
+	/** Already in the library. Rendered as a tick rather than an add button. */
+	tracked?: boolean;
 };
 
 export type DiscoverRow = {
@@ -52,22 +55,40 @@ function mapItem(raw: unknown): DiscoverItem | null {
 	};
 }
 
+/**
+ * Rows that are *about* the library rather than suggestions beyond it.
+ *
+ * Measured against a live instance, each is a clean single status: top_picks
+ * is everything Planning, clear_out_next everything In progress, and
+ * comfort_rewatches everything Completed. Filtering tracked items would empty
+ * all three rather than tidy them — including top_picks, whose own blurb calls
+ * itself "New-to-you shows" while being entirely your own watchlist.
+ */
+const ABOUT_YOUR_LIBRARY = new Set(['top_picks_for_you', 'clear_out_next', 'comfort_rewatches']);
+
 export async function getDiscoverRows(mediaType: MediaType): Promise<DiscoverRow[]> {
-	const res = rec(await floppy(`/api/v1/discover/`, { query: { media_type: mediaType } }));
+	const [res, tracked] = await Promise.all([
+		floppy(`/api/v1/discover/`, { query: { media_type: mediaType } }).then(rec),
+		allTrackedIds(mediaType)
+	]);
 
 	return arr(res.rows)
 		.map((raw): DiscoverRow | null => {
 			const r = rec(raw);
-			const items = arr(r.items)
+			const key = str(r.key) ?? str(r.title) ?? 'row';
+			const all = arr(r.items)
 				.map(mapItem)
-				.filter((i): i is DiscoverItem => i !== null);
+				.filter((i): i is DiscoverItem => i !== null)
+				.map((i) => ({ ...i, tracked: tracked.has(i.mediaId) }));
+
+			/* A library row keeps everything and marks it; a discovery row drops it.
+			   Something already tracked is not a discovery, and offering to add it
+			   only earns a 409 from Floppy. Trending carries a couple of
+			   in-progress shows, which is exactly the case that looked broken. */
+			const items = ABOUT_YOUR_LIBRARY.has(key) ? all : all.filter((i) => !i.tracked);
 			if (!items.length) return null;
-			return {
-				key: str(r.key) ?? str(r.title) ?? 'row',
-				title: str(r.title) ?? 'More',
-				why: str(r.why),
-				items
-			};
+
+			return { key, title: str(r.title) ?? 'More', why: str(r.why), items };
 		})
 		.filter((r): r is DiscoverRow => r !== null);
 }

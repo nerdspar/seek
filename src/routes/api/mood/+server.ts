@@ -1,3 +1,4 @@
+import { withoutTracked } from '$lib/server/search';
 import { json, error } from '@sveltejs/kit';
 import { discoverByKeyword, keywordIds, keywordsForLabel, tmdbConfigured } from '$lib/server/tmdb';
 import type { RequestHandler } from './$types';
@@ -23,7 +24,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (!keywords.length) return json({ results: [], keywords: [] });
 
 		return json({
-			results: await discoverByKeyword({ keywords, mediaType, minRating }),
+			results: await withoutTracked(mediaType, await discoverByKeyword({ keywords, mediaType, minRating })),
 			keywords
 		});
 	} catch (err) {

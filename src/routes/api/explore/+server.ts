@@ -1,3 +1,4 @@
+import { withoutTracked } from '$lib/server/search';
 import { json, error } from '@sveltejs/kit';
 import { explore } from '$lib/server/explore';
 import { tmdbConfigured } from '$lib/server/tmdb';
@@ -12,7 +13,15 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (!q) return json({ sections: [] });
 
 	try {
-		return json({ sections: await explore(q, mediaType) });
+		/* Sections are suggestions, so already-tracked titles are dropped; a
+		   section emptied by that is dropped with them. */
+		const sections = await Promise.all(
+			(await explore(q, mediaType)).map(async (sec) => ({
+				...sec,
+				items: await withoutTracked(mediaType, sec.items)
+			}))
+		);
+		return json({ sections: sections.filter((s) => s.items.length) });
 	} catch (err) {
 		error(502, err instanceof Error ? err.message : 'Search failed.');
 	}
