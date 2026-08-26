@@ -1,16 +1,109 @@
 /* Seek design tokens — spec §10.
-   Structured as swappable theme sets from day one; Midnight is the only one
-   shipped. A second theme = one more [data-theme="…"] block, nothing else. */
 
-[data-theme='midnight'] {
+   Two independent axes, deliberately separate:
+
+   • Appearance — dark, light, or whichever the phone is set to. Carried on
+     [data-appearance], written server-side from preferences so a reload never
+     flashes the wrong one.
+   • Accent — the gradient. Carried on [data-accent], and orthogonal: every
+     accent is tuned to sit on either appearance.
+
+   `system` resolves in CSS rather than JavaScript, so it follows the phone
+   changing at dusk without Seek being open to notice. */
+
+/* ── Appearance ─────────────────────────────────────────────────────────── */
+
+[data-appearance='dark'],
+[data-appearance='system'] {
 	--bg: #08080c;
 	--surface: #14141c;
 	--surface-raised: #1e1e28;
 	--text: #f4f5fa;
 	--text-dim: #8a8da0;
+	/* Shadows and scrims read as "darker than the page", which on a light page
+	   means something different. Tokens, not literals. */
+	--scrim: rgb(0 0 0 / 0.6);
+	--shadow-lg: 0 12px 32px rgb(0 0 0 / 0.5);
+	--shadow-sm: 0 2px 8px rgb(0 0 0 / 0.4);
+	color-scheme: dark;
+}
+
+[data-appearance='light'] {
+	--bg: #eef0f6;
+	--surface: #ffffff;
+	/* Inverted on purpose. --surface-raised is overwhelmingly used for elements
+	   nested inside a card — episode pills, chips, progress tracks, poster
+	   placeholders — which on a dark page stand out by being lighter. Nothing is
+	   lighter than a white card, so here they stand out by being darker instead.
+	   Following dark's direction literally would make every one invisible. */
+	--surface-raised: #e9ecf4;
+	--text: #14151c;
+	--text-dim: #6b6f82;
+	--scrim: rgb(16 18 28 / 0.34);
+	/* Far softer than the dark set: a heavy drop shadow on a white page reads as
+	   grime rather than elevation. */
+	--shadow-lg: 0 10px 30px rgb(16 18 28 / 0.14);
+	--shadow-sm: 0 1px 4px rgb(16 18 28 / 0.12);
+	color-scheme: light;
+}
+
+/* Only when following the phone. Scoped so an explicit choice always wins,
+   whatever order these blocks happen to appear in. */
+@media (prefers-color-scheme: light) {
+	[data-appearance='system'] {
+		--bg: #eef0f6;
+		--surface: #ffffff;
+		--surface-raised: #e9ecf4;
+		--text: #14151c;
+		--text-dim: #6b6f82;
+		--scrim: rgb(16 18 28 / 0.34);
+		--shadow-lg: 0 10px 30px rgb(16 18 28 / 0.14);
+		--shadow-sm: 0 1px 4px rgb(16 18 28 / 0.12);
+		color-scheme: light;
+	}
+}
+
+/* ── Accent ─────────────────────────────────────────────────────────────── */
+
+[data-accent='violet'] {
 	--signal-from: #5b6cff;
 	--signal-to: #b36bff;
 	--signal-solid: #6b7bff;
+}
+[data-accent='sky'] {
+	--signal-from: #0a84ff;
+	--signal-to: #35d6ff;
+	--signal-solid: #0a84ff;
+}
+[data-accent='teal'] {
+	--signal-from: #00b3a4;
+	--signal-to: #4fd6b8;
+	--signal-solid: #00a596;
+}
+[data-accent='ember'] {
+	--signal-from: #ff6b35;
+	--signal-to: #ffb545;
+	--signal-solid: #f2622b;
+}
+[data-accent='rose'] {
+	--signal-from: #ff3d8b;
+	--signal-to: #ff8bc0;
+	--signal-solid: #f5307f;
+}
+
+/* The solid accent is used as text on --bg. On a light page the dark-tuned
+   values are too pale to read, so each gets a deeper variant. */
+[data-appearance='light'] { --signal-solid: #4a3bd8; }
+[data-appearance='light'][data-accent='sky'] { --signal-solid: #0067d6; }
+[data-appearance='light'][data-accent='teal'] { --signal-solid: #00796d; }
+[data-appearance='light'][data-accent='ember'] { --signal-solid: #c8471a; }
+[data-appearance='light'][data-accent='rose'] { --signal-solid: #cf1c66; }
+@media (prefers-color-scheme: light) {
+	[data-appearance='system'] { --signal-solid: #4a3bd8; }
+	[data-appearance='system'][data-accent='sky'] { --signal-solid: #0067d6; }
+	[data-appearance='system'][data-accent='teal'] { --signal-solid: #00796d; }
+	[data-appearance='system'][data-accent='ember'] { --signal-solid: #c8471a; }
+	[data-appearance='system'][data-accent='rose'] { --signal-solid: #cf1c66; }
 }
 
 :root {

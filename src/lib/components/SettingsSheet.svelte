@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Sheet from './Sheet.svelte';
-	import type { MarkDirection, Prefs } from '$lib/server/prefs';
+	import type { Accent, Appearance, MarkDirection, Prefs } from '$lib/server/prefs';
 
 	/** Preferences live server-side in /data (§8), so this edits them through the
 	 *  API rather than localStorage — the same values drive the server render. */
@@ -48,6 +48,35 @@
 		].slice(0, q ? 20 : 10);
 	});
 	let failed = $state<string | null>(null);
+
+	const APPEARANCE_OPTIONS: { id: Appearance; label: string }[] = [
+		{ id: 'system', label: 'System' },
+		{ id: 'light', label: 'Light' },
+		{ id: 'dark', label: 'Dark' }
+	];
+
+	/* Swatches are drawn from the same two stops the gradient uses, so the dot is
+	   the accent rather than an approximation of it that can drift. */
+	const ACCENT_OPTIONS: { id: Accent; label: string; from: string; to: string }[] = [
+		{ id: 'violet', label: 'Violet', from: '#5b6cff', to: '#b36bff' },
+		{ id: 'sky', label: 'Sky', from: '#0a84ff', to: '#35d6ff' },
+		{ id: 'teal', label: 'Teal', from: '#00b3a4', to: '#4fd6b8' },
+		{ id: 'ember', label: 'Ember', from: '#ff6b35', to: '#ffb545' },
+		{ id: 'rose', label: 'Rose', from: '#ff3d8b', to: '#ff8bc0' }
+	];
+
+	/* The tokens live on <html>, which is outside this component and outside
+	   Svelte's control, so switching has to reach for it directly. Applied here
+	   as well as server-side so the change is instant rather than waiting for a
+	   navigation. */
+	function applyAppearance(id: Appearance) {
+		document.documentElement.dataset.appearance = id;
+		patch({ appearance: id });
+	}
+	function applyAccent(id: Accent) {
+		document.documentElement.dataset.accent = id;
+		patch({ accent: id });
+	}
 
 	const DIRECTIONS: { id: MarkDirection; label: string; hint: string }[] = [
 		{ id: 'rtl', label: 'Right to left', hint: 'Swipe leftward across the row' },
@@ -156,12 +185,37 @@
 		</section>
 
 		<section>
-			<h3>Theme</h3>
+			<h3>Appearance</h3>
 			<div class="chips">
-				<!-- §10 ships Midnight only, but the tokens are swappable, so the
-				     control exists rather than being retrofitted later. -->
-				<button class="on">Midnight</button>
-				<button disabled>More soon</button>
+				{#each APPEARANCE_OPTIONS as opt (opt.id)}
+					<button
+						class:on={local.appearance === opt.id}
+						onclick={() => applyAppearance(opt.id)}
+					>{opt.label}</button>
+				{/each}
+			</div>
+			{#if local.appearance === 'system'}
+				<p class="hint">Follows your phone, including when it switches at sunset.</p>
+			{/if}
+		</section>
+
+		<section>
+			<h3>Accent</h3>
+			<div class="chips">
+				{#each ACCENT_OPTIONS as opt (opt.id)}
+					<button
+						class="accent"
+						class:on={local.accent === opt.id}
+						aria-label={opt.label}
+						onclick={() => applyAccent(opt.id)}
+					>
+						<span
+							class="swatch"
+							style="background: linear-gradient(100deg, {opt.from}, {opt.to})"
+						></span>
+						{opt.label}
+					</button>
+				{/each}
 			</div>
 		</section>
 
@@ -312,6 +366,15 @@
 	.sechead h3 { flex: 1; }
 	.disclose { flex: none; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
 
+	.accent { display: flex; align-items: center; gap: 7px; }
+	.swatch {
+		flex: none; width: 16px; height: 16px; border-radius: 50%;
+		/* Selected chips fill with the accent gradient, which would swallow the
+		   swatch; the ring keeps it legible against its own colour. Drawn from
+		   the surface it sits on so it reads on either appearance. */
+		box-shadow: 0 0 0 1.5px var(--surface);
+	}
+
 	.toggle {
 		flex: none; width: 46px; height: 28px; padding: 3px;
 		border-radius: 14px; background: var(--bg);
@@ -320,9 +383,14 @@
 	.toggle.on { background: var(--signal); }
 	.knob {
 		display: block; width: 22px; height: 22px; border-radius: 50%;
-		background: var(--text); transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+		/* White in both appearances, like a physical switch. --text would track
+		   the appearance and turn the knob black on a light page, which reads as
+		   a hole rather than a control. The shadow is what separates it from a
+		   pale track. */
+		background: #fff; box-shadow: var(--shadow-sm);
+		transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
-	.toggle.on .knob { transform: translateX(18px); background: #fff; }
+	.toggle.on .knob { transform: translateX(18px); }
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 	.chips.wrap { flex-wrap: wrap; overflow: visible; }

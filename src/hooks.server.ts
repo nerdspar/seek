@@ -109,6 +109,10 @@ void (async () => {
    an unauthenticated caller with nothing but ok/not-ok. */
 const UNGATED = new Set(['/login', '/api/health']);
 
+/** Page background per appearance — must track --bg in app.css. */
+const BG_DARK = '#08080C';
+const BG_LIGHT = '#EEF0F6';
+
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.authed = !gateEnabled() || verify(event.cookies.get(COOKIE));
 
@@ -119,5 +123,35 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 		redirect(303, '/login');
 	}
-	return resolve(event);
+
+	/* Appearance is stamped into the HTML server-side rather than applied on
+	   hydrate. Doing it in script means the first paint uses whatever was hard
+	   coded and then snaps — a white flash on a dark theme is exactly the thing
+	   people notice on a phone at night. */
+	const prefs = await getPrefs().catch(() => null);
+	const appearance = prefs?.appearance ?? 'system';
+	const accent = prefs?.accent ?? 'violet';
+
+	/* `system` leaves both theme-color entries in place and lets their media
+	   queries decide; a fixed choice pins both to the same value so the browser
+	   chrome cannot disagree with the page. */
+	const dark = appearance !== 'light';
+	const light = appearance !== 'dark';
+
+	return resolve(event, {
+		transformPageChunk: ({ html }) =>
+			html
+				.replace('%seek.appearance%', appearance)
+				.replace('%seek.accent%', accent)
+				.replace('%seek.themeColorDark%', dark ? BG_DARK : BG_LIGHT)
+				.replace('%seek.themeColorLight%', light ? BG_LIGHT : BG_DARK)
+				.replace(
+					'%seek.colorScheme%',
+					appearance === 'system' ? 'light dark' : appearance
+				)
+				/* black-translucent lets content scroll under the status bar, which
+				   is the effect we want — but it also forces white glyphs, so on a
+				   light page the clock would vanish. */
+				.replace('%seek.statusBar%', appearance === 'light' ? 'default' : 'black-translucent')
+	});
 };

@@ -439,7 +439,7 @@
 		bottom: calc(var(--safe-b) + 12px); z-index: 60;
 		display: flex; align-items: center; gap: 10px;
 		padding: 12px 8px 12px 16px; border-radius: var(--radius);
-		background: var(--surface-raised); box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+		background: var(--surface-raised); box-shadow: var(--shadow-lg);
 		font-size: 13.5px;
 	}
 	.note span { flex: 1; }

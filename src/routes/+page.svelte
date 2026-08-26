@@ -586,7 +586,9 @@
 		border-radius: 50%;
 		background: var(--signal);
 		color: #fff;
-		box-shadow: 0 8px 24px rgb(91 108 255 / 0.34);
+		/* Derived from the accent rather than fixed: this was violet, so picking
+		   any other accent left the button glowing the previous one. */
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--signal-solid) 34%, transparent);
 	}
 
 	.note {
@@ -601,7 +603,7 @@
 		padding: 12px 8px 12px 16px;
 		border-radius: var(--radius);
 		background: var(--surface-raised);
-		box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+		box-shadow: var(--shadow-lg);
 		font-size: 13.5px;
 	}
 	.note span {

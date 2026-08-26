@@ -63,7 +63,7 @@
 		border-radius: 50%;
 		background: color-mix(in srgb, var(--bg) 88%, transparent);
 		color: var(--text);
-		box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+		box-shadow: var(--shadow-sm);
 	}
 	button.on {
 		background: var(--signal);

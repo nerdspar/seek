@@ -186,7 +186,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 70;
-		background: rgb(0 0 0 / 0.6);
+		background: var(--scrim);
 		border: none;
 		transition: opacity 180ms ease;
 	}

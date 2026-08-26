@@ -20,6 +20,13 @@ export type SortKey =
 	| 'total_episodes'
 	| 'episodes_left';
 
+export const APPEARANCES = ['system', 'light', 'dark'] as const;
+export type Appearance = (typeof APPEARANCES)[number];
+
+/** Ordered as shown in Settings. */
+export const ACCENTS = ['violet', 'sky', 'teal', 'ember', 'rose'] as const;
+export type Accent = (typeof ACCENTS)[number];
+
 export type Prefs = {
 	markDirection: MarkDirection;
 	/** Sort is remembered per media type (§4.5). */
@@ -29,8 +36,10 @@ export type Prefs = {
 	 *  show's poster for every season, so it is usually a column of identical
 	 *  images — but some shows do have per-season art. */
 	seasonArtwork: boolean;
-	/** §10 ships one theme, but the token sets are swappable from day one. */
-	theme: 'midnight';
+	/** Dark, light, or whatever the phone is set to. */
+	appearance: Appearance;
+	/** The gradient. Independent of appearance — each accent works on both. */
+	accent: Accent;
 	/** Services the household actually pays for (§6.3, §8). Empty means "all". */
 	services: string[];
 	/**
@@ -50,7 +59,8 @@ export const DEFAULTS: Prefs = {
 	sort: {},
 	defaultTab: 'watchlist',
 	seasonArtwork: false,
-	theme: 'midnight',
+	appearance: 'system',
+	accent: 'violet',
 	services: [],
 	moodPresets: null
 };
@@ -75,16 +85,27 @@ const file = () => join(env.SEEK_DATA_DIR || '/data', 'preferences.json');
 
 let cache: Prefs | null = null;
 
+/* These two are written straight into a data attribute that CSS selects on, so
+   an unrecognised value matches no rule at all and the page renders with no
+   tokens — black text on a black background. Clamp on the way in and out. */
+function clamp(p: Prefs): Prefs {
+	return {
+		...p,
+		appearance: APPEARANCES.includes(p.appearance) ? p.appearance : DEFAULTS.appearance,
+		accent: ACCENTS.includes(p.accent) ? p.accent : DEFAULTS.accent
+	};
+}
+
 export async function getPrefs(): Promise<Prefs> {
 	if (cache) return cache;
 	try {
 		const raw = await readFile(file(), 'utf8');
 		const parsed = JSON.parse(raw) as Partial<Prefs>;
-		cache = {
+		cache = clamp({
 			...DEFAULTS,
 			...parsed,
 			sort: { ...DEFAULTS.sort, ...(parsed.sort ?? {}) }
-		};
+		});
 	} catch {
 		// Missing or unreadable file is the normal first-run case.
 		cache = { ...DEFAULTS, sort: {}, services: [], moodPresets: null };
@@ -94,7 +115,7 @@ export async function getPrefs(): Promise<Prefs> {
 
 export async function setPrefs(patch: Partial<Prefs>): Promise<Prefs> {
 	const current = await getPrefs();
-	const next: Prefs = {
+	const next: Prefs = clamp({
 		...current,
 		...patch,
 		sort: { ...current.sort, ...(patch.sort ?? {}) },
@@ -102,7 +123,7 @@ export async function setPrefs(patch: Partial<Prefs>): Promise<Prefs> {
 		// reordering the chips, has to actually take effect.
 		services: patch.services ?? current.services,
 		moodPresets: patch.moodPresets !== undefined ? patch.moodPresets : current.moodPresets
-	};
+	});
 
 	const path = file();
 	try {

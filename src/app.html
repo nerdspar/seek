@@ -1,13 +1,16 @@
 <!doctype html>
-<html lang="en" data-theme="midnight">
+<html lang="en" data-appearance="%seek.appearance%" data-accent="%seek.accent%">
 	<head>
 		<meta charset="utf-8" />
 		<meta
 			name="viewport"
 			content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
 		/>
-		<meta name="theme-color" content="#08080C" />
-		<meta name="color-scheme" content="dark" />
+		<!-- Both are rewritten per request from preferences; the media queries are
+		     what make "follow the phone" work for the browser chrome too. -->
+		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="%seek.themeColorDark%" />
+		<meta name="theme-color" media="(prefers-color-scheme: light)" content="%seek.themeColorLight%" />
+		<meta name="color-scheme" content="%seek.colorScheme%" />
 		<title>Seek</title>
 
 		<link rel="manifest" href="/manifest.webmanifest" />
@@ -17,7 +20,7 @@
 		<!-- Translucent on purpose: iOS blurs page content as it scrolls under the
 		     status bar, which is the effect we want. It does mean content must be
 		     held clear of that band at rest — see --header-top in app.css. -->
-		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="%seek.statusBar%" />
 		<meta name="apple-mobile-web-app-title" content="Seek" />
 
 		%sveltekit.head%

@@ -52,7 +52,7 @@
 		padding: 12px 8px 12px 16px;
 		border-radius: var(--radius);
 		background: var(--surface-raised);
-		box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+		box-shadow: var(--shadow-lg);
 		overflow: hidden;
 		animation: rise 180ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
