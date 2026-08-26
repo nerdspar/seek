@@ -308,13 +308,16 @@
 				<!-- The status is the membership indicator. "Watching" says the show is in
 				     your library and says something an "In your library" label cannot. -->
 				<button class="state" disabled={trackBusy} onclick={() => (sheetOpen = true)}>
-					<span class="pill">{statusLabel(t.status) ?? 'Tracked'}</span>
+					<span class="label">{statusLabel(t.status) ?? 'Tracked'}</span>
 					{#if t.score !== null}
-						<span class="rating tnum">★ {t.score}</span>
+						<span class="rating tnum">
+							<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.85-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.85z" /></svg>
+							{t.score}
+						</span>
 					{:else}
 						<span class="rate">Rate</span>
 					{/if}
-					<svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+					<svg class="chev" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg>
 				</button>
 			{:else}
 				<!-- The one thing worth doing on a show you do not have, so it gets the
@@ -479,21 +482,24 @@
 	   tracked state stays quiet — the accent is reserved for "Add", which is the
 	   one thing here worth drawing the eye. */
 
-	/* Quiet: being in the library is a fact, and the status is the fact worth
-	   reading. Tapping it opens everything you can change about the show. */
+	/* Full width, matching the Add button it replaces, so the page does not
+	   reflow when a show joins the library — and matching the season cards
+	   below, which is the vocabulary this page already speaks. Quiet rather
+	   than accented: being in the library is a fact, not an action. */
 	.state {
 		display: flex; align-items: center; gap: 10px;
-		min-height: var(--tap); padding: 0 12px 0 4px; margin: 0 0 16px;
+		width: 100%; min-height: var(--tap); padding: 0 12px 0 16px; margin: 0 0 16px;
 		border-radius: var(--radius); background: var(--surface);
-		font-size: 14px; color: var(--text-dim);
+		font-size: 15px; color: var(--text-dim); text-align: left;
 	}
-	.state .pill {
-		padding: 5px 11px; border-radius: 8px;
-		background: var(--surface-raised); font-weight: 600; color: var(--text);
+	.state .label { font-weight: 600; color: var(--text); }
+	.state .rating {
+		display: flex; align-items: center; gap: 5px;
+		margin-left: auto; font-weight: 600; color: var(--text);
 	}
-	.state .rating { font-weight: 600; color: var(--text); }
-	.state .rate { color: var(--signal-solid); font-weight: 600; }
-	.state .chev { margin-left: auto; opacity: 0.6; }
+	.state .rating svg { color: var(--signal-solid); }
+	.state .rate { margin-left: auto; font-weight: 600; color: var(--signal-solid); }
+	.state .chev { flex: none; opacity: 0.5; }
 	.state:disabled { opacity: 0.6; }
 
 	/* The one action worth taking on a show you do not have, so it takes the
