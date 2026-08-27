@@ -8,12 +8,14 @@
 		filters: Filters;
 		/** Services the household subscribes to (§8); offered first when set. */
 		subscribed: string[];
+		/** Off when the household does not track who watched (§8 preference). */
+		showCompany: boolean;
 		/** How many titles the current filters match; null while that is loading. */
 		resultCount: number | null;
 		onchange: (f: Filters) => void;
 		onclose: () => void;
 	};
-	let { filters, subscribed, resultCount, onchange, onclose }: Props = $props();
+	let { filters, subscribed, showCompany, resultCount, onchange, onclose }: Props = $props();
 
 	/* Fetched here rather than in the page load: building this list pages the
 	   whole library, and awaiting it on the watchlist — the launch screen —
@@ -117,6 +119,7 @@
 			</div>
 		</section>
 
+		{#if showCompany}
 		<section>
 			<h3>Watching with</h3>
 			<p class="hint">Shows tagged <code>joint</code> in Floppy are the ones you watch together.</p>
@@ -128,6 +131,7 @@
 				{/each}
 			</div>
 		</section>
+		{/if}
 
 		{#if ordered.length}
 			<section>

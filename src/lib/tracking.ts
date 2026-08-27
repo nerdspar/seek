@@ -14,9 +14,13 @@ export type Tracking = {
 	status: number | null;
 	/** The user's own 0–10 rating, not the community score. */
 	score: number | null;
+	/** Floppy's own page for this item, e.g. /details/tmdb/movie/1016084/blackberry.
+	 *  Taken from the list row rather than built: the slug is required — the
+	 *  slugless path 404s — and it is not derivable from the title reliably. */
+	floppyPath: string | null;
 };
 
-export const UNTRACKED: Tracking = { tracked: false, status: null, score: null };
+export const UNTRACKED: Tracking = { tracked: false, status: null, score: null, floppyPath: null };
 
 /** Every status, in the order a picker should list them. */
 export const STATUS_CHOICES = [

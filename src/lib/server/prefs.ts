@@ -37,6 +37,10 @@ export type Prefs = {
 	 *  show's poster for every season, so it is usually a column of identical
 	 *  images — but some shows do have per-season art. */
 	seasonArtwork: boolean;
+	/** Track who you watched something with — the joint/solo tag (§11). Off
+	 *  hides the chip, the watchlist filter and the sheet section; the tags
+	 *  already on your data are left alone, so turning it back on restores it. */
+	companyTracking: boolean;
 	/** Confirm actions that would otherwise pass in silence — adding a title,
 	 *  filling a season. Marking an episode always speaks, because undo lives
 	 *  in that toast. */
@@ -64,6 +68,7 @@ export const DEFAULTS: Prefs = {
 	sort: {},
 	defaultTab: 'watchlist',
 	seasonArtwork: false,
+	companyTracking: true,
 	confirmToasts: true,
 	appearance: 'system',
 	accent: 'violet',

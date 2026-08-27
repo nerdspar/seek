@@ -1,3 +1,4 @@
+import { FLOPPY_PUBLIC_URL } from '$lib/server/env';
 import { getShow } from '$lib/server/detail';
 import { getTracking, UNTRACKED } from '$lib/server/tracking';
 import { getPrefs } from '$lib/server/prefs';
@@ -40,12 +41,15 @@ export const load: PageServerLoad = async ({ params }) => {
 		.catch(() => false);
 
 	return {
+		// Composed with tracking.floppyPath, which carries the slug Floppy requires.
+		floppyBase: FLOPPY_PUBLIC_URL() || null,
 		source: params.source,
 		mediaId: params.id,
 		show,
 		extras,
 		tracking,
 		joint,
-		seasonArtwork: prefs.seasonArtwork
+		seasonArtwork: prefs.seasonArtwork,
+		companyTracking: prefs.companyTracking
 	};
 };

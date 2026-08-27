@@ -63,13 +63,15 @@ export function getTracking(
 				(r) =>
 					String(r.item?.media_id ?? '') === String(mediaId) &&
 					String(r.item?.source ?? '') === source
-			) as Record<string, unknown> | undefined;
+			) as (Record<string, unknown> & { item?: Record<string, unknown> }) | undefined;
 			if (!hit) return UNTRACKED;
 
+			const item = (hit.item ?? {}) as Record<string, unknown>;
 			return {
 				tracked: true,
 				status: typeof hit.status === 'number' ? hit.status : null,
-				score: typeof hit.score === 'number' ? hit.score : null
+				score: typeof hit.score === 'number' ? hit.score : null,
+				floppyPath: typeof item.url === 'string' ? item.url : null
 			};
 		} catch {
 			// A failed read must not make a tracked show look untracked and offer to

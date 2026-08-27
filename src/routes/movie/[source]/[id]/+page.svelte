@@ -3,7 +3,9 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
-	import TrackingSheet from '$lib/components/TrackingSheet.svelte';
+	import StateChips from '$lib/components/StateChips.svelte';
+	import RatingSheet from '$lib/components/RatingSheet.svelte';
+	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import { formatRuntime } from '$lib/format';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { notify } from '$lib/notices.svelte';
@@ -12,7 +14,39 @@
 	let { data }: { data: PageData } = $props();
 
 	let note = $state<string | null>(null);
-	let sheetOpen = $state(false);
+	let ratingOpen = $state(false);
+	let menuOpen = $state(false);
+	let jointEdit = $state<boolean | null>(null);
+	let jointBusy = $state(false);
+
+	/* Company is a household tag, so it applies to films exactly as it does to
+	   shows — verified against a live instance that Floppy stores and filters it
+	   on a movie. It is hidden when the feature is switched off in settings. */
+	async function toggleJoint(current: boolean) {
+		if (jointBusy) return;
+		const before = jointEdit;
+		const next = !current;
+		jointBusy = true;
+		jointEdit = next;
+		try {
+			const res = await fetch('/api/tags', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					mediaType: 'movie',
+					source: data.source,
+					mediaId: data.mediaId,
+					joint: next
+				})
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		} catch (err) {
+			jointEdit = before;
+			note = `Couldn't update — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			jointBusy = false;
+		}
+	}
 	let trackBusy = $state(false);
 	let trackEdit = $state<Tracking | null>(null);
 	let trackedEdit = $state<boolean | null>(null);
@@ -64,7 +98,7 @@
 		const before = trackedEdit;
 		const next = !current;
 		if (!next && !confirm('Remove this from your library? Any watched progress goes with it.')) return;
-		if (!next) sheetOpen = false;
+		if (!next) menuOpen = false;
 
 		trackBusy = true;
 		trackedEdit = next;
@@ -138,7 +172,18 @@
 		<Skeleton width="76%" height="14px" />
 	</main>
 {:then movie}
-	<PageHeader title={movie.title} titleHidden={heroVisible} onback={() => history.back()} />
+	{#snippet menuButton()}
+		<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
+			<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
+		</button>
+	{/snippet}
+
+	<PageHeader
+		title={movie.title}
+		titleHidden={heroVisible}
+		action={movie.tracked || trackedEdit ? menuButton : undefined}
+		onback={() => history.back()}
+	/>
 
 	<main>
 		<section class="hero">
@@ -177,30 +222,23 @@
 			{@const watched = watchedEdit ?? movie.progress > 0}
 
 			{#if tracked}
-				<button class="state" disabled={trackBusy} onclick={() => (sheetOpen = true)}>
-					<span class="label">{statusLabel(t.status) ?? 'Tracked'}</span>
-					{#if t.score !== null}
-						<span class="rating tnum">
-							<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.85-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.85z" /></svg>
-							{t.score}
-						</span>
-					{:else}
-						<span class="rate">Rate</span>
-					{/if}
-					<svg class="chev" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-				</button>
-
-				<!-- A film's whole progress is one bit, so it gets a button rather than
-				     the season list a series would have. -->
-				<button class="watch" class:on={watched} disabled={watchBusy} onclick={() => toggleWatched(watched)}>
-					{#if watched}
-						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-						<span>Watched</span>
-					{:else}
-						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9" /></svg>
-						<span>Mark watched</span>
-					{/if}
-				</button>
+				{#await data.joint then serverJoint}
+					{@const joint = jointEdit ?? serverJoint}
+					<!-- main has no side padding here, so the row carries the gutter. -->
+					<div class="chiprow">
+						<StateChips
+							mediaType="movie"
+							tracking={t}
+							{watched}
+							{joint}
+							showCompany={data.companyTracking}
+							busy={trackBusy || watchBusy || jointBusy}
+							onmain={() => toggleWatched(watched)}
+							onrating={() => (ratingOpen = true)}
+							oncompany={() => toggleJoint(joint)}
+						/>
+					</div>
+				{/await}
 			{:else}
 				<button class="add" disabled={trackBusy} onclick={() => toggleTracked(false)}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -208,18 +246,24 @@
 				</button>
 			{/if}
 
-			{#if sheetOpen && tracked}
-				<TrackingSheet
+			{#if ratingOpen && tracked}
+				<RatingSheet
 					title={movie.title}
-					tracking={t}
-					joint={false}
-					showJoint={false}
+					score={t.score}
 					busy={trackBusy}
-					onstatus={(status) => patchTracking(t, { status })}
-					onscore={(score) => patchTracking(t, { score })}
-					onjoint={() => {}}
+					onpick={(score) => patchTracking(t, { score })}
+					onclose={() => (ratingOpen = false)}
+				/>
+			{/if}
+
+			{#if menuOpen && tracked}
+				<ItemMenu
+					title={movie.title}
+					sourceUrl={movie.sourceUrl}
+					floppyUrl={data.floppyBase && t.floppyPath ? `${data.floppyBase}${t.floppyPath}` : null}
+					busy={trackBusy}
 					onremove={() => toggleTracked(true)}
-					onclose={() => (sheetOpen = false)}
+					onclose={() => (menuOpen = false)}
 				/>
 			{/if}
 		{/await}
@@ -320,23 +364,16 @@
 	.badge img { width: 18px; height: 18px; border-radius: 4px; }
 	.genres { margin: 0; font-size: 13px; color: var(--text-dim); }
 
-	.state, .watch, .add {
-		display: flex; align-items: center; gap: 10px;
-		width: calc(100% - var(--gutter) * 2); min-height: var(--tap);
-		margin: 0 var(--gutter) 10px; border-radius: var(--radius);
-		font-size: 15px;
-	}
-	.state { padding: 0 12px 0 16px; background: var(--surface); color: var(--text-dim); text-align: left; }
-	.state .label { font-weight: 600; color: var(--text); }
-	.state .rating { display: flex; align-items: center; gap: 5px; margin-left: auto; font-weight: 600; color: var(--text); }
-	.state .rating svg { color: var(--signal-solid); }
-	.state .rate { margin-left: auto; font-weight: 600; color: var(--signal-solid); }
-	.state .chev { flex: none; opacity: 0.5; }
 
-	.watch { justify-content: center; background: var(--surface); font-weight: 600; color: var(--text); }
-	.watch.on { background: var(--signal); color: #fff; }
+	.chiprow { margin: 0 var(--gutter); }
+
+	.menu {
+		display: grid; place-items: center;
+		width: var(--tap); height: var(--tap);
+		border-radius: 50%; color: var(--text-dim);
+	}
+
 	.add { justify-content: center; margin-bottom: 16px; background: var(--signal); font-weight: 600; color: #fff; }
-	.state:disabled, .watch:disabled, .add:disabled { opacity: 0.6; }
 
 	.synopsis { margin: 6px var(--gutter) 22px; font-size: 14.5px; line-height: 1.55; }
 

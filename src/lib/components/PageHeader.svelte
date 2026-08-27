@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	type Props = {
 		title: string;
 		subtitle?: string | null;
@@ -6,9 +8,12 @@
 		 *  same words are not on screen twice. The header still reserves its space,
 		 *  so nothing shifts when it appears. */
 		titleHidden?: boolean;
+		/** Optional trailing control — the detail pages put their overflow menu
+		 *  here. Pages that pass nothing keep the header exactly as it was. */
+		action?: Snippet;
 		onback: () => void;
 	};
-	let { title, subtitle = null, titleHidden = false, onback }: Props = $props();
+	let { title, subtitle = null, titleHidden = false, action, onback }: Props = $props();
 </script>
 
 <header>
@@ -21,9 +26,13 @@
 		<span class="title">{title}</span>
 		{#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
 	</div>
+	{#if action}
+		<div class="action">{@render action()}</div>
+	{/if}
 </header>
 
 <style>
+	.action { flex: none; margin-left: auto; }
 	.titles { transition: opacity 160ms ease; }
 	.titles.hidden { opacity: 0; pointer-events: none; }
 

@@ -37,7 +37,10 @@ export const load: PageServerLoad = async ({ url }) => {
 	const fallbackStatus = mediaType === 'movie' ? 'all' : 'in_progress';
 	const rawStatus = url.searchParams.get('status') ?? fallbackStatus;
 	const status = STATUSES.includes(rawStatus) ? rawStatus : fallbackStatus;
-	const rawCompany = url.searchParams.get('company') ?? 'all';
+	/* Forced back to 'all' when the household does not track company: an old link
+	   or a stale back-entry would otherwise filter the list by a control that is
+	   no longer on screen to undo it. */
+	const rawCompany = prefs.companyTracking ? (url.searchParams.get('company') ?? 'all') : 'all';
 	const company = (COMPANIES as string[]).includes(rawCompany) ? (rawCompany as Company) : 'all';
 	const services = url.searchParams.getAll('service').filter(Boolean);
 
@@ -64,6 +67,7 @@ export const load: PageServerLoad = async ({ url }) => {
 		filters,
 		markDirection: prefs.markDirection,
 		subscribed: prefs.services,
+		companyTracking: prefs.companyTracking,
 		page
 	};
 };

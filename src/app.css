@@ -113,6 +113,15 @@
 	--radius-lg: 16px;
 	--tap: 44px; /* §10 minimum touch target — never go below this */
 
+	/* The state row on a detail page: company | watched-or-status | rating.
+	   One place to retune the balance — the side chips carry an icon and the
+	   middle one a word, so they are deliberately unequal. */
+	--chip-side: 1fr;
+	--chip-main: 5fr;
+	/* Floor for the icon-only chips, so a narrower phone or a bolder ratio can
+	   never push them under the 44px tap target. */
+	--chip-min: 44px;
+
 	--gutter: 16px;
 	--tabbar-h: 56px;
 

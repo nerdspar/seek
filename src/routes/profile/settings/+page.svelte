@@ -300,6 +300,25 @@
 	</section>
 
 	<section>
+		<h3>Company</h3>
+		<!-- Whether anyone else is in the room is a household-specific idea. Off, the
+		     chip disappears from both detail pages and the watchlist filter goes with
+		     it; the tags already in Floppy are left alone. -->
+		<button
+			class="row"
+			role="switch"
+			aria-checked={local.companyTracking}
+			onclick={() => patch({ companyTracking: !local.companyTracking })}
+		>
+			<span class="rowtext">
+				<span class="label">Track who you watched with</span>
+				<span class="hint">Alone or together, on shows and films</span>
+			</span>
+			<span class="toggle" class:on={local.companyTracking}><span class="knob"></span></span>
+		</button>
+	</section>
+
+	<section>
 		<h3>Show page</h3>
 		<button
 			class="row"

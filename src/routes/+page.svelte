@@ -461,6 +461,7 @@
 		<FilterSheet
 			filters={data.filters}
 			subscribed={data.subscribed}
+			showCompany={data.companyTracking}
 			{resultCount}
 			onchange={applyFilters}
 			onclose={() => (filterOpen = false)}

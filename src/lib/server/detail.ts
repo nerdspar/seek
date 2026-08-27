@@ -76,6 +76,7 @@ export async function getMovie(source: string, mediaId: string): Promise<MovieDe
 	return {
 		mediaId: str(d.media_id) ?? mediaId,
 		source: str(d.source) ?? source,
+		sourceUrl: str(d.source_url),
 		title: str(d.title) ?? 'Untitled',
 		poster: str(d.image),
 		synopsis: str(d.synopsis),
@@ -206,6 +207,7 @@ export async function getShow(
 	return {
 		mediaId: str(d.media_id) ?? mediaId,
 		source: str(d.source) ?? source,
+		sourceUrl: str(d.source_url),
 		title,
 		poster: str(d.image),
 		synopsis: str(d.synopsis),

@@ -136,6 +136,8 @@ export type MovieDetail = {
 	mediaId: string;
 	source: string;
 	title: string;
+	/** Public TMDB page — the only link worth sharing outside the house. */
+	sourceUrl: string | null;
 	poster: string | null;
 	synopsis: string | null;
 	genres: string[];
@@ -162,6 +164,8 @@ export type ShowDetail = {
 	mediaId: string;
 	source: string;
 	title: string;
+	/** Public TMDB page — the only link worth sharing outside the house. */
+	sourceUrl: string | null;
 	poster: string | null;
 	synopsis: string | null;
 	genres: string[];

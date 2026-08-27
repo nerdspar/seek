@@ -3,7 +3,10 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
-	import TrackingSheet from '$lib/components/TrackingSheet.svelte';
+	import StateChips from '$lib/components/StateChips.svelte';
+	import StatusSheet from '$lib/components/StatusSheet.svelte';
+	import RatingSheet from '$lib/components/RatingSheet.svelte';
+	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { formatRuntime } from '$lib/format';
 	import { haptic } from '$lib/haptics';
@@ -153,7 +156,9 @@
 		heroVisible = el.getBoundingClientRect().bottom > edge;
 	}
 
-	let sheetOpen = $state(false);
+	let statusOpen = $state(false);
+	let ratingOpen = $state(false);
+	let menuOpen = $state(false);
 	/* Optimistic overlay on the server's tracking, cleared when a load brings a
 	   fresh one. Same shape as jointEdit and for the same reason. */
 	let trackEdit = $state<Tracking | null>(null);
@@ -199,7 +204,7 @@
 		/* Removing throws away whatever progress Floppy holds for the show, which
 		   is not something to discover afterwards. Adding needs no such warning. */
 		if (!next && !confirm('Remove this from your library? Any watched progress goes with it.')) return;
-		if (!next) sheetOpen = false;
+		if (!next) menuOpen = false;
 
 		trackBusy = true;
 		trackedEdit = next;
@@ -207,7 +212,7 @@
 			const res = await fetch('/api/library', {
 				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
-				// This route only ever renders TV; movies have no detail page yet.
+				// This route renders TV; films have their own page under /movie.
 				body: JSON.stringify({ mediaType: 'tv', source: data.source, mediaId: data.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
@@ -280,7 +285,18 @@
 	</main>
 {:then show}
 	{@const tracked = trackedEdit ?? show.tracked}
-	<PageHeader title={show.title} titleHidden={heroVisible} onback={() => history.back()} />
+	{#snippet menuButton()}
+		<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
+			<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
+		</button>
+	{/snippet}
+
+	<PageHeader
+		title={show.title}
+		titleHidden={heroVisible}
+		action={tracked ? menuButton : undefined}
+		onback={() => history.back()}
+	/>
 
 	<main>
 		<section class="hero">
@@ -328,20 +344,19 @@
 			{@const serverTracking = loaded}
 			{@const t = trackEdit ?? serverTracking}
 			{#if tracked}
-				<!-- The status is the membership indicator. "Watching" says the show is in
-				     your library and says something an "In your library" label cannot. -->
-				<button class="state" disabled={trackBusy} onclick={() => (sheetOpen = true)}>
-					<span class="label">{statusLabel(t.status) ?? 'Tracked'}</span>
-					{#if t.score !== null}
-						<span class="rating tnum">
-							<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.85-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.85z" /></svg>
-							{t.score}
-						</span>
-					{:else}
-						<span class="rate">Rate</span>
-					{/if}
-					<svg class="chev" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-				</button>
+				{#await data.joint then serverJoint}
+					{@const joint = jointEdit ?? serverJoint}
+					<StateChips
+						mediaType="tv"
+						tracking={t}
+						{joint}
+						showCompany={data.companyTracking}
+						busy={trackBusy || jointBusy}
+						onmain={() => (statusOpen = true)}
+						onrating={() => (ratingOpen = true)}
+						oncompany={() => toggleJoint(joint)}
+					/>
+				{/await}
 			{:else}
 				<!-- The one thing worth doing on a show you do not have, so it gets the
 				     full width and the accent rather than a quiet pill. -->
@@ -351,20 +366,35 @@
 				</button>
 			{/if}
 
-			{#if sheetOpen && tracked}
-				{#await data.joint then serverJoint}
-					<TrackingSheet
-						title={show.title}
-						tracking={t}
-						joint={jointEdit ?? serverJoint}
-						busy={trackBusy || jointBusy}
-						onstatus={(status) => patchTracking(t, { status })}
-						onscore={(score) => patchTracking(t, { score })}
-						onjoint={(next) => toggleJoint(!next)}
-						onremove={() => toggleTracked(true)}
-						onclose={() => (sheetOpen = false)}
-					/>
-				{/await}
+			{#if statusOpen && tracked}
+				<StatusSheet
+					title={show.title}
+					status={t.status}
+					busy={trackBusy}
+					onpick={(status) => patchTracking(t, { status })}
+					onclose={() => (statusOpen = false)}
+				/>
+			{/if}
+
+			{#if ratingOpen && tracked}
+				<RatingSheet
+					title={show.title}
+					score={t.score}
+					busy={trackBusy}
+					onpick={(score) => patchTracking(t, { score })}
+					onclose={() => (ratingOpen = false)}
+				/>
+			{/if}
+
+			{#if menuOpen && tracked}
+				<ItemMenu
+					title={show.title}
+					sourceUrl={show.sourceUrl}
+					floppyUrl={data.floppyBase && t.floppyPath ? `${data.floppyBase}${t.floppyPath}` : null}
+					busy={trackBusy}
+					onremove={() => toggleTracked(true)}
+					onclose={() => (menuOpen = false)}
+				/>
 			{/if}
 		{/await}
 
@@ -501,29 +531,11 @@
 	.fill { height: 100%; border-radius: 3px; background: var(--signal); }
 
 
-	/* Being in the library is a statement of fact, not an active setting, so the
-	   tracked state stays quiet — the accent is reserved for "Add", which is the
-	   one thing here worth drawing the eye. */
-
-	/* Full width, matching the Add button it replaces, so the page does not
-	   reflow when a show joins the library — and matching the season cards
-	   below, which is the vocabulary this page already speaks. Quiet rather
-	   than accented: being in the library is a fact, not an action. */
-	.state {
-		display: flex; align-items: center; gap: 10px;
-		width: 100%; min-height: var(--tap); padding: 0 12px 0 16px; margin: 0 0 16px;
-		border-radius: var(--radius); background: var(--surface);
-		font-size: 15px; color: var(--text-dim); text-align: left;
+	.menu {
+		display: grid; place-items: center;
+		width: var(--tap); height: var(--tap);
+		border-radius: 50%; color: var(--text-dim);
 	}
-	.state .label { font-weight: 600; color: var(--text); }
-	.state .rating {
-		display: flex; align-items: center; gap: 5px;
-		margin-left: auto; font-weight: 600; color: var(--text);
-	}
-	.state .rating svg { color: var(--signal-solid); }
-	.state .rate { margin-left: auto; font-weight: 600; color: var(--signal-solid); }
-	.state .chev { flex: none; opacity: 0.5; }
-	.state:disabled { opacity: 0.6; }
 
 	/* The one action worth taking on a show you do not have, so it takes the
 	   full width and the accent. */
