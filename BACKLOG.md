@@ -13,14 +13,15 @@ bucket and the migration to do it was prepared, but it was never worth the
 database surgery — see the note in docs/floppy-api-notes.md for how the
 classification works if it ever comes back.
 
+## Accepted, not open
+
+- **Saturday Night Live is the slowest show to open**, at 2.2s cold against 1.1s
+  for a normal one, and 98ms warm. Measured: Floppy spends 2.5s returning 1.4 MB
+  for it, and the bulk of that is **2,754 cast entries**, not the 53 seasons —
+  Seek displays 20 of them. Nothing here can trim what Floppy sends, the page
+  streams so the shell is immediate, and 2× a normal show is not worth chasing.
+
 ## Smaller items
 
-- **Re-sort after marking covers two orderings**, "Recently watched" and
-  "Episodes left". The others either do not move when you mark (Alphabetical,
-  Total episodes) or key on values Floppy computes server-side, which are left to
-  the next load rather than guessed at.
-- **Saturday Night Live is inherently slow.** Floppy needs ~1.07s for its 1.4 MB,
-  53-season payload. Nothing in Seek can fix that; it is a Floppy-side cost.
-- **The diary date jump is approximate.** Floppy pages history by *days with
-  activity* rather than calendar days, so jumping lands near a date rather than
-  on it.
+- **Re-sort after marking skips two orderings on purpose**: Alphabetical and
+  Total episodes key on values marking cannot change. The other four all move.

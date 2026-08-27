@@ -94,16 +94,39 @@
 		const from = current.findIndex((r) => key(r) === k);
 		if (from < 0) return;
 
+		const movedRow = current[from];
+		const others = current.filter((_, i) => i !== from);
+
 		let to = from;
 		if (data.sortKey === 'recently_watched') {
 			to = 0;
 		} else if (data.sortKey === 'episodes_left') {
 			const left = (r: WatchlistRow) => r.left ?? Number.POSITIVE_INFINITY;
-			const moved = current[from];
-			to = current.filter((_, i) => i !== from).findIndex((r) => left(r) < left(moved));
+			to = others.findIndex((r) => left(r) < left(movedRow));
 			if (to < 0) to = current.length - 1;
+		} else if (data.sortKey === 'newest_episode' || data.sortKey === 'oldest_episode') {
+			/* Marking advances the next episode, so its air date changes and the row
+			   genuinely belongs somewhere else — the one case that used to be left
+			   sitting in the wrong place until a reload.
+
+			   A row with no next-up sorts last either way: it has no date to compare,
+			   and a caught-up show is not what these orderings are for. */
+			const at = (r: WatchlistRow) => r.next?.airDate ?? null;
+			const mine = at(movedRow);
+			if (mine === null) {
+				to = current.length - 1;
+			} else {
+				const newest = data.sortKey === 'newest_episode';
+				to = others.findIndex((r) => {
+					const theirs = at(r);
+					if (theirs === null) return true;
+					return newest ? theirs < mine : theirs > mine;
+				});
+				if (to < 0) to = current.length - 1;
+			}
 		} else {
-			return; // Alphabetical and total-episodes don't change when you mark.
+			// Alphabetical and total-episodes key on things marking cannot change.
+			return;
 		}
 
 		if (to === from) return;
@@ -113,11 +136,9 @@
 		order = keys;
 	}
 
-	/* Anime is deliberately NOT a segment. Floppy files it inside the TV library,
-	   so a third tab would either sit empty or split the list on a distinction
-	   the user does not want while marking. It belongs with the filters (§4.6),
-	   alongside status and platform — pending the bucket migration that gives it
-	   something to filter on. */
+	/* No anime segment. Floppy files anime inside the TV library, so a third tab
+	   would sit empty, and separating it was dropped rather than pursued — see
+	   BACKLOG.md. */
 	const SEGMENTS: { id: MediaType; label: string }[] = [
 		{ id: 'tv', label: 'TV Shows' },
 		{ id: 'movie', label: 'Movies' }

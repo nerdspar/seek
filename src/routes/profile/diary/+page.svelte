@@ -19,17 +19,29 @@
 	let jumpTo = $state('');
 
 	/**
-	 * Jump to roughly a date. The API pages by *days with activity* rather than
-	 * calendar days, so the distance from the newest entry lands near the target
-	 * rather than exactly on it — close enough to browse from.
+	 * Jump to a date.
+	 *
+	 * The offset is resolved server-side rather than estimated here. Floppy pages
+	 * by days *with activity*, so calendar distance is not the offset, and the
+	 * error compounds with every quiet day — asking for 2025-01-01 used to land
+	 * on 2023-09-28.
 	 */
-	function jump(newestDate: string, totalDays: number) {
-		if (!jumpTo || !newestDate) return;
-		const target = new Date(jumpTo).getTime();
-		const newest = new Date(newestDate).getTime();
-		if (Number.isNaN(target) || Number.isNaN(newest)) return;
-		const daysBack = Math.max(0, Math.round((newest - target) / 86_400_000));
-		go(Math.max(0, Math.min(daysBack, Math.max(0, totalDays - data.pageSize))));
+	let jumping = $state(false);
+	let jumpError = $state<string | null>(null);
+
+	async function jump() {
+		if (!jumpTo || jumping) return;
+		jumping = true;
+		jumpError = null;
+		try {
+			const res = await fetch(`/api/diary?date=${encodeURIComponent(jumpTo)}`);
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			go((await res.json()).offset ?? 0);
+		} catch (err) {
+			jumpError = `Couldn't jump — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			jumping = false;
+		}
 	}
 </script>
 
@@ -57,11 +69,14 @@
 		{@const newestDate = r.days[0]?.date ?? ''}
 		<div class="jump">
 			<input type="date" bind:value={jumpTo} max={newestDate} aria-label="Jump to date" />
-			<button onclick={() => jump(newestDate, r.total)} disabled={!jumpTo}>Go</button>
+			<button onclick={jump} disabled={!jumpTo || jumping}>{jumping ? 'Finding…' : 'Go'}</button>
 			{#if data.offset > 0}
 				<button class="latest" onclick={() => go(0)}>Latest</button>
 			{/if}
 		</div>
+		<!-- The lookup takes a second or so; saying nothing would read as a dead
+		     button on the one control that cannot be instant. -->
+		{#if jumpError}<p class="jumperr">{jumpError}</p>{/if}
 
 		{#if !r.days.length}
 			<div class="empty"><h2>Nothing logged yet</h2></div>
@@ -133,6 +148,7 @@
 	.empty h2 { margin: 0 0 8px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); }
 	.empty p { margin: 0; font-size: 14px; color: var(--text-dim); }
 	.skdays { display: flex; flex-direction: column; gap: 6px; }
+	.jumperr { margin: 0 var(--gutter) 8px; font-size: 12.5px; color: #ff8a8a; }
 	.jump { display: flex; gap: 8px; margin-bottom: 14px; }
 	.jump input {
 		flex: 1; min-width: 0; height: 38px; padding: 0 12px;
