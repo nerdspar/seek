@@ -196,6 +196,9 @@ export type DiaryEntry = {
 	poster: string | null;
 	mediaId: string | null;
 	source: string | null;
+	/** Which detail page this row belongs to — the diary holds films as well as
+	 *  episodes, and they live on different routes. */
+	mediaType: 'tv' | 'movie';
 	/** Preformatted by Floppy, e.g. "S06E14". */
 	code: string | null;
 	/** Local wall-clock with offset, e.g. 2026-08-23T21:09:00-04:00. */
@@ -238,6 +241,7 @@ export async function getDiary(
 					// the link needs.
 					mediaId: str(item.media_id),
 					source: str(item.source),
+					mediaType: str(item.media_type) === 'movie' ? 'movie' : 'tv',
 					code: str(entry.episode_code),
 					playedAt: str(entry.played_at_local),
 					runtime: str(entry.runtime_display)

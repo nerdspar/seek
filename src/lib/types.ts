@@ -231,9 +231,11 @@ export type UpcomingItem = {
 	/** False when Floppy padded a date with no known time (§5.2). */
 	hasTime: boolean;
 	poster: string | null;
-	/** Present when the title matched a tracked show, enabling a link. */
+	/** Present when the title matched something tracked, enabling a link. */
 	mediaId: string | null;
 	source: string | null;
+	/** Films and shows have different detail routes. */
+	mediaType: 'tv' | 'movie';
 };
 
 /* ── Mood search (§6.2) ────────────────────────────────────────────────── */

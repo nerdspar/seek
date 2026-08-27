@@ -63,7 +63,7 @@
 								<button
 									class="row"
 									disabled={!item.mediaId}
-									onclick={() => item.mediaId && goto(`/show/${item.source}/${item.mediaId}`)}
+									onclick={() => item.mediaId && goto(`/${item.mediaType === 'movie' ? 'movie' : 'show'}/${item.source}/${item.mediaId}`)}
 								>
 									<Poster src={item.poster} width={54} height={81} />
 									<span class="meta">

@@ -92,7 +92,7 @@
 						<li>
 							<button
 								disabled={!e.mediaId}
-								onclick={() => e.mediaId && goto(`/show/${e.source}/${e.mediaId}`)}
+								onclick={() => e.mediaId && goto(`/${e.mediaType === 'movie' ? 'movie' : 'show'}/${e.source}/${e.mediaId}`)}
 							>
 								<Poster src={e.poster} width={40} height={60} radius={6} />
 								<span class="meta">

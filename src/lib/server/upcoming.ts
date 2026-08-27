@@ -50,8 +50,16 @@ function libraryIndex() {
 	return memo('upcoming:index', 6 * 60 * 60 * 1000, buildLibraryIndex);
 }
 
-async function buildLibraryIndex(): Promise<Map<string, { poster: string | null; mediaId: string; source: string }>> {
-	const index = new Map<string, { poster: string | null; mediaId: string; source: string }>();
+type IndexEntry = {
+	poster: string | null;
+	mediaId: string;
+	source: string;
+	/** Which detail route the row links to — this index spans both libraries. */
+	mediaType: 'tv' | 'movie';
+};
+
+async function buildLibraryIndex(): Promise<Map<string, IndexEntry>> {
+	const index = new Map<string, IndexEntry>();
 
 	for (const mediaType of ['tv', 'movie'] as const) {
 		let offset = 0;
@@ -70,7 +78,8 @@ async function buildLibraryIndex(): Promise<Map<string, { poster: string | null;
 				index.set(title, {
 					poster: typeof item.image === 'string' ? item.image : null,
 					mediaId,
-					source: String(item.source ?? 'tmdb')
+					source: String(item.source ?? 'tmdb'),
+					mediaType
 				});
 			}
 			offset += 100;
@@ -98,7 +107,10 @@ async function build(): Promise<UpcomingItem[]> {
 				hasTime: e.hasTime,
 				poster: hit?.poster ?? null,
 				mediaId: hit?.mediaId ?? null,
-				source: hit?.source ?? null
+				source: hit?.source ?? null,
+				/* A feed event with SxEy is an episode whatever the index says; only
+				   an unnumbered one can be a film. */
+				mediaType: e.episode === null ? (hit?.mediaType ?? 'tv') : 'tv'
 			};
 		});
 }
