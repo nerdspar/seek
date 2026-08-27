@@ -21,6 +21,16 @@ classification works if it ever comes back.
   Seek displays 20 of them. Nothing here can trim what Floppy sends, the page
   streams so the shell is immediate, and 2× a normal show is not worth chasing.
 
+## Accepted, not open (continued)
+
+- **Two toast mechanisms, deliberately.** The global one in `+layout.svelte`
+  carries confirmations; each page keeps its own `note` for errors. Folding them
+  together looks tidier and is not: the watchlist renders its error as
+  `{:else if note}` against the undo toast, so exactly one thing occupies the
+  bottom of the screen at a time. A global error toast would let both appear at
+  once, on the screen that matters most. Errors also belong to the page that
+  raised them in a way a confirmation does not.
+
 ## Smaller items
 
 - **Re-sort after marking skips two orderings on purpose**: Alphabetical and
