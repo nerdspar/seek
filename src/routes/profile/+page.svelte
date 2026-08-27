@@ -128,6 +128,23 @@
 				</ul>
 			</section>
 
+			{#if stats.topRated.length}
+					<section>
+						<h2>Your highest rated</h2>
+						<ul class="rail">
+							{#each stats.topRated as t (t.mediaId)}
+								<li>
+									<button onclick={() => goto(`/${t.mediaType === 'movie' ? 'movie' : 'show'}/${t.source}/${t.mediaId}`)}>
+										<Poster src={t.poster} width={92} height={138} radius={9} />
+										<span class="cap">{t.title}</span>
+										<span class="sub2 tnum">★ {t.score}</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
 			{#if stats.topTitles.length}
 					<section>
 						<h2>Most watched</h2>

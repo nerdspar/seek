@@ -18,7 +18,8 @@ export type SortKey =
 	| 'oldest_episode'
 	| 'alphabetical'
 	| 'total_episodes'
-	| 'episodes_left';
+	| 'episodes_left'
+	| 'your_rating';
 
 export const APPEARANCES = ['system', 'light', 'dark'] as const;
 export type Appearance = (typeof APPEARANCES)[number];
@@ -81,7 +82,10 @@ export const SORTS: Record<SortKey, { label: string; sort: string; direction: 'a
 	total_episodes: { label: 'Total episodes', sort: 'runtime', direction: 'desc' },
 	// `time_left` is minutes remaining rather than a literal episode count, but it
 	// is the only "how much is left" ordering Floppy offers.
-	episodes_left: { label: 'Episodes left', sort: 'time_left', direction: 'desc' }
+	episodes_left: { label: 'Episodes left', sort: 'time_left', direction: 'desc' },
+	// Verified against a live instance: `score` orders by *your* rating, not the
+	// community one, and unrated rows fall to the end.
+	your_rating: { label: 'Your rating', sort: 'score', direction: 'desc' }
 };
 
 export const DEFAULT_SORT: SortKey = 'recently_watched';

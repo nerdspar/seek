@@ -14,6 +14,15 @@ import { floppy } from './floppy';
 
 export type RangeKey = 'this_month' | 'this_year' | 'last_year' | 'all_time';
 
+export type RatedTitle = {
+	title: string;
+	poster: string | null;
+	mediaId: string;
+	source: string;
+	mediaType: 'tv' | 'movie';
+	score: number;
+};
+
 export type TopTitle = {
 	title: string;
 	poster: string | null;
@@ -37,6 +46,8 @@ export type Stats = {
 	weekday: { label: string; hours: number }[];
 	topGenres: { name: string; duration: string }[];
 	topTitles: TopTitle[];
+	/** What you rated highest. Empty until you rate something. */
+	topRated: RatedTitle[];
 	topStudios: { name: string; watched: string; shows: number }[];
 };
 
@@ -141,6 +152,26 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 				};
 			})
 			.filter((t): t is TopTitle => t !== null),
+		topRated: arr(st.top_rated)
+			.slice(0, 8)
+			.map((raw): RatedTitle | null => {
+				const r = rec(raw);
+				const item = rec(r.item);
+				const mediaId = str(item.media_id);
+				// Floppy sends the score as a string here — "9.0", not 9.0 — while
+				// the list endpoint sends a number for the same field.
+				const score = Number(r.score);
+				if (!mediaId || !Number.isFinite(score)) return null;
+				return {
+					title: str(item.title) ?? 'Untitled',
+					poster: str(item.image),
+					mediaId,
+					source: str(item.source) ?? 'tmdb',
+					mediaType: str(item.media_type) === 'movie' ? 'movie' : 'tv',
+					score
+				};
+			})
+			.filter((t): t is RatedTitle => t !== null),
 		topStudios: arr(rec(st.top_talent).top_studios)
 			.slice(0, 5)
 			.map((s) => {
