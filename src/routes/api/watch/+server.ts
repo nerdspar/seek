@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { markEpisodeWatched, markMovieWatched, watchMoviePath } from '$lib/server/api';
 import { getRow } from '$lib/server/watchlist';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
-import { patch, expire } from '$lib/server/memo';
+import { patch, expire, invalidate } from '$lib/server/memo';
 import type { WatchlistPage } from '$lib/server/watchlist';
 import type { WatchlistRow } from '$lib/types';
 import type { MediaType } from '$lib/types';
@@ -71,13 +71,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Still mark it stale so a background refresh reconciles anything the
 		// patch could not know about, like a show dropping out of the filter.
 		expire('watchlist:');
-		// The show page shows season progress, which this just changed.
-		expire(`show:${source}:${mediaId}`);
+		// The show page shows season progress, which this just changed. A film's
+		// page reads its watched state straight off the cached progress, so that
+		// one is dropped rather than marked stale — serving it stale would show
+		// the state the tap just reversed.
+		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
+		else expire(`show:${source}:${mediaId}`);
 
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
-		expire(`show:${source}:${mediaId}`);
+		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
+		else expire(`show:${source}:${mediaId}`);
 		return json({ ok: true, row: null, stale: true });
 	}
 };
@@ -122,10 +127,13 @@ export const DELETE: RequestHandler = async ({ request }) => {
 			)
 		}));
 		expire('watchlist:');
+		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
+		else expire(`show:${source}:${mediaId}`);
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
-		expire(`show:${source}:${mediaId}`);
+		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
+		else expire(`show:${source}:${mediaId}`);
 		return json({ ok: true, row: null, stale: true });
 	}
 };

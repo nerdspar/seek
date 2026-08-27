@@ -347,7 +347,6 @@
 				{#await data.joint then serverJoint}
 					{@const joint = jointEdit ?? serverJoint}
 					<StateChips
-						mediaType="tv"
 						tracking={t}
 						{joint}
 						showCompany={data.companyTracking}

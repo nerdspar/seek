@@ -10,28 +10,29 @@
 	 * passenger, and on a film "Completed" and a separate "Watched" button said
 	 * the same thing twice. Company had no place on the page at all.
 	 *
+	 * Films used to differ here, taking a plain watched toggle on the grounds
+	 * that a film is binary. That stopped being true once Floppy had other
+	 * writers: a Jellyfin webhook parks a film at In progress while it plays,
+	 * and an add from Seek files it under Planning, so all five statuses occur
+	 * on films whether or not this row can express them. Both types now open the
+	 * same picker.
+	 *
 	 * The columns are fixed rather than sized to their contents, so rating
 	 * something or switching to Together never moves the chip next to it. That
 	 * matters more than it sounds: the row is tapped repeatedly, and a target
 	 * that shifts under your thumb is the actual complaint.
 	 */
 	type Props = {
-		mediaType: 'tv' | 'movie';
 		tracking: Tracking;
-		/** True for a film that has a play recorded. Ignored for shows. */
-		watched?: boolean;
 		joint: boolean;
 		showCompany?: boolean;
 		busy?: boolean;
-		/** Films toggle watched directly; shows open the status picker. */
 		onmain: () => void;
 		onrating: () => void;
 		oncompany: () => void;
 	};
 	let {
-		mediaType,
 		tracking,
-		watched = false,
 		joint,
 		showCompany = true,
 		busy = false,
@@ -40,13 +41,10 @@
 		oncompany
 	}: Props = $props();
 
-	const isFilm = $derived(mediaType === 'movie');
-	const mainLabel = $derived(
-		isFilm ? (watched ? 'Watched' : 'Mark watched') : (statusLabel(tracking.status) ?? 'Set status')
-	);
-	/* A film's middle chip reports a fact, so it fills when true. A show's opens a
-	   picker, so it fills whenever a status is set — it is never "off". */
-	const mainOn = $derived(isFilm ? watched : tracking.status !== null);
+	const mainLabel = $derived(statusLabel(tracking.status) ?? 'Set status');
+	/* The chip opens a picker rather than reporting a fact, so it fills whenever
+	   a status is set — it is never "off" on something tracked. */
+	const mainOn = $derived(tracking.status !== null);
 </script>
 
 <div class="chips" class:solo={!showCompany}>
@@ -68,11 +66,6 @@
 	{/if}
 
 	<button class="chip main" class:on={mainOn} disabled={busy} onclick={onmain}>
-		{#if isFilm && watched}
-			<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-		{:else if isFilm}
-			<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9" /></svg>
-		{/if}
 		<span>{mainLabel}</span>
 	</button>
 

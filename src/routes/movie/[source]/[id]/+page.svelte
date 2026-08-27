@@ -4,6 +4,7 @@
 	import Poster from '$lib/components/Poster.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import StateChips from '$lib/components/StateChips.svelte';
+	import StatusSheet from '$lib/components/StatusSheet.svelte';
 	import RatingSheet from '$lib/components/RatingSheet.svelte';
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import { formatRuntime } from '$lib/format';
@@ -14,6 +15,7 @@
 	let { data }: { data: PageData } = $props();
 
 	let note = $state<string | null>(null);
+	let statusOpen = $state(false);
 	let ratingOpen = $state(false);
 	let menuOpen = $state(false);
 	let jointEdit = $state<boolean | null>(null);
@@ -119,22 +121,24 @@
 		trackEdit = null;
 	}
 
-	/** Mark or unmark the film itself. A movie is one thing, so this is the whole
-	 *  of its progress — no seasons, no episode list. */
+	/* Recording a play is no longer done from here: setting Completed in the
+	   status picker makes Floppy record one. Taking a play back has no such
+	   path — moving off Completed leaves it behind — so this stays as the one
+	   control that can, reachable from the menu. */
 	let watchBusy = $state(false);
 	let watchedEdit = $state<boolean | null>(null);
 
-	async function toggleWatched(current: boolean) {
+	async function clearWatchHistory() {
 		if (watchBusy) return;
-		const next = !current;
-		if (!next && !confirm('Clear this film from your history?')) return;
+		if (!confirm('Clear this film from your history? The status stays as it is.')) return;
+		menuOpen = false;
 
 		watchBusy = true;
 		const before = watchedEdit;
-		watchedEdit = next;
+		watchedEdit = false;
 		try {
 			const res = await fetch('/api/watch', {
-				method: next ? 'POST' : 'DELETE',
+				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					mediaType: 'movie',
@@ -144,7 +148,7 @@
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-			void notify(next ? 'Marked watched' : 'Cleared');
+			void notify('Cleared');
 		} catch (err) {
 			watchedEdit = before;
 			note = `Couldn't update — ${err instanceof Error ? err.message : err}`;
@@ -219,7 +223,7 @@
 		{#await data.tracking then serverTracking}
 			{@const t = trackEdit ?? serverTracking}
 			{@const tracked = trackedEdit ?? movie.tracked}
-			{@const watched = watchedEdit ?? movie.progress > 0}
+			{@const watched = watchedEdit ?? movie.watched}
 
 			{#if tracked}
 				{#await data.joint then serverJoint}
@@ -227,13 +231,11 @@
 					<!-- main has no side padding here, so the row carries the gutter. -->
 					<div class="chiprow">
 						<StateChips
-							mediaType="movie"
 							tracking={t}
-							{watched}
 							{joint}
 							showCompany={data.companyTracking}
 							busy={trackBusy || watchBusy || jointBusy}
-							onmain={() => toggleWatched(watched)}
+							onmain={() => (statusOpen = true)}
 							onrating={() => (ratingOpen = true)}
 							oncompany={() => toggleJoint(joint)}
 						/>
@@ -244,6 +246,16 @@
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
 					<span>Add to library</span>
 				</button>
+			{/if}
+
+			{#if statusOpen && tracked}
+				<StatusSheet
+					title={movie.title}
+					status={t.status}
+					busy={trackBusy}
+					onpick={(status) => patchTracking(t, { status })}
+					onclose={() => (statusOpen = false)}
+				/>
 			{/if}
 
 			{#if ratingOpen && tracked}
@@ -261,7 +273,8 @@
 					title={movie.title}
 					sourceUrl={movie.sourceUrl}
 					floppyUrl={data.floppyBase && t.floppyPath ? `${data.floppyBase}${t.floppyPath}` : null}
-					busy={trackBusy}
+					busy={trackBusy || watchBusy}
+					onclearhistory={watched ? clearWatchHistory : undefined}
 					onremove={() => toggleTracked(true)}
 					onclose={() => (menuOpen = false)}
 				/>

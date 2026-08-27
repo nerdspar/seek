@@ -84,14 +84,25 @@ Status and plays are coupled in one direction only:
 
 | Action | Effect |
 |---|---|
-| `PATCH {"status":3}` on an unwatched film | **creates a play** — progress 0 → 1 |
-| `POST .../watch/` (mark watched) | sets status to Completed |
-| `DELETE .../watch/` (Seek's unmark) | pops the play, **leaves status at Completed** |
+| `PATCH {"status":3}` on an unwatched film | records a play, and sets `progress` to 1 |
+| `POST .../watch/` (mark watched) | records a play, sets status to Completed, and sets `end_date` — but **leaves `progress` at 0** |
+| `DELETE .../watch/` | clears `end_date`, **leaves status at Completed** and `progress` untouched |
 | Completed → Dropped, Dropped → Planning | the play stays |
 
 So a film can sit at Planning with a play on record, or at Completed with none.
-Anything reading status alone will be wrong about whether a film was watched,
-which is why Seek derives that from `progress > 0`.
+Status alone never settles whether a film was watched.
+
+**Neither does `progress` alone**, which is the trap. The two write paths record
+the same fact in different fields: PATCHing the status sets `progress`, while
+the watch endpoint sets `end_date` and leaves `progress` at 0. A film marked
+through the watch path therefore reads as unwatched to anything checking
+`progress > 0` — including the Trakt-imported library, where every film carries
+`progress: 1` and looked like proof the field was reliable.
+
+`MovieDetail.watched` is `progress > 0 || end_date` for this reason. Note also
+that a movie's user row is only complete on the **detail** endpoint, inside
+`consumptions[0]` (which carries its own `status`, unlike the null top-level
+one); the list row's `progress` does not track the watch path at all.
 
 ### Jellyfin webhook — what it writes
 

@@ -47,7 +47,11 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	   move with it. Invalidated rather than expired: a stale read here shows the
 	   status you just changed away from, which is the whole point of changing it. */
 	invalidate(trackingKey(mediaType, source, mediaId));
-	invalidate(`show:${source}:${mediaId}`);
+	/* Both detail caches are keyed by type. The movie one matters more than it
+	   looks: setting Completed makes Floppy record a play, and the film page
+	   reads its watched state from the cached `progress`, so leaving this key
+	   alone left the page insisting the film had never been watched. */
+	invalidate(`${mediaType === 'movie' ? 'movie' : 'show'}:${source}:${mediaId}`);
 	expire('watchlist:');
 
 	return json({ ok: true });

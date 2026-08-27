@@ -85,6 +85,7 @@ export async function getMovie(source: string, mediaId: string): Promise<MovieDe
 		scoreCount: num(d.score_count),
 		maxProgress: num(d.max_progress),
 		progress: num(consumption.progress) ?? 0,
+		watched: (num(consumption.progress) ?? 0) > 0 || Boolean(str(consumption.end_date)),
 		tracked: d.tracked === true,
 		status: str(details.status),
 		releaseDate: str(details.release_date),

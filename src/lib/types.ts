@@ -146,6 +146,11 @@ export type MovieDetail = {
 	/** Always 1 for a movie, but read from Floppy rather than assumed. */
 	maxProgress: number | null;
 	progress: number;
+	/** Whether a play is on record. Not `progress > 0`: the two write paths
+	 *  disagree — PATCHing the status to Completed sets `progress`, while the
+	 *  watch endpoint leaves it at 0 and sets `end_date` instead. See
+	 *  docs/floppy-api-notes.md. */
+	watched: boolean;
 	tracked: boolean;
 	status: string | null;
 	releaseDate: string | null;

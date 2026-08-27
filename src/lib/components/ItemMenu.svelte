@@ -14,10 +14,14 @@
 		/** Floppy's own page for this item, when FLOPPY_PUBLIC_URL is configured. */
 		floppyUrl: string | null;
 		busy?: boolean;
+		/** Films only, and only when a play exists: the status picker can set
+		 *  Completed (which records a play) but moving off it leaves the play
+		 *  behind, so this is the only way to take one back. */
+		onclearhistory?: () => void;
 		onremove: () => void;
 		onclose: () => void;
 	};
-	let { title, sourceUrl, floppyUrl, busy = false, onremove, onclose }: Props = $props();
+	let { title, sourceUrl, floppyUrl, busy = false, onclearhistory, onremove, onclose }: Props = $props();
 
 	async function share() {
 		if (!sourceUrl) return;
@@ -63,6 +67,12 @@
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6" /><path d="M20 4 10.5 13.5" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
 					<span>Open in Floppy</span>
 				</a>
+			{/if}
+			{#if onclearhistory}
+				<button disabled={busy} onclick={onclearhistory}>
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" /><path d="M3.5 4.5V9H8" /><path d="M12 8v4.4l3 1.8" /></svg>
+					<span>Clear watch history</span>
+				</button>
 			{/if}
 			<button class="danger" disabled={busy} onclick={onremove}>
 				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7" /><path d="M6.5 7l.8 11a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9L18.5 7" /></svg>
