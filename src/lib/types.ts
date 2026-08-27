@@ -151,6 +151,11 @@ export type MovieDetail = {
 	runtime: number | null;
 	certification: string | null;
 	cast: { name: string; role: string | null; image: string | null }[];
+	/** The franchise this film belongs to, if any — "Toy Story Collection". */
+	collection: {
+		name: string;
+		items: { mediaId: string; source: string; title: string; poster: string | null; year: number | null }[];
+	} | null;
 };
 
 export type ShowDetail = {

@@ -47,6 +47,32 @@ export async function getMovie(source: string, mediaId: string): Promise<MovieDe
 	const details = rec(d.details);
 	const consumption = rec(arr(d.consumptions)[0]);
 
+	/* `related` holds the franchise under a key named after it — "Toy Story
+	   Collection" rather than "collection" — so it has to be discovered rather
+	   than looked up. Its entries are flat, not wrapped in `item` the way season
+	   rows are, and their `id` is null even for films you track, so tracked state
+	   has to come from elsewhere. */
+	const related = rec(d.related);
+	const [collectionName, collectionRaw] =
+		Object.entries(related).find(([, v]) => Array.isArray(v) && v.length) ?? [];
+	const collection = collectionName
+		? {
+				name: collectionName,
+				items: arr(collectionRaw)
+					.map((entry) => {
+						const c = rec(entry);
+						return {
+							mediaId: String(c.media_id ?? ''),
+							source: str(c.source) ?? 'tmdb',
+							title: str(c.title) ?? 'Untitled',
+							poster: str(c.image),
+							year: num(c.year)
+						};
+					})
+					.filter((c) => c.mediaId)
+			}
+		: null;
+
 	return {
 		mediaId: str(d.media_id) ?? mediaId,
 		source: str(d.source) ?? source,
@@ -70,7 +96,9 @@ export async function getMovie(source: string, mediaId: string): Promise<MovieDe
 				const p = rec(c);
 				return { name: str(p.name) ?? '', role: str(p.role), image: str(p.image) };
 			})
-			.filter((c) => c.name)
+			.filter((c) => c.name),
+		// One entry means the film is alone in its "collection"; not worth a rail.
+		collection: collection && collection.items.length > 1 ? collection : null
 	};
 }
 

@@ -228,6 +228,26 @@
 			<p class="synopsis">{movie.synopsis}</p>
 		{/if}
 
+		{#if movie.collection}
+			<section>
+				<h2>{movie.collection.name}</h2>
+				<ul class="rail">
+					{#each movie.collection.items as film (film.mediaId)}
+						<li>
+							<button
+								class:current={film.mediaId === movie.mediaId}
+								onclick={() => goto(`/movie/${film.source}/${film.mediaId}`)}
+							>
+								<Poster src={film.poster} width={104} height={156} radius={10} />
+								<span class="cap">{film.title}</span>
+								{#if film.year}<span class="sub tnum">{film.year}</span>{/if}
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+
 		{#if movie.cast.length}
 			<section>
 				<h2>Cast</h2>
@@ -325,6 +345,10 @@
 	.cast li { flex: none; width: 78px; }
 	.rail li { flex: none; width: 104px; }
 	.pname, .cap { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; line-height: 1.3; }
+	.sub { display: block; font-size: 11px; color: var(--text-dim); }
+	/* The film you are already on stays in the rail — a franchise reads wrong
+	   with a gap in it — but dimmed, so it does not invite a tap to nowhere. */
+	.rail button.current { opacity: 0.45; }
 	.prole { display: block; font-size: 11px; color: var(--text-dim); }
 
 	.failed { padding: 40px var(--gutter); text-align: center; }
