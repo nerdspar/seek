@@ -113,37 +113,12 @@ returns a `task_id` pollable at `GET /api/v1/tasks/{task_id}/`).
 via section title. So for a self-hosted setup the bucket has to be set directly
 rather than imported — see the migration below.
 
-### Anime bucket migration
+### Anime bucket migration — abandoned
 
-**Parked** — prepared but not run.
-
-`scripts/anime-list.mjs` (read-only) regenerates `anime-list.txt`, the reviewable
-list of shows to move. Anime means **Japanese-produced animation**, not animation
-generally: the list is a curated set matched by title, because Floppy's metadata
-is wrong in both directions (it misses Naruto and SPY x FAMILY, and marks Star
-Wars: Visions Japanese). Currently 18 shows, with 7 borderline titles — Blood of
-Zeus, Blue Eye Samurai, Lord of Mysteries, Pantheon, Star Wars: Visions, Tomb
-Raider, Twilight of the Gods — commented out rather than silently included. `scripts/anime-migration-sql.mjs` turns that list into
-`migrate-anime.sql`. **The generator never connects to a database and runs
-nothing**; the SQL ends in `ROLLBACK` until deliberately changed to `COMMIT`.
-
-One `UPDATE` per show is sufficient: a show, its seasons and its episodes are all
-`app_item` rows sharing `(source, media_id)`, and Floppy's `_child_bucket` rule is
-that children follow the show's bucket, so they move together.
-
-The update is collision-free only while there are no existing anime-bucket rows —
-every `app_item` uniqueness constraint includes `library_media_type`. The generated
-SQL checks for that first and expects 0 rows.
-
-`anime_library_mode` must be set to `both` (or `anime`) for any of this to be
-visible. Floppy's own CSV export/import also round-trips `library_media_type`, but
-the importer's lookup includes the bucket, so an edited CSV adds a second copy
-rather than moving the item.
-
-Because `Item` is unique on `(media_id, source, media_type, library_media_type)`,
-the same show can legitimately exist in both the tv and anime buckets — see
-`imports/helpers.py:find_item_across_buckets`. Re-importing anime without removing
-the tv-bucket copies leaves duplicates.
+A migration to move shows into Floppy's anime bucket was prepared and never
+run; the generator scripts and the SQL have been removed. The section above
+still describes how the classification works, which is the part worth keeping:
+it is a property of Floppy, not of that plan.
 
 ### Known traps (§12) as implemented
 
@@ -159,7 +134,7 @@ the tv-bucket copies leaves duplicates.
 
 ## The probe scripts
 
-`scripts/*.mjs` are one-off probes used to establish the findings above. `probe.mjs`,
-`probe2.mjs`, `probe3.mjs`, `probe4.mjs`, `probe6.mjs` and `baseline.mjs` are
-read-only. `probe-undo.mjs` and `probe5.mjs` write, but only to a throwaway show
-they add and then delete.
+`scripts/*.mjs` are one-off probes used to establish the findings above. Most are
+read-only. The exceptions — `probe-undo.mjs`, `probe5.mjs` and
+`probe-season-ops*.mjs` — write, but only to a throwaway show they add and then
+delete, which is the pattern to follow if you add one.

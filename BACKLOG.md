@@ -6,19 +6,12 @@ Things flagged but deliberately not built. Build order is in
 
 Everything in §13's build order has shipped, along with filters, sort, the
 joint/solo tag, the collection views, settings, deployment, the session gate,
-themes, and movie marking. What is left is below.
+themes, movie tracking and its own detail page. What is left is below.
 
-## Anime bucket migration — parked by choice
-
-`anime-list.txt` (18 shows) and `migrate-anime.sql` are generated and **unrun**.
-The SQL ends in `ROLLBACK` until deliberately changed. It needs Floppy's
-`anime_library_mode` set to `both` (or `anime`) and a database backup first — see
-[docs/floppy-api-notes.md](docs/floppy-api-notes.md#anime-bucket-migration) for
-why the bucket cannot simply be imported.
-
-Once migrated, anime belongs in the **filter control** (§4.6) alongside status
-and service — explicitly *not* a top-level segment. The segmented control stays
-TV Shows / Movies.
+Anime was dropped deliberately. Floppy can file shows in a separate anime
+bucket and the migration to do it was prepared, but it was never worth the
+database surgery — see the note in docs/floppy-api-notes.md for how the
+classification works if it ever comes back.
 
 ## Movie watch history is mostly absent
 
@@ -34,10 +27,6 @@ watchlist entries rather than history.
 
 ## Smaller items
 
-- **Confirmation toast for actions with no undo of their own** — mark-all-season
-  and adding a show. Marking an episode already toasts because undo needs it.
-  Raised because iOS Safari has no Vibration API, so §4.2's haptic cannot fire
-  on the one platform Seek targets; see `src/lib/haptics.ts`.
 - **Re-sort after marking covers two orderings**, "Recently watched" and
   "Episodes left". The others either do not move when you mark (Alphabetical,
   Total episodes) or key on values Floppy computes server-side, which are left to

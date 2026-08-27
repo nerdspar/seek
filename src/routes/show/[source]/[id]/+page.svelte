@@ -7,6 +7,7 @@
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { formatRuntime } from '$lib/format';
 	import { haptic } from '$lib/haptics';
+	import { notify } from '$lib/notices.svelte';
 	import type { SeasonSummary, ShowDetail } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -111,6 +112,13 @@
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			/* Filling a season can be dozens of writes and shows only as a bar
+			   sliding; say what happened. */
+			void notify(
+				done
+					? `Cleared ${season.title}`
+					: `Marked ${season.maxProgress ?? ''} episode${season.maxProgress === 1 ? '' : 's'} watched`.replace('  ', ' ')
+			);
 		} catch (err) {
 			overrides = { ...overrides, [season.seasonNumber]: before };
 			note = `Couldn't update ${season.title} — ${err instanceof Error ? err.message : err}`;
@@ -203,6 +211,7 @@
 				body: JSON.stringify({ mediaType: 'tv', source: data.source, mediaId: data.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			void notify(next ? 'Added to your library' : 'Removed from your library');
 		} catch (err) {
 			trackedEdit = before;
 			note = `Couldn't ${next ? 'add' : 'remove'} — ${err instanceof Error ? err.message : err}`;

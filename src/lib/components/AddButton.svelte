@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { notify } from '$lib/notices.svelte';
 	/** Inline add/remove for a Discover or search result (§6.4). Owns its own
 	 *  request so any grid can drop it in without threading state. */
 	type Props = {
@@ -32,6 +33,9 @@
 				body: JSON.stringify({ mediaType, source, mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			/* The glyph flips, which is easy to miss on a poster the size of a
+			   thumbnail — and on iOS there is no haptic to feel instead. */
+			void notify(was ? `Removed ${title}` : `Added ${title}`);
 		} catch (err) {
 			on = was;
 			onerror?.(`Couldn't ${was ? 'remove' : 'add'} ${title} — ${err instanceof Error ? err.message : err}`);

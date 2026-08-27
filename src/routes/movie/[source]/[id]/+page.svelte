@@ -6,6 +6,7 @@
 	import TrackingSheet from '$lib/components/TrackingSheet.svelte';
 	import { formatRuntime } from '$lib/format';
 	import { statusLabel, type Tracking } from '$lib/tracking';
+	import { notify } from '$lib/notices.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -74,6 +75,7 @@
 				body: JSON.stringify({ mediaType: 'movie', source: data.source, mediaId: data.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			void notify(next ? 'Added to your library' : 'Removed from your library');
 		} catch (err) {
 			trackedEdit = before;
 			note = `Couldn't ${next ? 'add' : 'remove'} — ${err instanceof Error ? err.message : err}`;
@@ -108,7 +110,7 @@
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-			note = next ? 'Marked watched.' : 'Cleared.';
+			void notify(next ? 'Marked watched' : 'Cleared');
 		} catch (err) {
 			watchedEdit = before;
 			note = `Couldn't update — ${err instanceof Error ? err.message : err}`;

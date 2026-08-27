@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import type { Accent, Appearance, MarkDirection, Prefs } from '$lib/server/prefs';
+	import { setNoticesEnabled } from '$lib/notices.svelte';
 	import type { PageData } from './$types';
 
 	/** Preferences live server-side in /data (§8), so this edits them through the

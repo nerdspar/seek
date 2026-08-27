@@ -36,6 +36,10 @@ export type Prefs = {
 	 *  show's poster for every season, so it is usually a column of identical
 	 *  images — but some shows do have per-season art. */
 	seasonArtwork: boolean;
+	/** Confirm actions that would otherwise pass in silence — adding a title,
+	 *  filling a season. Marking an episode always speaks, because undo lives
+	 *  in that toast. */
+	confirmToasts: boolean;
 	/** Dark, light, or whatever the phone is set to. */
 	appearance: Appearance;
 	/** The gradient. Independent of appearance — each accent works on both. */
@@ -59,6 +63,7 @@ export const DEFAULTS: Prefs = {
 	sort: {},
 	defaultTab: 'watchlist',
 	seasonArtwork: false,
+	confirmToasts: true,
 	appearance: 'system',
 	accent: 'violet',
 	services: [],
