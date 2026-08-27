@@ -62,6 +62,77 @@ So Upcoming must **render a time only when one is known**, and fall back to a
 date otherwise. Displaying the placeholder as "11:59 PM" would be wrong for 60% of
 rows. Detect it on `11:59:59` exactly; do not treat `00:00:00` as a placeholder.
 
+### Removing an item cascades — verified
+
+`DELETE /api/v1/media/{media_type}/{source}/{media_id}/` destroys the tracking
+record and every play hanging off it. Measured: added a show, marked S1E1
+(status 1, progress 1), deleted it, re-added it — status 0, progress 0. The
+plays do not come back. Rating, dates and tags live on that same record and go
+with it.
+
+This is what Seek's Remove does, and it is the only unrecoverable action in the
+app — hence the confirm.
+
+### A film's status and its plays drift apart — verified
+
+Floppy accepts **all five** statuses on a movie. PATCH returned 200 and stored
+0–4 correctly, so "planned or completed and nothing between" is wrong; In
+progress in particular is a real state for a film, and the Jellyfin webhook
+below writes it.
+
+Status and plays are coupled in one direction only:
+
+| Action | Effect |
+|---|---|
+| `PATCH {"status":3}` on an unwatched film | **creates a play** — progress 0 → 1 |
+| `POST .../watch/` (mark watched) | sets status to Completed |
+| `DELETE .../watch/` (Seek's unmark) | pops the play, **leaves status at Completed** |
+| Completed → Dropped, Dropped → Planning | the play stays |
+
+So a film can sit at Planning with a play on record, or at Completed with none.
+Anything reading status alone will be wrong about whether a film was watched,
+which is why Seek derives that from `progress > 0`.
+
+### Jellyfin webhook — what it writes
+
+Read from upstream Yamtrack source
+(`src/integrations/webhooks/{jellyfin,movie,tv,base}.py`), **not** measured
+against this instance — Floppy is a fork. Confirm from the container log on the
+first real webhook: the handler logs the payload at debug and the resulting
+status at info. There is no webhook path under `/api/v1/`; it lives on the
+tokenised URL from Floppy's own Integrations page.
+
+Only two statuses are ever written. Planning, Paused and Dropped never are.
+
+| Jellyfin event | Movie | Show |
+|---|---|---|
+| `Play` / `Stop`, unfinished | In progress, `start_date=now`, progress 0 | forces show **and** season to In progress, records the episode play |
+| finished, or `MarkPlayed` | Completed, `end_date=now`, progress 1 | as above, plus the play |
+| `MarkUnplayed` | **deletes the whole tracking row** | deletes **one episode play**, the most recent |
+
+`MarkPlayed` and `MarkUnplayed` fire only if enabled per-user
+(`jellyfin_mark_played_enabled` / `jellyfin_mark_unplayed_enabled`); `Play` and
+`Stop` are always handled.
+
+Three traps:
+
+- **`MarkUnplayed` on a film removes it from the library**, rating and dates
+  with it — the same destruction as Seek's Remove, driven from Jellyfin's UI.
+  Nothing in the webhook can remove a *show*: it only ever pops episode plays.
+  Worth knowing before enabling that setting.
+- **Completed is sticky on films.** The update branch is guarded by
+  `status != COMPLETED`, so once a film is Completed the webhook skips it
+  entirely — no second play, no `repeats`. Rewatches have to be marked in Seek.
+- **Any episode play forces a show back to In progress**, from Completed,
+  Paused or Dropped alike (`elif tv_instance.status != IN_PROGRESS: ... =
+  IN_PROGRESS`, and the same for the season). Rewatch one episode of something
+  finished and it moves back to Watching on its own, so the watchlist will
+  reshuffle with no action taken in Seek. This is the opposite of the movie
+  behaviour above.
+
+Duplicate webhooks for the same episode within 5 seconds are dropped upstream,
+so double-fires do not double-count.
+
 ### Anime: how it actually works
 
 Corrected after a first pass got this wrong. Floppy does support native anime for

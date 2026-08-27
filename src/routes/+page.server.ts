@@ -30,10 +30,12 @@ export const load: PageServerLoad = async ({ url }) => {
 	const sortKey = sortFor(prefs, mediaType);
 	const { sort, direction } = SORTS[sortKey];
 
-	/* A movie has no middle. Floppy tracks it as planned or completed and nothing
-	   between, so the in-progress backlog that makes the TV tab useful asks for a
-	   state no movie can ever hold — the tab renders empty however full the
-	   library is. Movies open on everything instead, and the chips narrow it. */
+	/* Films are watched or they are not. Floppy does accept all five statuses on
+	   one — and the Jellyfin webhook writes In progress while a film is playing —
+	   but a library of 53 held 53 Completed and nothing else, so defaulting this
+	   tab to the in-progress backlog that makes the TV tab useful renders it
+	   empty however full the library is. Movies open on everything instead, and
+	   the chips narrow it. */
 	const fallbackStatus = mediaType === 'movie' ? 'all' : 'in_progress';
 	const rawStatus = url.searchParams.get('status') ?? fallbackStatus;
 	const status = STATUSES.includes(rawStatus) ? rawStatus : fallbackStatus;
