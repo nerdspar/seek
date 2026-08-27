@@ -13,18 +13,6 @@ bucket and the migration to do it was prepared, but it was never worth the
 database surgery — see the note in docs/floppy-api-notes.md for how the
 classification works if it ever comes back.
 
-## Movie watch history is mostly absent
-
-Floppy's statistics count **9** of the 53 tracked movies — 1,118 minutes against
-roughly 8,500 hours of television. The other 44 arrived from the Trakt import as
-`status=completed` with an `end_date` but **no play record**, so they contribute
-nothing to hours, and the Movies tile reads 0 for every range except all-time.
-
-Worth checking Trakt itself before assuming the importer dropped them: Hobi,
-which reads Trakt, also reported "0 Movies watched" for the same year. If Trakt
-holds no movie plays either, there is nothing to re-import and those 53 are
-watchlist entries rather than history.
-
 ## Smaller items
 
 - **Re-sort after marking covers two orderings**, "Recently watched" and
