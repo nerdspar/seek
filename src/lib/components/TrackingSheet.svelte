@@ -17,6 +17,8 @@
 		title: string;
 		tracking: Tracking;
 		joint: boolean;
+		/** Joint/solo is a show-level household tag; a film page has no use for it. */
+		showJoint?: boolean;
 		busy?: boolean;
 		onstatus: (status: number) => void;
 		onscore: (score: number | null) => void;
@@ -24,8 +26,18 @@
 		onremove: () => void;
 		onclose: () => void;
 	};
-	let { title, tracking, joint, busy = false, onstatus, onscore, onjoint, onremove, onclose }: Props =
-		$props();
+	let {
+		title,
+		tracking,
+		joint,
+		showJoint = true,
+		busy = false,
+		onstatus,
+		onscore,
+		onjoint,
+		onremove,
+		onclose
+	}: Props = $props();
 
 	/* 1–10 rather than 0–10. Floppy accepts 0, but a zero rating and no rating
 	   are indistinguishable to a reader, and "no rating" already has a control. */
@@ -74,6 +86,7 @@
 			</div>
 		</section>
 
+		{#if showJoint}
 		<section>
 			<h3>Watched</h3>
 			<div class="rows">
@@ -91,6 +104,7 @@
 				</button>
 			</div>
 		</section>
+		{/if}
 
 		<button class="remove" disabled={busy} onclick={onremove}>Remove from library</button>
 	</div>

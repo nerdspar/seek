@@ -91,7 +91,7 @@
 		<ul class="grid">
 			{#each page.rows as row (row.source + row.mediaId)}
 				<li>
-					<button onclick={() => goto(`/show/${row.source}/${row.mediaId}`)}>
+					<button onclick={() => goto(`/${row.mediaType === 'movie' ? 'movie' : 'show'}/${row.source}/${row.mediaId}`)}>
 						<Poster src={row.poster} width={104} height={156} radius={9} />
 						<span class="cap">{row.title}</span>
 						{#if row.maxProgress}

@@ -135,7 +135,8 @@
 	}
 
 	const open = (mediaType: string, source: string, mediaId: string) => {
-		if (mediaType === 'tv') goto(`/show/${source}/${mediaId}`);
+		// Films have their own page now; this used to silently do nothing for them.
+		goto(`/${mediaType === 'movie' ? 'movie' : 'show'}/${source}/${mediaId}`);
 	};
 </script>
 

@@ -396,6 +396,77 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 	}
 }
 
+/**
+ * Where to watch a film, and what else is like it.
+ *
+ * A separate function because getShowExtras is hardcoded to `/tv/{id}`, and a
+ * TMDB id is only unique within a media type — asking the tv endpoint about a
+ * movie returns whatever series shares that number. That exact mistake once
+ * showed Plan 9 from Outer Space as "0/24".
+ *
+ * Movies have no networks and no seasons, so this returns only the two fields
+ * that mean anything: services and similar titles.
+ */
+export async function getMovieExtras(mediaId: string): Promise<ShowExtras> {
+	const empty: ShowExtras = { networks: [], services: [], similar: [], seasonEpisodes: {} };
+	if (!TMDB_API_KEY()) return empty;
+
+	const key = `movie:${mediaId}`;
+	const hit = extrasCache.get(key);
+	if (hit) return hit;
+
+	type Row = {
+		id: number;
+		title?: string;
+		poster_path: string | null;
+		release_date?: string;
+		vote_average?: number;
+	};
+	type Provider = { provider_name: string; logo_path: string | null };
+
+	try {
+		const data = await tmdb<{
+			recommendations?: { results?: Row[] };
+			'watch/providers'?: { results?: Record<string, { flatrate?: Provider[] }> };
+		}>(`/movie/${encodeURIComponent(mediaId)}`, {
+			append_to_response: 'recommendations,watch/providers'
+		});
+
+		const seen = new Set<string>();
+		const services: { name: string; logo: string | null }[] = [];
+		for (const p of data['watch/providers']?.results?.US?.flatrate ?? []) {
+			const name = normaliseServiceName(p.provider_name);
+			if (seen.has(name) || LIVE_TV_CARRIERS.has(name)) continue;
+			seen.add(name);
+			services.push({ name, logo: p.logo_path ? `https://image.tmdb.org/t/p/w92${p.logo_path}` : null });
+		}
+
+		const extras: ShowExtras = {
+			networks: [],
+			services,
+			seasonEpisodes: {},
+			similar: dedupe(
+				(data.recommendations?.results ?? []).map((r) => ({
+					mediaId: String(r.id),
+					source: 'tmdb' as const,
+					mediaType: 'movie' as const,
+					title: r.title ?? 'Untitled',
+					poster: img(r.poster_path),
+					year: yearOf(r.release_date),
+					rating:
+						typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
+				}))
+			).slice(0, 12)
+		};
+
+		extrasCache.set(key, extras);
+		return extras;
+	} catch {
+		// Extras are decoration; the page must render without them.
+		return empty;
+	}
+}
+
 /** Mirrors the watchlist's collapsing of TMDB's duplicate provider entries. */
 function normaliseServiceName(name: string): string {
 	return name

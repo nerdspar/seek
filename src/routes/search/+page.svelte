@@ -137,7 +137,7 @@
 			<ul class="grid">
 				{#each data.trending as r (r.mediaId)}
 					<li>
-						<button onclick={() => r.mediaType === 'tv' && goto(`/show/${r.source}/${r.mediaId}`)}>
+						<button onclick={() => goto(`/${r.mediaType === 'movie' ? 'movie' : 'show'}/${r.source}/${r.mediaId}`)}>
 							<Poster src={r.poster} width={104} height={156} radius={9} />
 							<span class="cap">{r.title}</span>
 							{#if r.year}<span class="sub tnum">{r.year}</span>{/if}
@@ -165,7 +165,7 @@
 		<ul class="results">
 			{#each results as r (key(r))}
 				<li>
-					<button class="body" onclick={() => goto(`/show/${r.source}/${r.mediaId}`)} disabled={r.mediaType !== 'tv'}>
+					<button class="body" onclick={() => goto(`/${r.mediaType === 'movie' ? 'movie' : 'show'}/${r.source}/${r.mediaId}`)}>
 						<Poster src={r.poster} width={46} height={69} radius={7} />
 						<span class="meta">
 							<span class="title">{r.title}</span>

@@ -127,6 +127,32 @@ export type SeasonSummary = {
 	tracked: boolean;
 };
 
+/**
+ * A film. Shares most of ShowDetail's shape, minus everything that only means
+ * something for a series: no seasons, and one release date rather than a first
+ * and last air date.
+ */
+export type MovieDetail = {
+	mediaId: string;
+	source: string;
+	title: string;
+	poster: string | null;
+	synopsis: string | null;
+	genres: string[];
+	score: number | null;
+	scoreCount: number | null;
+	/** Always 1 for a movie, but read from Floppy rather than assumed. */
+	maxProgress: number | null;
+	progress: number;
+	tracked: boolean;
+	status: string | null;
+	releaseDate: string | null;
+	studios: string[];
+	runtime: number | null;
+	certification: string | null;
+	cast: { name: string; role: string | null; image: string | null }[];
+};
+
 export type ShowDetail = {
 	mediaId: string;
 	source: string;

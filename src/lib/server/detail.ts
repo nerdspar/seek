@@ -17,6 +17,7 @@ import { TTLCache } from './cache';
 import type {
 	EpisodeDetail,
 	EpisodeRow,
+	MovieDetail,
 	SeasonDetail,
 	SeasonSummary,
 	ShowDetail
@@ -30,6 +31,48 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 const showPath = (source: string, mediaId: string) =>
 	`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}`;
+
+/**
+ * A film's detail. Its own function rather than a branch inside getShow: the
+ * expensive half of that one is resolving per-season episode counts, and none
+ * of it applies here.
+ *
+ * Verified against a live instance: the movie endpoint returns the same
+ * envelope as the tv one — cast, genres, synopsis, score, tracked — with
+ * `details` carrying release_date, runtime, status, studios and certification,
+ * and `max_progress` of 1.
+ */
+export async function getMovie(source: string, mediaId: string): Promise<MovieDetail> {
+	const d = rec(await floppy(`/api/v1/media/movie/${source}/${encodeURIComponent(mediaId)}/`));
+	const details = rec(d.details);
+	const consumption = rec(arr(d.consumptions)[0]);
+
+	return {
+		mediaId: str(d.media_id) ?? mediaId,
+		source: str(d.source) ?? source,
+		title: str(d.title) ?? 'Untitled',
+		poster: str(d.image),
+		synopsis: str(d.synopsis),
+		genres: arr(d.genres).filter((g): g is string => typeof g === 'string'),
+		score: num(d.score),
+		scoreCount: num(d.score_count),
+		maxProgress: num(d.max_progress),
+		progress: num(consumption.progress) ?? 0,
+		tracked: d.tracked === true,
+		status: str(details.status),
+		releaseDate: str(details.release_date),
+		studios: arr(details.studios).filter((x): x is string => typeof x === 'string'),
+		runtime: num(details.runtime),
+		certification: str(details.certification),
+		cast: arr(d.cast)
+			.slice(0, 20)
+			.map((c) => {
+				const p = rec(c);
+				return { name: str(p.name) ?? '', role: str(p.role), image: str(p.image) };
+			})
+			.filter((c) => c.name)
+	};
+}
 
 /**
  * Per-season episode counts.

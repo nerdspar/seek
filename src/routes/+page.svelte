@@ -337,7 +337,8 @@
 	let sheetRow = $state<WatchlistRow | null>(null);
 
 	function openShow(row: WatchlistRow) {
-		goto(`/show/${row.source}/${row.mediaId}`);
+		// A film has its own page; the show route is built around seasons.
+		goto(`/${row.mediaType === 'movie' ? 'movie' : 'show'}/${row.source}/${row.mediaId}`);
 	}
 
 	function openEpisode(row: WatchlistRow) {
