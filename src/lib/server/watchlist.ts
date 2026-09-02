@@ -180,10 +180,122 @@ function mapRow(r: TrackedMedia, mediaType: MediaType): WatchlistRow {
 	};
 }
 
+/* Where you actually are in a show you started in the middle.
+ *
+ * `next_episode` is the LOWEST unwatched episode, which is only "next up" when
+ * what you have watched is an unbroken run from the start. Pick a show up at
+ * its current season — Below Deck Mediterranean, 31 episodes in across seasons
+ * 10 and 11 — and Floppy points at S01E01 forever, however recently you
+ * watched. Hobi did the same thing, so the row sat at the top of "recently
+ * watched" describing an episode from 2016.
+ *
+ * Correcting this costs two requests, so it runs only for rows that are
+ * provably wrong: 31 episodes watched and still "next: S01E01" cannot both be
+ * true. A show genuinely at its first episode has progress 0 and is untouched.
+ * The narrower case — a season skipped in the middle, where Floppy points at
+ * the gap rather than the start — is left alone, since there the gap is a
+ * defensible answer.
+ */
+type NextUp = { season: number; episode: number; airDate: string | null };
+/* 'done' is not the same as null. Null means "no correction available, keep
+   what Floppy said"; 'done' means the seasons you actually watch are finished,
+   which is a real answer and renders as Caught up. */
+type Correction = NextUp | 'done';
+const nextUpCache = new TTLCache<Correction | null>(10 * 60 * 1000, 500);
+
+function seasonNumberOf(entry: Record<string, unknown>): number | null {
+	const item = (entry.item ?? {}) as Record<string, unknown>;
+	const n = item.season_number;
+	return typeof n === 'number' ? n : null;
+}
+
+async function nextUpFor(source: string, mediaId: string): Promise<Correction | null> {
+	const key = `${source}:${mediaId}`;
+	const hit = nextUpCache.get(key);
+	if (hit !== undefined) return hit;
+
+	try {
+		const detail = await floppy<{ related?: { seasons?: Record<string, unknown>[] } }>(
+			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/`
+		);
+
+		/* The season you are actually watching: the most recently progressed one
+		   that has any plays. Not the highest-numbered — a dip back into an old
+		   season should not move next-up there. */
+		const watched = (detail?.related?.seasons ?? []).filter(
+			(sn) => typeof sn.progress === 'number' && sn.progress > 0
+		);
+		const current = watched.sort((a, b) =>
+			String(b.progressed_at ?? '').localeCompare(String(a.progressed_at ?? ''))
+		)[0];
+		const seasons = (detail?.related?.seasons ?? []).filter((sn) => {
+			const n = seasonNumberOf(sn);
+			return n !== null && n > 0;
+		});
+		const seasonNumber = current ? seasonNumberOf(current) : null;
+		if (seasonNumber === null) {
+			nextUpCache.set(key, null);
+			return null;
+		}
+
+		const season = await floppy<{ related?: { episodes?: Record<string, unknown>[] } }>(
+			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${seasonNumber}/`
+		);
+		const episodes = (season?.related?.episodes ?? [])
+			.map((e) => {
+				const item = (e.item ?? {}) as Record<string, unknown>;
+				return {
+					number: typeof item.episode_number === 'number' ? item.episode_number : null,
+					airDate: typeof item.release_datetime === 'string' ? item.release_datetime : null,
+					played: typeof e.progress === 'number' && e.progress > 0
+				};
+			})
+			.filter((e): e is { number: number; airDate: string | null; played: boolean } => e.number !== null)
+			.sort((a, b) => a.number - b.number);
+
+		/* After the last one you watched, not the first one you skipped. An
+		   episode passed over mid-season is a decision, not a bookmark. */
+		const lastPlayed = episodes.filter((e) => e.played).at(-1);
+		const next = lastPlayed ? episodes.find((e) => e.number > lastPlayed.number && !e.played) : null;
+
+		let out: Correction | null = next
+			? { season: seasonNumber, episode: next.number, airDate: next.airDate }
+			: null;
+
+		/* Season finished. Roll into the next one you have not started; if there
+		   is none, the show is done until it returns — which is the honest answer
+		   even with old seasons unwatched, since those are a choice, not a
+		   backlog. */
+		if (!out && lastPlayed) {
+			const upcoming = seasons
+				.map((sn) => ({ number: seasonNumberOf(sn) as number, progress: Number(sn.progress ?? 0) }))
+				.filter((sn) => sn.number > seasonNumber && sn.progress === 0)
+				.sort((a, b) => a.number - b.number)[0];
+			out = upcoming ? { season: upcoming.number, episode: 1, airDate: null } : 'done';
+		}
+
+		nextUpCache.set(key, out);
+		return out;
+	} catch {
+		// Never fail a row over this; the uncorrected value still renders.
+		return null;
+	}
+}
+
 /** Fills in whatever the list row could not supply: episode title, and the
  *  episode total for season-scoped shows. Both lookups run concurrently. */
 async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
 	if (!row.mediaId) return row;
+
+	/* Floppy's next-up is the lowest unwatched episode, so a show picked up
+	   mid-run reports S01E01 no matter how far in you are. Resolved before the
+	   title lookup below, which would otherwise fetch the title of the wrong
+	   episode. */
+	if (row.mediaType !== 'movie' && row.progress > 0 && row.next?.season === 1 && row.next.episode === 1) {
+		const corrected = await nextUpFor(row.source, row.mediaId);
+		if (corrected === 'done') row = { ...row, next: null };
+		else if (corrected) row = { ...row, next: corrected };
+	}
 
 	const [title, max] = await Promise.all([
 		row.next
