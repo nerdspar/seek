@@ -4,6 +4,7 @@
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { haptic } from '$lib/haptics';
+	import { touchWatchlist } from '$lib/dirty';
 	import { epLabel, formatAirDate } from '$lib/format';
 	import type { EpisodeRow, SeasonDetail } from '$lib/types';
 	import type { PageData } from './$types';
@@ -43,6 +44,8 @@
 			})
 		});
 		if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		// The list shows next-up and a progress count, both of which just moved.
+		touchWatchlist();
 		return res.json();
 	}
 

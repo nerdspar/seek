@@ -10,6 +10,7 @@
 	import { formatRuntime } from '$lib/format';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { notify } from '$lib/notices.svelte';
+	import { touchWatchlist } from '$lib/dirty';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -42,6 +43,7 @@
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			touchWatchlist();
 		} catch (err) {
 			jointEdit = before;
 			note = `Couldn't update — ${err instanceof Error ? err.message : err}`;
@@ -87,6 +89,7 @@
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			touchWatchlist();
 		} catch (err) {
 			trackEdit = before;
 			note = `Couldn't save — ${err instanceof Error ? err.message : err}`;
@@ -111,6 +114,7 @@
 				body: JSON.stringify({ mediaType: 'movie', source: data.source, mediaId: data.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			touchWatchlist();
 			void notify(next ? 'Added to your library' : 'Removed from your library');
 		} catch (err) {
 			trackedEdit = before;
@@ -148,6 +152,7 @@
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			touchWatchlist();
 			void notify('Cleared');
 		} catch (err) {
 			watchedEdit = before;

@@ -76,13 +76,23 @@ export const POST: RequestHandler = async ({ request }) => {
 		// one is dropped rather than marked stale — serving it stale would show
 		// the state the tap just reversed.
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else expire(`show:${source}:${mediaId}`);
+		else {
+			expire(`show:${source}:${mediaId}`);
+			/* The season page caches its episode list for five minutes and was
+			   the one thing no write ever dropped, so leaving the page and
+			   coming back showed the episodes unmarked again. Dropped rather
+			   than expired: a checkbox is the definition of actively wrong. */
+			invalidate(`season:${source}:${mediaId}:${season}`);
+		}
 
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else expire(`show:${source}:${mediaId}`);
+		else {
+			expire(`show:${source}:${mediaId}`);
+			invalidate(`season:${source}:${mediaId}:${season}`);
+		}
 		return json({ ok: true, row: null, stale: true });
 	}
 };
@@ -128,12 +138,18 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		}));
 		expire('watchlist:');
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else expire(`show:${source}:${mediaId}`);
+		else {
+			expire(`show:${source}:${mediaId}`);
+			invalidate(`season:${source}:${mediaId}:${season}`);
+		}
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else expire(`show:${source}:${mediaId}`);
+		else {
+			expire(`show:${source}:${mediaId}`);
+			invalidate(`season:${source}:${mediaId}:${season}`);
+		}
 		return json({ ok: true, row: null, stale: true });
 	}
 };
