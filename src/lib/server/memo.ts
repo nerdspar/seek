@@ -63,12 +63,15 @@ export function put<T>(key: string, value: T): void {
 }
 
 /** Rewrite every entry under a prefix. Used after a write so the list reflects
- *  the change immediately without a rebuild. */
-export function patch<T>(prefix: string, update: (value: T) => T): void {
+ *  the change immediately without a rebuild. The full cache key is passed so a
+ *  patch can act differently per filter variant — a row that a mark pushes out
+ *  of the in-progress backlog must be dropped from those entries, not just
+ *  updated in place. */
+export function patch<T>(prefix: string, update: (value: T, key: string) => T): void {
 	for (const [key, entry] of store) {
 		if (!key.startsWith(prefix)) continue;
 		try {
-			(entry as Entry<T>).value = update(entry.value as T);
+			(entry as Entry<T>).value = update(entry.value as T, key);
 		} catch {
 			// A patch that cannot apply just leaves the entry to expire normally.
 		}

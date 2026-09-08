@@ -23,7 +23,33 @@ import type { RequestHandler } from './$types';
  * effort throughout: the play was already removed, and the walk-back must never
  * turn a successful unmark into a reported failure.
  */
-async function revertCompletionIfNeeded(source: string, mediaId: string, season: number, episode: number) {
+/**
+ * Fold a freshly-read row back into the cached watchlist without a rebuild.
+ *
+ * In the in-progress backlog (`status=in_progress`, which alone carries the
+ * `not_caught_up` filter) a row that is now caught up — no next episode —
+ * is *removed*, not updated in place. Marking a show's last episode used to
+ * leave it sitting in the list, because the patch swapped in the completed row
+ * and the stale-while-revalidate read served exactly that until a manual
+ * refresh. Everywhere else (All, Completed) the row is updated in place.
+ */
+function applyRowToWatchlist(row: WatchlistPage['rows'][number], source: string, mediaId: string) {
+	const isRow = (r: WatchlistRow) => r.source === source && r.mediaId === mediaId;
+	patch<WatchlistPage>('watchlist:', (page, key) => {
+		const isBacklog = key.split(':')[3] === 'in_progress';
+		if (isBacklog && row.next === null) {
+			return { ...page, rows: page.rows.filter((r) => !isRow(r)) };
+		}
+		return { ...page, rows: page.rows.map((r) => (isRow(r) ? row : r)) };
+	});
+}
+
+async function revertCompletionIfNeeded(
+	source: string,
+	mediaId: string,
+	season: number,
+	episode: number
+): Promise<boolean> {
 	try {
 		const enc = encodeURIComponent(mediaId);
 		const [ep, show] = await Promise.all([
@@ -37,10 +63,12 @@ async function revertCompletionIfNeeded(source: string, mediaId: string, season:
 		const status = show?.consumptions?.[0]?.status ?? null;
 		if (plays === 0 && status === Status.Completed) {
 			await setTracking('tv', source, mediaId, { status: Status.InProgress });
+			return true;
 		}
 	} catch {
 		/* Leave the status as it is rather than fail the unmark over it. */
 	}
+	return false;
 }
 
 type Body = {
@@ -97,12 +125,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		   88-way title fan-out — so a couple of quick marks left the app looking
 		   hung. Here the one row that changed is swapped in and everything else
 		   stays warm. */
-		if (row) patch<WatchlistPage>('watchlist:', (page) => ({
-			...page,
-			rows: page.rows.map((r: WatchlistRow) =>
-				r.source === source && r.mediaId === mediaId ? row : r
-			)
-		}));
+		if (row) applyRowToWatchlist(row, source, mediaId);
 		// Still mark it stale so a background refresh reconciles anything the
 		// patch could not know about, like a show dropping out of the filter.
 		expire('watchlist:');
@@ -165,17 +188,19 @@ export const DELETE: RequestHandler = async ({ request }) => {
 
 	// Un-completing a show it just completed. Episodes only; a film's status is
 	// managed from its own page.
-	if (!isMovie) await revertCompletionIfNeeded(source, mediaId, season as number, episode as number);
+	const reverted = isMovie
+		? false
+		: await revertCompletionIfNeeded(source, mediaId, season as number, episode as number);
 
 	try {
 		const row = await getRow(mediaType, source, mediaId, title);
-		if (row) patch<WatchlistPage>('watchlist:', (page) => ({
-			...page,
-			rows: page.rows.map((r: WatchlistRow) =>
-				r.source === source && r.mediaId === mediaId ? row : r
-			)
-		}));
-		expire('watchlist:');
+		if (row) applyRowToWatchlist(row, source, mediaId);
+		/* A revert put the show back into the in-progress backlog, but a patch
+		   cannot re-insert a row the cached list dropped when it completed. Drop
+		   those entries so the next read rebuilds with the show present, rather
+		   than serving a stale list that still omits it. */
+		if (reverted) invalidate('watchlist:');
+		else expire('watchlist:');
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
 		else {
 			expire(`show:${source}:${mediaId}`);
