@@ -1,12 +1,47 @@
 import { json, error } from '@sveltejs/kit';
 import { markEpisodeWatched, markMovieWatched, watchMoviePath } from '$lib/server/api';
 import { getRow } from '$lib/server/watchlist';
+import { setTracking } from '$lib/server/tracking';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { patch, expire, invalidate } from '$lib/server/memo';
 import type { WatchlistPage } from '$lib/server/watchlist';
+import { Status } from '$lib/types';
 import type { WatchlistRow } from '$lib/types';
 import type { MediaType } from '$lib/types';
 import type { RequestHandler } from './$types';
+
+/**
+ * A show completes automatically when its last unwatched episode is marked, but
+ * nothing ever walked that back. Unmark an episode of a Completed show and it
+ * stayed Completed with a gap in it — dropped from the in-progress watchlist,
+ * and (until the Discover fix) hard to navigate back to at all.
+ *
+ * So on unmark: if the episode now has no plays, the show is no longer complete,
+ * and if it was Completed it returns to In progress. Gated on zero plays so
+ * removing one play of a rewatch (still watched) does not flip it, and only from
+ * Completed — a Dropped or Paused show was set that way deliberately. Best
+ * effort throughout: the play was already removed, and the walk-back must never
+ * turn a successful unmark into a reported failure.
+ */
+async function revertCompletionIfNeeded(source: string, mediaId: string, season: number, episode: number) {
+	try {
+		const enc = encodeURIComponent(mediaId);
+		const [ep, show] = await Promise.all([
+			// An episode's top-level `progress` is always null; its play count is
+			// `consumptions_number`. Reading `progress` made this 0 every time, so
+			// the rewatch guard below never held.
+			floppy<{ consumptions_number?: number | null }>(`/api/v1/media/tv/${source}/${enc}/${season}/${episode}/`),
+			floppy<{ consumptions?: { status?: number | null }[] }>(`/api/v1/media/tv/${source}/${enc}/`)
+		]);
+		const plays = typeof ep?.consumptions_number === 'number' ? ep.consumptions_number : 0;
+		const status = show?.consumptions?.[0]?.status ?? null;
+		if (plays === 0 && status === Status.Completed) {
+			await setTracking('tv', source, mediaId, { status: Status.InProgress });
+		}
+	} catch {
+		/* Leave the status as it is rather than fail the unmark over it. */
+	}
+}
 
 type Body = {
 	source?: string;
@@ -127,6 +162,10 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; the play was not removed.');
 		throw err;
 	}
+
+	// Un-completing a show it just completed. Episodes only; a film's status is
+	// managed from its own page.
+	if (!isMovie) await revertCompletionIfNeeded(source, mediaId, season as number, episode as number);
 
 	try {
 		const row = await getRow(mediaType, source, mediaId, title);

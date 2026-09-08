@@ -16,7 +16,7 @@ import type { TmdbResult } from '$lib/types';
 const BASE = 'https://api.themoviedb.org/3';
 
 export type ExploreSection = {
-	kind: 'person' | 'similar' | 'provider' | 'genre' | 'keyword';
+	kind: 'title' | 'person' | 'similar' | 'provider' | 'genre' | 'keyword';
 	title: string;
 	/** Why this section is here, shown under its heading. */
 	why: string | null;
@@ -142,6 +142,30 @@ async function personSection(q: string, mediaType: 'tv' | 'movie'): Promise<[num
 	];
 }
 
+/**
+ * The show or film you actually typed.
+ *
+ * `similarSection` returns things *like* the match and never the match itself,
+ * and the Discover box hides anything you already track — so searching the exact
+ * title of a show in your library returned everything except that show, with no
+ * way to open it. A Completed show, gone from the in-progress watchlist, had no
+ * reachable page at all this way. This puts the match itself first, marked
+ * rather than hidden (see the endpoint), so a tap opens it.
+ *
+ * Exact titles only. A prefix or substring match is promoted by nothing here on
+ * purpose: "Comedy" would otherwise drag in a show merely beginning with it and
+ * bury the genre it obviously means.
+ */
+async function titleSection(q: string, mediaType: 'tv' | 'movie'): Promise<[number, ExploreSection] | null> {
+	const data = await tmdb<{ results?: Row[] }>(`/search/${mediaType}`, { query: q });
+	const hit = (data.results ?? []).find((r) => norm(q) === norm(r.title ?? r.name ?? ''));
+	if (!hit) return null;
+
+	/* Above an exact `similarSection` (score + 2 = 5): the thing you named should
+	   sit over the things merely like it. */
+	return [6, { kind: 'title', title: 'Top match', why: null, items: [toResult(hit, mediaType)] }];
+}
+
 async function similarSection(q: string, mediaType: 'tv' | 'movie'): Promise<[number, ExploreSection] | null> {
 	const data = await tmdb<{ results?: Row[] }>(`/search/${mediaType}`, { query: q });
 	const hit = (data.results ?? [])[0];
@@ -239,6 +263,7 @@ export async function explore(query: string, mediaType: 'tv' | 'movie'): Promise
 	// Order matters on ties: sort() is stable, so this is the preference when two
 	// interpretations are equally plausible.
 	const settled = await Promise.allSettled([
+		titleSection(q, mediaType),
 		providerSection(q, mediaType),
 		genreSection(q, mediaType),
 		personSection(q, mediaType),

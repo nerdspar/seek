@@ -13,13 +13,14 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (!q) return json({ sections: [] });
 
 	try {
-		/* Suggestions drop what you already have; a filmography marks it.
-		   "Shows like The Office" is a discovery question and a tracked answer is
-		   noise, but "what has this actor been in" is a lookup, and the show you
-		   are trying to remember is quite likely one you already watched. */
+		/* Suggestions drop what you already have; a filmography or an exact-title
+		   match marks it. "Shows like The Office" is a discovery question and a
+		   tracked answer is noise, but "what has this actor been in" is a lookup —
+		   and typing a title you track is you trying to open it, not find
+		   something new, so hiding it there is exactly wrong. */
 		const sections = await Promise.all(
 			(await explore(q, mediaType)).map(async (sec) =>
-				sec.kind === 'person'
+				sec.kind === 'person' || sec.kind === 'title'
 					? { ...sec, items: await markTracked(mediaType, sec.items) }
 					: { ...sec, items: await withoutTracked(mediaType, sec.items) }
 			)
