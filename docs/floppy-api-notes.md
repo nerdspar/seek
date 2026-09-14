@@ -197,12 +197,42 @@ returns a `task_id` pollable at `GET /api/v1/tasks/{task_id}/`).
 via section title. So for a self-hosted setup the bucket has to be set directly
 rather than imported — see the migration below.
 
-### Anime bucket migration — abandoned
+### Anime classification — Floppy classifies it, and how it stays current
 
-A migration to move shows into Floppy's anime bucket was prepared and never
-run; the generator scripts and the SQL have been removed. The section above
-still describes how the classification works, which is the part worth keeping:
-it is a property of Floppy, not of that plan.
+Superseded the earlier "abandoned migration" note. No hand-rolled SQL is needed:
+Floppy ships the classifier. What was verified live (2026-09):
+
+- The instance is in **`anime_library_mode = both`**, and 21 shows are already
+  classified as grouped anime. They appear in `/api/v1/media/anime/` and, once
+  more, in `/api/v1/media/tv/` (both mode = one row in each list).
+- `library_media_type` is a real stored `Item` field (Floppy fork; absent from
+  upstream Yamtrack). It defaults to the row's `media_type` on save, so a plain
+  TV row reads `library_media_type = "tv"`.
+- **The classifier is `python manage.py classify_grouped_anime`** (dry run by
+  default, `--apply` to write, `--include-decided` to re-examine rows already
+  settled as `tv`, `--tmdb-id` for one show, `--report PATH` for JSON). It reads
+  the **Kometa-Team/Anime-IDs** mapping (`anime_ids.json`, pinned revision),
+  which is keyed by **TVDB / MAL / AniList id — there are no TMDB ids in it**, so
+  matching a TMDB library means resolving each show's TVDB id first (TMDB
+  `/tv/{id}/external_ids`). A read-only preview built that way flagged ~19 plain
+  TV rows as anime (Naruto, One Piece, JUJUTSU KAISEN, …) and confirmed 20 of the
+  21 existing ones; the odd one out was "Ghosts of Beirut", mis-filed as anime.
+
+**It is not automatic for new anime.** Two gaps, both verified in the fork source:
+
+- The Jellyfin webhook only routes to anime when the payload carries an **AniDB
+  id** (`integrations/webhooks/base.py`), which a plain TMDB/TVDB Jellyfin
+  library never sends. Its TV path does no classification. Routing *is* sticky
+  once a show has an anime home (`find_existing_anime_home`), so already-anime
+  shows stay anime — but a brand-new anime lands as plain TV.
+- There is **no `classify_grouped_anime` in `CELERY_BEAT_SCHEDULE`**. The only
+  scheduled anime task is "Repair duplicated anime libraries" (dedup, not
+  classify).
+
+So ongoing classification means **scheduling the command** (e.g. a TrueNAS cron
+running `docker exec <floppy> python manage.py classify_grouped_anime --apply`).
+Reclassifying by hand is a web-only action (`move_library_item`,
+`app/urls.py`); it is not in the JSON API, so Seek cannot drive it.
 
 ### Known traps (§12) as implemented
 
