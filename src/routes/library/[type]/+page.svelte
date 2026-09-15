@@ -17,9 +17,9 @@
 	];
 
 	const TITLES: Record<string, string> = {
-		tv: 'My TV Shows',
-		movie: 'My Movies',
-		anime: 'My Anime'
+		tv: 'TV Shows',
+		movie: 'Movies',
+		anime: 'Anime'
 	};
 
 	let sortOpen = $state(false);

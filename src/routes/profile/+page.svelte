@@ -101,20 +101,27 @@
 				<h2>Collection</h2>
 				<ul class="links">
 					{#await data.counts}
-						<li><button disabled><span>My TV Shows</span><span class="chev">›</span></button></li>
-						<li><button disabled><span>My Movies</span><span class="chev">›</span></button></li>
+						<li><button disabled><span>TV Shows</span><span class="chev">›</span></button></li>
+						<li><button disabled><span>Movies</span><span class="chev">›</span></button></li>
+						<li><button disabled><span>Anime</span><span class="chev">›</span></button></li>
 						<li><button disabled><span>Archive</span><span class="chev">›</span></button></li>
 					{:then counts}
 						<li>
 							<button onclick={() => goto('/library/tv')}>
-								<span>My TV Shows</span>
+								<span>TV Shows</span>
 								<span class="count tnum">{counts.tv}<span class="chev">›</span></span>
 							</button>
 						</li>
 						<li>
 							<button onclick={() => goto('/library/movie')}>
-								<span>My Movies</span>
+								<span>Movies</span>
 								<span class="count tnum">{counts.movie}<span class="chev">›</span></span>
+							</button>
+						</li>
+						<li>
+							<button onclick={() => goto('/library/anime')}>
+								<span>Anime</span>
+								<span class="count tnum">{counts.anime}<span class="chev">›</span></span>
 							</button>
 						</li>
 						<li>
@@ -123,7 +130,9 @@
 							</button>
 						</li>
 					{:catch}
-						<li><button onclick={() => goto('/library/tv')}><span>My TV Shows</span><span class="chev">›</span></button></li>
+						<li><button onclick={() => goto('/library/tv')}><span>TV Shows</span><span class="chev">›</span></button></li>
+						<li><button onclick={() => goto('/library/movie')}><span>Movies</span><span class="chev">›</span></button></li>
+						<li><button onclick={() => goto('/library/anime')}><span>Anime</span><span class="chev">›</span></button></li>
 					{/await}
 				</ul>
 			</section>

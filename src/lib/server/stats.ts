@@ -188,7 +188,7 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 
 /* ── Collection counts (§7.2) ──────────────────────────────────────────── */
 
-export type CollectionCounts = { tv: number; movie: number };
+export type CollectionCounts = { tv: number; movie: number; anime: number };
 
 /** Shared so the route and the boot warmup cannot prime different keys. */
 export const COUNTS_KEY = 'collection:counts';
@@ -202,19 +202,20 @@ export const COUNTS_TTL = 5 * 60 * 1000;
  * same cache key.
  */
 export async function getCollectionCounts(): Promise<CollectionCounts> {
+	/* A failed fetch must NOT resolve to 0 — memo would then cache that 0 for the
+	   whole TTL, which is the "count reads 0 but the list is full" bug. Let it
+	   throw instead: memo serves the previous good value or the page shows its
+	   loading/blank state, and the next read retries. A real empty library still
+	   returns a true 0 from the pagination total. */
 	const one = async (mediaType: string) => {
-		try {
-			const res = await floppy<{ pagination?: { total?: number } }>(
-				`/api/v1/media/${mediaType}/`,
-				{ query: { status: ['all'], limit: 1 }, timeoutMs: 30_000 }
-			);
-			return res.pagination?.total ?? 0;
-		} catch {
-			return 0;
-		}
+		const res = await floppy<{ pagination?: { total?: number } }>(
+			`/api/v1/media/${mediaType}/`,
+			{ query: { status: ['all'], limit: 1 }, timeoutMs: 30_000 }
+		);
+		return res.pagination?.total ?? 0;
 	};
-	const [tv, movie] = await Promise.all([one('tv'), one('movie')]);
-	return { tv, movie };
+	const [tv, movie, anime] = await Promise.all([one('tv'), one('movie'), one('anime')]);
+	return { tv, movie, anime };
 }
 
 /* ── Diary (§7.3) ──────────────────────────────────────────────────────── */
