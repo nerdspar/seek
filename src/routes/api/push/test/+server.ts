@@ -12,7 +12,7 @@ export const POST: RequestHandler = async () => {
 	if (!pushConfigured()) error(503, 'Push is not configured on the server.');
 	const digest = await buildTodayDigest();
 	const payload = digest ?? {
-		title: 'Seek notifications are on',
+		title: 'Notifications are on',
 		body: "You'll get a morning list when your shows air.",
 		url: '/upcoming'
 	};

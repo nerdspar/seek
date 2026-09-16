@@ -25,21 +25,27 @@ export async function buildTodayDigest(): Promise<{
 	const airing = items.filter((i) => localDay(new Date(i.start)) === today);
 	if (!airing.length) return null;
 
+	// The OS already shows "Seek" above this, so the title is the subject line
+	// and the body is the message. Kept consistent: subject always names the day,
+	// message always lists what's on.
 	const titles = [...new Set(airing.map((i) => i.title))];
+
+	let body: string;
 	if (titles.length === 1) {
 		const only = airing[0];
 		const ep =
 			only.season != null && only.episode != null
 				? ` · S${String(only.season).padStart(2, '0')}E${String(only.episode).padStart(2, '0')}`
 				: '';
-		return { title: `${titles[0]} airs today`, body: `New episode${ep}`, url: '/upcoming', count: 1 };
+		body = `${titles[0]}${ep}`;
+	} else if (titles.length <= 3) {
+		// "A, B and C"
+		body = `${titles.slice(0, -1).join(', ')} and ${titles[titles.length - 1]}`;
+	} else {
+		body = `${titles.slice(0, 2).join(', ')} and ${titles.length - 2} more`;
 	}
 
-	const body =
-		titles.length <= 3
-			? titles.join(' · ')
-			: `${titles.slice(0, 2).join(' · ')} and ${titles.length - 2} more`;
-	return { title: `${titles.length} shows airing today`, body, url: '/upcoming', count: titles.length };
+	return { title: 'Airing today', body, url: '/upcoming', count: titles.length };
 }
 
 /**

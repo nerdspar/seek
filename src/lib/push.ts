@@ -79,7 +79,14 @@ export async function subscribe(): Promise<void> {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(sub.toJSON())
 	});
-	if (!res.ok) throw new Error('Could not register this device with the server.');
+	if (!res.ok) {
+		// Surface the server's own reason rather than a blank "it failed" — a 500
+		// here is usually the /data volume not being writable by the container.
+		const detail = await res.json().catch(() => null);
+		const reason =
+			detail?.message && detail.message !== 'Internal Error' ? detail.message : `HTTP ${res.status}`;
+		throw new Error(`Couldn't register this device — ${reason}.`);
+	}
 }
 
 /** Unsubscribe locally and tell the server to forget the endpoint. */
