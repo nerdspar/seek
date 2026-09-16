@@ -5,6 +5,7 @@
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { haptic } from '$lib/haptics';
 	import { touchWatchlist } from '$lib/dirty';
+	import { queuedWrite } from '$lib/queue.svelte';
 	import { epLabel, formatAirDate } from '$lib/format';
 	import type { EpisodeRow, SeasonDetail } from '$lib/types';
 	import type { PageData } from './$types';
@@ -31,18 +32,23 @@
 	const put = (ep: EpisodeRow) => (overrides = { ...overrides, [ep.episodeNumber]: ep });
 
 	async function call(method: 'POST' | 'DELETE', episode: number, title: string) {
-		const res = await fetch('/api/watch', {
-			method,
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				source: data.source,
-				mediaId: data.mediaId,
-				mediaType: 'tv',
-				title,
-				season: data.seasonNumber,
-				episode
-			})
-		});
+		const res = await queuedWrite(
+			`watch:tv:${data.mediaId}:${data.seasonNumber}:${episode}`,
+			method === 'POST' ? 'add' : 'remove',
+			'/api/watch',
+			{
+				method,
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					source: data.source,
+					mediaId: data.mediaId,
+					mediaType: 'tv',
+					title,
+					season: data.seasonNumber,
+					episode
+				})
+			}
+		);
 		if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 		// The list shows next-up and a progress count, both of which just moved.
 		touchWatchlist();

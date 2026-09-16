@@ -12,6 +12,7 @@
 	import { haptic } from '$lib/haptics';
 	import { afterNavigate } from '$app/navigation';
 	import { consumeWatchlist } from '$lib/dirty';
+	import { queuedWrite } from '$lib/queue.svelte';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { SortKey } from '$lib/server/prefs';
 	import type { PageData } from './$types';
@@ -232,18 +233,23 @@
 
 		try {
 			const res = await enqueue(() =>
-				fetch('/api/watch', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						source: row.source,
-						mediaId: row.mediaId,
-						mediaType: row.mediaType,
-						title: row.title,
-						season: marked?.season,
-						episode: marked?.episode
-					})
-				})
+				queuedWrite(
+					`watch:${row.mediaType}:${row.mediaId}:${marked?.season}:${marked?.episode}`,
+					'add',
+					'/api/watch',
+					{
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							source: row.source,
+							mediaId: row.mediaId,
+							mediaType: row.mediaType,
+							title: row.title,
+							season: marked?.season,
+							episode: marked?.episode
+						})
+					}
+				)
 			);
 
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
@@ -273,18 +279,23 @@
 
 		try {
 			const res = await enqueue(() =>
-				fetch('/api/watch', {
-					method: 'DELETE',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						source: t.snapshot.source,
-						mediaId: t.snapshot.mediaId,
-						mediaType: t.snapshot.mediaType,
-						title: t.snapshot.title,
-						season: t.marked?.season,
-						episode: t.marked?.episode
-					})
-				})
+				queuedWrite(
+					`watch:${t.snapshot.mediaType}:${t.snapshot.mediaId}:${t.marked?.season}:${t.marked?.episode}`,
+					'remove',
+					'/api/watch',
+					{
+						method: 'DELETE',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							source: t.snapshot.source,
+							mediaId: t.snapshot.mediaId,
+							mediaType: t.snapshot.mediaType,
+							title: t.snapshot.title,
+							season: t.marked?.season,
+							episode: t.marked?.episode
+						})
+					}
+				)
 			);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			const body = await res.json();

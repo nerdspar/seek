@@ -12,6 +12,7 @@
 	import { haptic } from '$lib/haptics';
 	import { notify } from '$lib/notices.svelte';
 	import { touchWatchlist } from '$lib/dirty';
+	import { queuedWrite } from '$lib/queue.svelte';
 	import type { SeasonSummary, ShowDetail } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -104,7 +105,7 @@
 		};
 
 		try {
-			const res = await fetch('/api/season', {
+			const res = await queuedWrite(`season:tv:${data.mediaId}:${season.seasonNumber}`, done ? 'remove' : 'add', '/api/season', {
 				method: done ? 'DELETE' : 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -174,7 +175,7 @@
 		trackBusy = true;
 		trackEdit = { ...base, ...change, tracked: true };
 		try {
-			const res = await fetch('/api/tracking', {
+			const res = await queuedWrite(`tracking:tv:${data.mediaId}:${Object.keys(change).join('-')}`, 'set', '/api/tracking', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -212,7 +213,7 @@
 		trackBusy = true;
 		trackedEdit = next;
 		try {
-			const res = await fetch('/api/library', {
+			const res = await queuedWrite(`library:tv:${data.mediaId}`, next ? 'add' : 'remove', '/api/library', {
 				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				// This route renders TV; films have their own page under /movie.
@@ -243,7 +244,7 @@
 		jointBusy = true;
 		jointEdit = next;
 		try {
-			const res = await fetch('/api/tags', {
+			const res = await queuedWrite(`tags:tv:${data.mediaId}`, 'set', '/api/tags', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({

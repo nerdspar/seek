@@ -11,6 +11,7 @@
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { notify } from '$lib/notices.svelte';
 	import { touchWatchlist } from '$lib/dirty';
+	import { queuedWrite } from '$lib/queue.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -32,7 +33,7 @@
 		jointBusy = true;
 		jointEdit = next;
 		try {
-			const res = await fetch('/api/tags', {
+			const res = await queuedWrite(`tags:movie:${data.mediaId}`, 'set', '/api/tags', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -78,7 +79,7 @@
 		trackBusy = true;
 		trackEdit = { ...base, ...change, tracked: true };
 		try {
-			const res = await fetch('/api/tracking', {
+			const res = await queuedWrite(`tracking:movie:${data.mediaId}:${Object.keys(change).join('-')}`, 'set', '/api/tracking', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -108,7 +109,7 @@
 		trackBusy = true;
 		trackedEdit = next;
 		try {
-			const res = await fetch('/api/library', {
+			const res = await queuedWrite(`library:movie:${data.mediaId}`, next ? 'add' : 'remove', '/api/library', {
 				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ mediaType: 'movie', source: data.source, mediaId: data.mediaId })
@@ -141,7 +142,7 @@
 		const before = watchedEdit;
 		watchedEdit = false;
 		try {
-			const res = await fetch('/api/watch', {
+			const res = await queuedWrite(`watch:movie:${data.mediaId}`, 'remove', '/api/watch', {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
