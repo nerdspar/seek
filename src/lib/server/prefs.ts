@@ -61,6 +61,11 @@ export type Prefs = {
 	 * theirs.
 	 */
 	moodPresets: string[] | null;
+	/** Send a daily push listing today's episodes (§ notifications). Off until
+	 *  a device subscribes and the user opts in. */
+	notifyDigest: boolean;
+	/** Local hour (0–23) the digest goes out. */
+	digestHour: number;
 };
 
 export const DEFAULTS: Prefs = {
@@ -73,7 +78,9 @@ export const DEFAULTS: Prefs = {
 	appearance: 'system',
 	accent: 'violet',
 	services: [],
-	moodPresets: null
+	moodPresets: null,
+	notifyDigest: false,
+	digestHour: 8
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */
@@ -106,7 +113,11 @@ function clamp(p: Prefs): Prefs {
 	return {
 		...p,
 		appearance: APPEARANCES.includes(p.appearance) ? p.appearance : DEFAULTS.appearance,
-		accent: ACCENTS.includes(p.accent) ? p.accent : DEFAULTS.accent
+		accent: ACCENTS.includes(p.accent) ? p.accent : DEFAULTS.accent,
+		digestHour:
+			Number.isInteger(p.digestHour) && p.digestHour >= 0 && p.digestHour <= 23
+				? p.digestHour
+				: DEFAULTS.digestHour
 	};
 }
 

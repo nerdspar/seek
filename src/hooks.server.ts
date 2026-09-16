@@ -6,6 +6,11 @@ import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import { COUNTS_KEY, COUNTS_TTL, getCollectionCounts, getStats } from '$lib/server/stats';
 import { getDiscoverRows } from '$lib/server/discover';
 import { memo } from '$lib/server/memo';
+import { startScheduler } from '$lib/server/scheduler';
+
+/* The daily-digest timer. No-ops unless VAPID keys are set, so it costs nothing
+   on an instance that has not turned notifications on. */
+startScheduler();
 
 /* Fire the expensive lookups once at startup rather than making whoever opens a
    tab first wait for them. Floppy needs ~13s to page a full library and ~9s for

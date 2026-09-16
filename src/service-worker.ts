@@ -120,3 +120,45 @@ sw.addEventListener('fetch', (event) => {
 sw.addEventListener('message', (event) => {
 	if (event.data === 'skip-waiting') sw.skipWaiting();
 });
+
+/* ── Web Push (Phase 2) ──────────────────────────────────────────────────── */
+
+type PushPayload = { title: string; body: string; url?: string; tag?: string };
+
+sw.addEventListener('push', (event) => {
+	let data: PushPayload = { title: 'Seek', body: '' };
+	try {
+		if (event.data) data = { ...data, ...(event.data.json() as PushPayload) };
+	} catch {
+		if (event.data) data.body = event.data.text();
+	}
+	event.waitUntil(
+		sw.registration.showNotification(data.title, {
+			body: data.body,
+			tag: data.tag ?? 'seek',
+			icon: '/seek-192.png?v=2',
+			badge: '/seek-192.png?v=2',
+			data: { url: data.url ?? '/' }
+		})
+	);
+});
+
+/* Tapping the notification focuses an open Seek (navigating it to the target) or
+   opens a new one. */
+sw.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const target = (event.notification.data?.url as string) ?? '/';
+	event.waitUntil(
+		(async () => {
+			const all = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+			for (const client of all) {
+				if ('focus' in client) {
+					await client.focus();
+					if ('navigate' in client) await client.navigate(target).catch(() => {});
+					return;
+				}
+			}
+			await sw.clients.openWindow(target);
+		})()
+	);
+});

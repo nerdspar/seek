@@ -3,6 +3,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import type { Accent, Appearance, MarkDirection, Prefs } from '$lib/server/prefs';
 	import { setNoticesEnabled } from '$lib/notices.svelte';
+	import { pushStatus, subscribe, unsubscribe, sendTest, type PushStatus } from '$lib/push';
 	import type { PageData } from './$types';
 
 	/** Preferences live server-side in /data (§8), so this edits them through the
@@ -27,6 +28,48 @@
 	   by clearing it. */
 	let edited = $state<Prefs | null>(null);
 	const local = $derived(edited ?? prefs);
+
+	/* Notifications are per-device (a subscription), so their state is read live
+	   from this browser, not from the shared prefs. */
+	let push = $state<PushStatus | null>(null);
+	let pushBusy = $state(false);
+	let pushMsg = $state<string | null>(null);
+	$effect(() => {
+		void pushStatus().then((s) => (push = s));
+	});
+
+	async function toggleNotify(on: boolean) {
+		if (pushBusy) return;
+		pushBusy = true;
+		pushMsg = null;
+		try {
+			if (on) {
+				await subscribe();
+				await patch({ notifyDigest: true });
+			} else {
+				await unsubscribe();
+			}
+			push = await pushStatus();
+		} catch (e) {
+			pushMsg = e instanceof Error ? e.message : String(e);
+		} finally {
+			pushBusy = false;
+		}
+	}
+
+	async function testNotify() {
+		if (pushBusy) return;
+		pushBusy = true;
+		pushMsg = null;
+		try {
+			await sendTest();
+			pushMsg = 'Sent — check your notifications.';
+		} catch (e) {
+			pushMsg = e instanceof Error ? e.message : String(e);
+		} finally {
+			pushBusy = false;
+		}
+	}
 
 	/* Same reason as the filter sheet: the library spans ~29 services, and an
 	   undifferentiated wall of chips buries everything below it. Selected ones
@@ -316,6 +359,54 @@
 			</span>
 			<span class="toggle" class:on={local.companyTracking}><span class="knob"></span></span>
 		</button>
+	</section>
+
+	<section>
+		<h3>Notifications</h3>
+		{#if push && !push.supported}
+			<p class="hint">
+				This device can't receive notifications. On iPhone, add Seek to your Home Screen
+				first — Web Push only works from the installed app.
+			</p>
+		{:else if push && !push.configured}
+			<p class="hint">
+				Not set up on the server yet. Ask the admin to add VAPID keys (see the notes in
+				<code>.env.example</code>).
+			</p>
+		{:else}
+			<button
+				class="row"
+				role="switch"
+				aria-checked={push?.subscribed ?? false}
+				disabled={pushBusy || !push}
+				onclick={() => toggleNotify(!(push?.subscribed ?? false))}
+			>
+				<span class="rowtext">
+					<span class="label">Airing-today notifications</span>
+					<span class="hint">A morning push listing your shows that air that day</span>
+				</span>
+				<span class="toggle" class:on={push?.subscribed}><span class="knob"></span></span>
+			</button>
+			{#if push?.subscribed}
+				<label class="row">
+					<span class="rowtext">
+						<span class="label">Send at</span>
+						<span class="hint">Local time the daily digest goes out</span>
+					</span>
+					<select
+						class="hour"
+						value={local.digestHour}
+						onchange={(e) => patch({ digestHour: Number(e.currentTarget.value) })}
+					>
+						{#each Array.from({ length: 24 }, (_, h) => h) as h (h)}
+							<option value={h}>{String(h).padStart(2, '0')}:00</option>
+						{/each}
+					</select>
+				</label>
+				<button class="reset" disabled={pushBusy} onclick={testNotify}>Send a test</button>
+			{/if}
+			{#if pushMsg}<p class="hint">{pushMsg}</p>{/if}
+		{/if}
 	</section>
 
 	<section>

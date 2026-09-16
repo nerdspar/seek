@@ -7,6 +7,14 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+# Runtime dependencies only. adapter-node bundles most of the app but leaves a
+# few packages external (web-push, whose transitive deps do not bundle cleanly),
+# so the runtime image needs their node_modules — not just the build output.
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
@@ -14,9 +22,8 @@ ENV NODE_ENV=production
 ENV PORT=8100
 ENV HOST=0.0.0.0
 
-# adapter-node bundles its own dependencies — verified by running build/ with no
-# node_modules present — so the runtime image needs nothing but the output.
 COPY --from=build /app/build ./build
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 
 # Preferences only (§8). Watch state is never stored here.
