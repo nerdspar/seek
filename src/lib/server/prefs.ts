@@ -66,6 +66,9 @@ export type Prefs = {
 	notifyDigest: boolean;
 	/** Local hour (0–23) the digest goes out. */
 	digestHour: number;
+	/** Push each show as it airs — at its real time, or local midnight for an
+	 *  all-day streaming drop. Independent of the daily digest. */
+	notifyAtTime: boolean;
 };
 
 export const DEFAULTS: Prefs = {
@@ -80,7 +83,8 @@ export const DEFAULTS: Prefs = {
 	services: [],
 	moodPresets: null,
 	notifyDigest: false,
-	digestHour: 8
+	digestHour: 8,
+	notifyAtTime: false
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */

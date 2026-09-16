@@ -21,6 +21,8 @@ type Store = {
 	subs: PushSub[];
 	/** yyyy-mm-dd of the last digest sent, so a restart can't double-send. */
 	lastDigest: string | null;
+	/** ISO instant of the last at-air check, so each episode fires once. */
+	lastAtTime: string | null;
 };
 
 const file = () => join(env.SEEK_DATA_DIR || '/data', 'push-subscriptions.json');
@@ -46,9 +48,13 @@ async function read(): Promise<Store> {
 	if (cache) return cache;
 	try {
 		const parsed = JSON.parse(await readFile(file(), 'utf8')) as Partial<Store>;
-		cache = { subs: parsed.subs ?? [], lastDigest: parsed.lastDigest ?? null };
+		cache = {
+			subs: parsed.subs ?? [],
+			lastDigest: parsed.lastDigest ?? null,
+			lastAtTime: parsed.lastAtTime ?? null
+		};
 	} catch {
-		cache = { subs: [], lastDigest: null };
+		cache = { subs: [], lastDigest: null, lastAtTime: null };
 	}
 	return cache;
 }
@@ -100,6 +106,15 @@ export async function getLastDigest(): Promise<string | null> {
 export async function setLastDigest(day: string): Promise<void> {
 	await commit((s) => {
 		s.lastDigest = day;
+	});
+}
+
+export async function getLastAtTime(): Promise<string | null> {
+	return (await read()).lastAtTime;
+}
+export async function setLastAtTime(iso: string): Promise<void> {
+	await commit((s) => {
+		s.lastAtTime = iso;
 	});
 }
 

@@ -9,7 +9,14 @@
  * version.
  */
 import { getUpcoming } from './upcoming';
-import { sendToAll, getLastDigest, setLastDigest } from './push';
+import type { UpcomingItem } from '$lib/types';
+import {
+	sendToAll,
+	getLastDigest,
+	setLastDigest,
+	getLastAtTime,
+	setLastAtTime
+} from './push';
 
 /** yyyy-mm-dd in the server's local timezone — the digest is a date, not an instant. */
 const localDay = (d: Date) => d.toLocaleDateString('en-CA');
@@ -73,4 +80,66 @@ export async function sendDailyDigest(
 	});
 	if (!force) await setLastDigest(today);
 	return { sent, note: null };
+}
+
+/**
+ * The moment an episode becomes available: its real air time, or — for an
+ * all-day streaming drop (no clock time in the feed) — local midnight of that
+ * date, which is when those services actually put it up.
+ */
+function airMoment(item: UpcomingItem): number {
+	if (item.hasTime) return new Date(item.start).getTime();
+	// item.start is midnight UTC of the date; reinterpret that date as local
+	// midnight (no trailing Z parses as local time).
+	return new Date(`${item.start.slice(0, 10)}T00:00:00`).getTime();
+}
+
+/**
+ * Push each show as it airs. Fires anything whose air moment fell in the window
+ * since the last check, grouped so a whole season landing at once is one push,
+ * not ten. The first run just marks "now" — it never backfills a batch of
+ * already-aired episodes onto the phone.
+ */
+export async function sendAtTimeNotifications(): Promise<number> {
+	const nowIso = new Date().toISOString();
+	const last = await getLastAtTime();
+	if (!last) {
+		await setLastAtTime(nowIso);
+		return 0;
+	}
+
+	const since = new Date(last).getTime();
+	const now = Date.now();
+	const items = await getUpcoming();
+	const due = items.filter((i) => {
+		const m = airMoment(i);
+		return m > since && m <= now;
+	});
+
+	// One notification per show — a season drop is a single "N new episodes".
+	const byShow = new Map<string, UpcomingItem[]>();
+	for (const i of due) {
+		const list = byShow.get(i.title) ?? [];
+		list.push(i);
+		byShow.set(i.title, list);
+	}
+
+	let sent = 0;
+	for (const [title, eps] of byShow) {
+		let body: string;
+		if (eps.length === 1) {
+			const e = eps[0];
+			body =
+				e.season != null && e.episode != null
+					? `S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')} is out`
+					: 'A new episode is out';
+		} else {
+			body = `${eps.length} new episodes`;
+		}
+		const res = await sendToAll({ title, body, url: '/upcoming', tag: `seek-airing-${title}` });
+		sent += res.sent;
+	}
+
+	await setLastAtTime(nowIso);
+	return sent;
 }

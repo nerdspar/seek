@@ -45,7 +45,9 @@
 		try {
 			if (on) {
 				await subscribe();
-				await patch({ notifyDigest: true });
+				// Give a new subscriber something by default, without overriding a
+				// choice they already made.
+				if (!local.notifyDigest && !local.notifyAtTime) await patch({ notifyDigest: true });
 			} else {
 				await unsubscribe();
 			}
@@ -382,27 +384,55 @@
 				onclick={() => toggleNotify(!(push?.subscribed ?? false))}
 			>
 				<span class="rowtext">
-					<span class="label">Airing-today notifications</span>
-					<span class="hint">A morning push listing your shows that air that day</span>
+					<span class="label">Notifications on this device</span>
+					<span class="hint">Push alerts for the shows you track</span>
 				</span>
 				<span class="toggle" class:on={push?.subscribed}><span class="knob"></span></span>
 			</button>
 			{#if push?.subscribed}
-				<label class="row">
+				<button
+					class="row"
+					role="switch"
+					aria-checked={local.notifyDigest}
+					disabled={pushBusy}
+					onclick={() => patch({ notifyDigest: !local.notifyDigest })}
+				>
 					<span class="rowtext">
-						<span class="label">Send at</span>
-						<span class="hint">Local time the daily digest goes out</span>
+						<span class="label">Daily digest</span>
+						<span class="hint">A morning list of everything airing that day</span>
 					</span>
-					<select
-						class="hour"
-						value={local.digestHour}
-						onchange={(e) => patch({ digestHour: Number(e.currentTarget.value) })}
-					>
-						{#each Array.from({ length: 24 }, (_, h) => h) as h (h)}
-							<option value={h}>{String(h).padStart(2, '0')}:00</option>
-						{/each}
-					</select>
-				</label>
+					<span class="toggle" class:on={local.notifyDigest}><span class="knob"></span></span>
+				</button>
+				{#if local.notifyDigest}
+					<label class="row">
+						<span class="rowtext">
+							<span class="label">Send at</span>
+							<span class="hint">Local time the digest goes out</span>
+						</span>
+						<select
+							class="hour"
+							value={local.digestHour}
+							onchange={(e) => patch({ digestHour: Number(e.currentTarget.value) })}
+						>
+							{#each Array.from({ length: 24 }, (_, h) => h) as h (h)}
+								<option value={h}>{String(h).padStart(2, '0')}:00</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
+				<button
+					class="row"
+					role="switch"
+					aria-checked={local.notifyAtTime}
+					disabled={pushBusy}
+					onclick={() => patch({ notifyAtTime: !local.notifyAtTime })}
+				>
+					<span class="rowtext">
+						<span class="label">When each show airs</span>
+						<span class="hint">At broadcast time, or midnight for a streaming drop</span>
+					</span>
+					<span class="toggle" class:on={local.notifyAtTime}><span class="knob"></span></span>
+				</button>
 				<button class="reset" disabled={pushBusy} onclick={testNotify}>Send a test</button>
 			{/if}
 			{#if pushMsg}<p class="hint">{pushMsg}</p>{/if}
