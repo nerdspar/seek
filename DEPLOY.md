@@ -82,8 +82,9 @@ Fill in the three values marked ⬅ :
 | `FLOPPY_TOKEN` | Floppy → Settings → Integrations → API Token |
 | `SEEK_SESSION_SECRET` | `openssl rand -hex 32` |
 
-`SEEK_PASSPHRASE`, `FLOPPY_CALENDAR_TOKEN` and `TMDB_API_KEY` can stay empty for
-now — see "Security" and "Not wired up yet" below.
+`SEEK_PASSPHRASE` can stay empty on a trusted LAN (see "Security"). The rest —
+`FLOPPY_CALENDAR_TOKEN`, `TMDB_API_KEY`, and the `VAPID_*` keys — turn on optional
+features and can be filled in whenever you want them (see "Optional features").
 
 **If Floppy runs on this same host** — including in a *different compose stack* —
 prefer reaching it by container name. `docker-compose.yml` ships configured that
@@ -325,11 +326,26 @@ There is one shared secret and no per-device records, so a lost phone means
 rotating `SEEK_SESSION_SECRET` and restarting. That invalidates every session on
 every device, and everyone logs in once more.
 
-## Not wired up yet
+## Optional features
 
-`FLOPPY_CALENDAR_TOKEN` (Upcoming) and `TMDB_API_KEY` (search and Discovery)
-belong to build steps that aren't written. Leave them blank; Seek only reads them
-when those features exist.
+Three features stay dark until you provide their keys; everything else works
+without them.
+
+- **`FLOPPY_CALENDAR_TOKEN`** — the Upcoming tab and the daily notification. From
+  Floppy's Calendar page, the token in the `.ics` feed URL.
+- **`TMDB_API_KEY`** — search and Discover.
+- **`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`** — the daily
+  "airing today" push. Generate the pair once — web-push ships in the image, so
+  you can do it in the container:
+
+  ```sh
+  docker exec seek node -e "console.log(require('web-push').generateVAPIDKeys())"
+  ```
+
+  Paste both halves; keep the private key secret. `VAPID_SUBJECT` is a contact
+  URI push services can reach you at (`mailto:you@…` or `https://…`). The digest
+  also needs `FLOPPY_CALENDAR_TOKEN`, and on iPhone notifications only work from
+  the Home-Screen PWA (iOS 16.4+).
 
 ## Troubleshooting
 

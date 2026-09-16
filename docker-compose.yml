@@ -91,11 +91,24 @@ services:
       ADDRESS_HEADER: "x-forwarded-for" # ⬅ ADDRESS_HEADER (recommended if gated)
       XFF_DEPTH: "1"
 
-      # Not used yet — both are for build steps that aren't written.
-      # Calendar token (Upcoming, step 6): Floppy's calendar page, the token in
-      # the .ics feed URL. TMDB key (search/discovery, steps 5 and 7).
-      FLOPPY_CALENDAR_TOKEN: "" # ⬅ FLOPPY_CALENDAR_TOKEN (later)
-      TMDB_API_KEY: "" # ⬅ TMDB_API_KEY (later)
+      # Calendar feed token — powers the Upcoming tab AND the daily notification.
+      # Floppy → Calendar page → the token in the .ics feed URL. No token, no
+      # Upcoming and no digest.
+      FLOPPY_CALENDAR_TOKEN: "" # ⬅ FLOPPY_CALENDAR_TOKEN
+      # themoviedb.org API key — enables search and Discover.
+      TMDB_API_KEY: "" # ⬅ TMDB_API_KEY
+
+      # --- Notifications: the daily "airing today" push ----------------------
+      # Optional. Leave these blank and notifications are simply unavailable;
+      # everything else works. Generate a keypair ONCE and paste both halves —
+      # web-push ships in the image, so you can do it in the container:
+      #     docker exec seek node -e "console.log(require('web-push').generateVAPIDKeys())"
+      # The PUBLIC key is sent to browsers (that's fine); keep the PRIVATE key
+      # secret. iOS shows these only inside the Home-Screen PWA (16.4+).
+      VAPID_PUBLIC_KEY: "" # ⬅ VAPID_PUBLIC_KEY (optional)
+      VAPID_PRIVATE_KEY: "" # ⬅ VAPID_PRIVATE_KEY (optional)
+      # A contact the push services can reach you at — mailto: or https:.
+      VAPID_SUBJECT: "mailto:you@example.com" # ⬅ VAPID_SUBJECT
 
     ports:
       # host:container — the app listens on 8100 inside the container. Change

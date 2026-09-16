@@ -73,7 +73,10 @@ All configuration is environment variables. Copy [`.env.example`](.env.example) 
 | `FLOPPY_TOKEN` | **yes** | Floppy → Settings → Integrations → API Token. |
 | `SEEK_SESSION_SECRET` | **yes** | `openssl rand -hex 32`. Signs the session cookie. |
 | `TMDB_API_KEY` | for search | Enables search, discovery and the universal search box. |
-| `FLOPPY_CALENDAR_TOKEN` | for Upcoming | The token in Floppy's `.ics` feed URL. |
+| `FLOPPY_CALENDAR_TOKEN` | for Upcoming | The token in Floppy's `.ics` feed URL. Also powers the daily notification. |
+| `VAPID_PUBLIC_KEY` | for notifications | With the private key, enables the daily "airing today" push. Generate a pair: `node -e "console.log(require('web-push').generateVAPIDKeys())"`. |
+| `VAPID_PRIVATE_KEY` | for notifications | The private half of the pair. Keep it secret. |
+| `VAPID_SUBJECT` | for notifications | A contact URI push services can reach you at — `mailto:you@…` or `https://…`. |
 | `FLOPPY_PUBLIC_URL` | no | Floppy's *browser-reachable* address, for the one link the phone opens directly. Blank hides the link. |
 | `SEEK_PASSPHRASE` | see below | Enables the login gate. Blank means no gate. |
 | `ORIGIN` | if gated | The exact URL browsers use, protocol included. |
