@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import StatsChart from '$lib/components/StatsChart.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -18,6 +19,21 @@
 
 	const fmt = (n: number) => n.toLocaleString();
 	const peakOf = (weekday: { hours: number }[]) => Math.max(1, ...weekday.map((d) => d.hours));
+
+	/** Total minutes as "361 days, 20 hours, 20 minutes". Days are dropped when
+	 *  there are none (a short range), so it never reads "0 days". */
+	function daysHoursMins(minutes: number): string {
+		const total = Math.round(minutes);
+		const d = Math.floor(total / 1440);
+		const h = Math.floor((total % 1440) / 60);
+		const m = total % 60;
+		const plural = (n: number, unit: string) => `${fmt(n)} ${unit}${n === 1 ? '' : 's'}`;
+		const parts = [];
+		if (d) parts.push(plural(d, 'day'));
+		parts.push(plural(h, 'hour'));
+		parts.push(plural(m, 'minute'));
+		return parts.join(', ');
+	}
 </script>
 
 <div class="app">
@@ -62,9 +78,17 @@
 				<!-- §7.1: every number below is read from Floppy's overview endpoint.
 				     Seek computes nothing except the date window. -->
 				<section class="headline">
-					<span class="big tnum">{fmt(stats.hours)}</span>
-					<span class="unit">hours logged · {stats.rangeLabel}</span>
+					<span class="big tnum">{fmt(stats.minutes)}</span>
+					<span class="unit">minutes logged · {stats.rangeLabel}</span>
+					<span class="breakdown tnum">{daysHoursMins(stats.minutes)}</span>
 				</section>
+
+				<!-- A monthly breakdown only reads within a single year; on All time it
+				     is a month-of-year aggregate skewed by old bulk-import dates, so
+				     the chart is scoped to the year ranges. -->
+				{#if data.range === 'this_year' || data.range === 'last_year'}
+					<StatsChart monthly={stats.monthly} />
+				{/if}
 
 				<ul class="tiles">
 					<li><span class="n tnum">{fmt(stats.plays)}</span><span class="l">Plays</span></li>
@@ -232,6 +256,7 @@
 		background: var(--signal); -webkit-background-clip: text; background-clip: text; color: transparent;
 	}
 	.unit { font-size: 13px; color: var(--text-dim); }
+	.breakdown { margin-top: 4px; font-size: 14px; font-weight: 600; color: var(--text); }
 
 	.tiles, .streaks {
 		display: grid; gap: 8px; margin: 0 0 24px; padding: 0; list-style: none;
