@@ -87,17 +87,17 @@
 		<svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Monthly hours watched">
 			<defs>
 				<linearGradient id="statsfill" x1="0" y1="0" x2="0" y2="1">
-					<stop offset="0%" stop-color="var(--signal)" stop-opacity="0.5" />
-					<stop offset="55%" stop-color="var(--signal)" stop-opacity="0.14" />
-					<stop offset="100%" stop-color="var(--signal)" stop-opacity="0" />
+					<stop offset="0%" stop-color="var(--signal-solid)" stop-opacity="0.5" />
+					<stop offset="55%" stop-color="var(--signal-solid)" stop-opacity="0.14" />
+					<stop offset="100%" stop-color="var(--signal-solid)" stop-opacity="0" />
 				</linearGradient>
 			</defs>
 
 			<path d={areaPath} fill="url(#statsfill)" />
-			<path d={linePath} fill="none" stroke="var(--signal)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+			<path d={linePath} fill="none" stroke="var(--signal-solid)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
 
 			{#each points as p (p.label)}
-				<circle cx={p.x} cy={p.y} r="6.5" fill="var(--signal)" stroke="var(--bg)" stroke-width="2.5" />
+				<circle cx={p.x} cy={p.y} r="6.5" fill="var(--signal-solid)" stroke="var(--bg)" stroke-width="2.5" />
 				<text class="val" x={p.x} y={p.y - 16} text-anchor="middle">{p.v}h</text>
 				<text class="mon" x={p.x} y={H - 16} text-anchor="middle">{p.label}</text>
 			{/each}
@@ -121,7 +121,7 @@
 		letter-spacing: -0.01em;
 	}
 	.tabs button.on {
-		color: var(--signal-text, var(--signal));
+		color: var(--signal-solid);
 	}
 	svg {
 		width: 100%;
