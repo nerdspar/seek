@@ -75,9 +75,17 @@ export type Prefs = {
 	radarr: ArrPref | null;
 };
 
-/** The two choices an add needs beyond the title — the rest (monitored, search)
- *  are decided per add. */
-export type ArrPref = { rootFolderPath: string; qualityProfileId: number };
+/** Default add settings for one *arr. These pre-fill the add sheet, where any of
+ *  them can be overridden per title. `monitor` is a service-specific enum
+ *  (Sonarr: all/future/…; Radarr: movieOnly/…); `tags` are tag labels, resolved
+ *  to ids (created if new) at add time. Both are optional for back-compat with
+ *  prefs written before they existed. */
+export type ArrPref = {
+	rootFolderPath: string;
+	qualityProfileId: number;
+	monitor?: string;
+	tags?: string[];
+};
 
 export const DEFAULTS: Prefs = {
 	markDirection: 'rtl',

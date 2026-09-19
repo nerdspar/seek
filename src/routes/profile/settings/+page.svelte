@@ -4,6 +4,7 @@
 	import type { Accent, Appearance, MarkDirection, Prefs, ArrPref } from '$lib/server/prefs';
 	import { setNoticesEnabled } from '$lib/notices.svelte';
 	import { pushStatus, subscribe, unsubscribe, sendTest, type PushStatus } from '$lib/push';
+	import { monitorOptions, defaultMonitor } from '$lib/arr.svelte';
 	import type { PageData } from './$types';
 
 	/** Preferences live server-side in /data (§8), so this edits them through the
@@ -30,6 +31,7 @@
 		configured: boolean;
 		rootFolders: { path: string; freeSpace: number | null }[];
 		profiles: { id: number; name: string }[];
+		tags: { id: number; label: string }[];
 	};
 	let arrOptions = $state<{ sonarr: ArrOpts; radarr: ArrOpts } | null>(null);
 	$effect(() => {
@@ -215,14 +217,22 @@
 		}
 	}
 
-	/* Saves one *arr choice, preserving the other field (the pref is a pair). */
+	/* Saves one *arr default, preserving the fields not being changed. */
 	function setArr(service: 'sonarr' | 'radarr', change: Partial<ArrPref>) {
 		const cur = (local[service] ?? {}) as Partial<ArrPref>;
 		const next: ArrPref = {
 			rootFolderPath: change.rootFolderPath ?? cur.rootFolderPath ?? '',
-			qualityProfileId: change.qualityProfileId ?? cur.qualityProfileId ?? -1
+			qualityProfileId: change.qualityProfileId ?? cur.qualityProfileId ?? -1,
+			monitor: change.monitor ?? cur.monitor ?? defaultMonitor(service === 'radarr' ? 'movie' : 'tv'),
+			tags: change.tags ?? cur.tags ?? []
 		};
 		void patch({ [service]: next } as Partial<Prefs>);
+	}
+	function toggleArrTag(service: 'sonarr' | 'radarr', label: string) {
+		const cur = new Set((local[service]?.tags ?? []) as string[]);
+		if (cur.has(label)) cur.delete(label);
+		else cur.add(label);
+		setArr(service, { tags: [...cur] });
 	}
 </script>
 
@@ -496,16 +506,16 @@
 				{#if arrOptions && arrOptions[s.key].configured}
 					{@const opts = arrOptions[s.key]}
 					{@const pref = local[s.key]}
+					{@const mt = s.key === 'radarr' ? 'movie' : 'tv'}
 					<div class="arrsvc">
 						<p class="arrname">{s.label} <span class="hint">· {s.kind}</span></p>
 						{#if !opts.rootFolders.length && !opts.profiles.length}
 							<p class="hint">Couldn’t reach {s.label} — check its URL and API key.</p>
 						{:else}
 							<label class="row">
-								<span class="rowtext"><span class="label">Root folder</span></span>
-								<select class="hour arrsel" value={pref?.rootFolderPath ?? ''} onchange={(e) => setArr(s.key, { rootFolderPath: e.currentTarget.value })}>
-									{#if !pref?.rootFolderPath}<option value="" disabled selected>Choose…</option>{/if}
-									{#each opts.rootFolders as rf (rf.path)}<option value={rf.path}>{rf.path}</option>{/each}
+								<span class="rowtext"><span class="label">Monitor</span></span>
+								<select class="hour arrsel" value={pref?.monitor ?? defaultMonitor(mt)} onchange={(e) => setArr(s.key, { monitor: e.currentTarget.value })}>
+									{#each monitorOptions(mt) as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
 								</select>
 							</label>
 							<label class="row">
@@ -515,11 +525,28 @@
 									{#each opts.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 								</select>
 							</label>
+							<label class="row">
+								<span class="rowtext"><span class="label">Root folder</span></span>
+								<select class="hour arrsel" value={pref?.rootFolderPath ?? ''} onchange={(e) => setArr(s.key, { rootFolderPath: e.currentTarget.value })}>
+									{#if !pref?.rootFolderPath}<option value="" disabled selected>Choose…</option>{/if}
+									{#each opts.rootFolders as rf (rf.path)}<option value={rf.path}>{rf.path}</option>{/each}
+								</select>
+							</label>
+							{#if opts.tags.length}
+								<div class="arrtags">
+									<span class="label">Default tags</span>
+									<div class="chips">
+										{#each opts.tags as t (t.id)}
+											<button type="button" class="tag" class:on={(pref?.tags ?? []).includes(t.label)} onclick={() => toggleArrTag(s.key, t.label)}>{t.label}</button>
+										{/each}
+									</div>
+								</div>
+							{/if}
 						{/if}
 					</div>
 				{/if}
 			{/each}
-			<p class="hint">New adds go to the chosen folder at this quality. You choose “search now” or “monitor only” each time.</p>
+			<p class="hint">These are the defaults. When you add a title you can change Monitor, Quality, Root folder and Tags (and add new tags) for that title, and choose whether to search right away.</p>
 		</section>
 	{/if}
 
@@ -568,6 +595,11 @@
 	.arrname .hint { font-weight: 400; }
 	/* Root-folder paths get long; let the select take the space and ellipsize. */
 	.arrsel { max-width: 62%; }
+	.arrtags { margin-top: 8px; }
+	.arrtags .label { display: block; margin-bottom: 6px; }
+	.arrtags .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+	.arrtags .tag { padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); color: var(--text); font-size: 14px; }
+	.arrtags .tag.on { background: var(--signal); color: #fff; }
 
 	.choices { display: flex; flex-direction: column; gap: 6px; }
 	.choices button {

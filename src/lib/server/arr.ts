@@ -128,6 +128,39 @@ export async function getQualityProfiles(service: Service): Promise<QualityProfi
 		.filter((p) => p.id >= 0 && p.name);
 }
 
+export type Tag = { id: number; label: string };
+
+export async function getTags(service: Service): Promise<Tag[]> {
+	const rows = await arr<unknown[]>(service, '/tag');
+	return arrList(rows)
+		.map((r) => {
+			const o = rec(r);
+			return { id: typeof o.id === 'number' ? o.id : -1, label: typeof o.label === 'string' ? o.label : '' };
+		})
+		.filter((t) => t.id >= 0 && t.label);
+}
+
+/** Resolve tag labels to ids, creating any that don't exist yet. */
+async function ensureTags(service: Service, labels: string[]): Promise<number[]> {
+	const wanted = labels.map((l) => l.trim()).filter(Boolean);
+	if (!wanted.length) return [];
+	const existing = await getTags(service).catch(() => [] as Tag[]);
+	const byLabel = new Map(existing.map((t) => [t.label.toLowerCase(), t.id]));
+	const ids: number[] = [];
+	for (const label of wanted) {
+		let id = byLabel.get(label.toLowerCase());
+		if (id === undefined) {
+			const created = rec(await arr(service, '/tag', { method: 'POST', body: { label } }));
+			if (typeof created.id === 'number') {
+				id = created.id;
+				byLabel.set(label.toLowerCase(), id);
+			}
+		}
+		if (id !== undefined && !ids.includes(id)) ids.push(id);
+	}
+	return ids;
+}
+
 /** Sonarr v3 only. Empty on v4 (language profiles were removed there). */
 async function getLanguageProfileId(): Promise<number | null> {
 	try {
@@ -144,21 +177,24 @@ export type ArrOptions = {
 	configured: boolean;
 	rootFolders: RootFolder[];
 	profiles: QualityProfile[];
+	tags: Tag[];
 };
 
-/** Everything the Settings picker needs for one service, or a not-configured
- *  marker. Never throws — a service that is down returns configured:true with
- *  empty lists so the UI can say "couldn't reach it" rather than vanish. */
+/** Everything the Settings picker and add sheet need for one service, or a
+ *  not-configured marker. Never throws — a service that is down returns
+ *  configured:true with empty lists so the UI can say "couldn't reach it"
+ *  rather than vanish. */
 export async function getOptions(service: Service): Promise<ArrOptions> {
-	if (!configured(service)) return { configured: false, rootFolders: [], profiles: [] };
+	if (!configured(service)) return { configured: false, rootFolders: [], profiles: [], tags: [] };
 	try {
-		const [rootFolders, profiles] = await Promise.all([
+		const [rootFolders, profiles, tags] = await Promise.all([
 			getRootFolders(service),
-			getQualityProfiles(service)
+			getQualityProfiles(service),
+			getTags(service).catch(() => [] as Tag[])
 		]);
-		return { configured: true, rootFolders, profiles };
+		return { configured: true, rootFolders, profiles, tags };
 	} catch {
-		return { configured: true, rootFolders: [], profiles: [] };
+		return { configured: true, rootFolders: [], profiles: [], tags: [] };
 	}
 }
 
@@ -202,7 +238,12 @@ export async function libraryStatus(): Promise<{ sonarr: string[]; radarr: strin
 export type AddOptions = {
 	rootFolderPath: string;
 	qualityProfileId: number;
-	monitored?: boolean;
+	/** Service-specific monitor enum. Sonarr: all/future/missing/existing/recent/
+	 *  pilot/firstSeason/lastSeason/none. Radarr: movieOnly/movieAndCollection/none.
+	 *  'none' means add unmonitored. */
+	monitor?: string;
+	/** Tag labels; resolved to ids (created if new) before the add. */
+	tags?: string[];
 	/** Kick off a search immediately (start grabbing) rather than just monitor. */
 	search?: boolean;
 };
@@ -243,18 +284,20 @@ export async function addTitle(
 		return { ok: true, title, alreadyAdded: true };
 	}
 
-	const monitored = opts.monitored ?? true;
+	const tags = await ensureTags(service, opts.tags ?? []);
 
 	if (service === 'sonarr') {
+		const monitor = opts.monitor ?? 'all';
 		const languageProfileId = await getLanguageProfileId();
 		const body: Record<string, unknown> = {
 			...found,
 			rootFolderPath: opts.rootFolderPath,
 			qualityProfileId: opts.qualityProfileId,
-			monitored,
+			monitored: monitor !== 'none',
 			seasonFolder: true,
+			tags,
 			addOptions: {
-				monitor: 'all',
+				monitor,
 				searchForMissingEpisodes: Boolean(opts.search),
 				searchForCutoffUnmetEpisodes: false
 			}
@@ -262,13 +305,15 @@ export async function addTitle(
 		if (languageProfileId !== null) body.languageProfileId = languageProfileId;
 		await arr('sonarr', '/series', { method: 'POST', body, timeoutMs: 30_000 });
 	} else {
+		const monitor = opts.monitor ?? 'movieOnly';
 		const body: Record<string, unknown> = {
 			...found,
 			rootFolderPath: opts.rootFolderPath,
 			qualityProfileId: opts.qualityProfileId,
-			monitored,
+			monitored: monitor !== 'none',
 			minimumAvailability: 'released',
-			addOptions: { searchForMovie: Boolean(opts.search) }
+			tags,
+			addOptions: { monitor, searchForMovie: Boolean(opts.search) }
 		};
 		await arr('radarr', '/movie', { method: 'POST', body, timeoutMs: 30_000 });
 	}

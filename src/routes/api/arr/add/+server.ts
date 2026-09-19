@@ -13,9 +13,13 @@ import type { RequestHandler } from './$types';
 type Body = {
 	mediaType?: 'tv' | 'anime' | 'movie';
 	tmdbId?: string | number;
+	/** Per-add overrides; anything omitted falls back to the saved default. */
+	rootFolderPath?: string;
+	qualityProfileId?: number;
+	monitor?: string;
+	tags?: string[];
 	/** Kick off a search on add (start grabbing) vs. monitor only. Per add. */
 	search?: boolean;
-	monitored?: boolean;
 };
 
 /**
@@ -36,25 +40,29 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const prefs = await getPrefs();
-	let choice = service === 'sonarr' ? prefs.sonarr : prefs.radarr;
+	const saved = service === 'sonarr' ? prefs.sonarr : prefs.radarr;
 
-	/* No saved choice yet: fall back to the first root folder and profile the
-	   service offers, so a first-ever add does not require a Settings trip. */
-	if (!choice) {
+	/* Root folder and quality profile: the body's choice, else the saved default,
+	   else the first the service offers — so a first-ever add still works without
+	   a Settings trip. Monitor and tags fall back to the saved default and the
+	   service-appropriate default inside addTitle. */
+	let rootFolderPath = body.rootFolderPath ?? saved?.rootFolderPath;
+	let qualityProfileId = body.qualityProfileId ?? saved?.qualityProfileId;
+	if (!rootFolderPath || qualityProfileId === undefined) {
 		const opts = await getOptions(service);
-		const root = opts.rootFolders[0]?.path;
-		const profile = opts.profiles[0]?.id;
-		if (!root || profile === undefined) {
+		rootFolderPath = rootFolderPath || opts.rootFolders[0]?.path;
+		qualityProfileId = qualityProfileId ?? opts.profiles[0]?.id;
+		if (!rootFolderPath || qualityProfileId === undefined) {
 			error(400, `Pick a root folder and quality profile for ${service} in Settings first.`);
 		}
-		choice = { rootFolderPath: root, qualityProfileId: profile };
 	}
 
 	try {
 		const result = await addTitle(service, tmdbId, {
-			rootFolderPath: choice.rootFolderPath,
-			qualityProfileId: choice.qualityProfileId,
-			monitored: body.monitored ?? true,
+			rootFolderPath,
+			qualityProfileId,
+			monitor: body.monitor ?? saved?.monitor,
+			tags: body.tags ?? saved?.tags ?? [],
 			search: Boolean(body.search)
 		});
 		return json(result);
