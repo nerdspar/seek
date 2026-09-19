@@ -33,6 +33,11 @@
 	let el: HTMLElement | undefined = $state();
 	let dx = $state(0);
 	let dragging = $state(false);
+	/* Row width, read once when a gesture starts. The threshold and reveal maths
+	   below are read on every pointermove frame; sourcing the width from a live
+	   `offsetWidth` there forced a layout on each frame. It is stable for the life
+	   of a drag, so capture it on pointerdown and read the plain number after. */
+	let rowWidth = 360;
 
 	/* Commit is a two-beat animation, not a snap-back. The row finishes the
 	   direction the thumb was already going and leaves the screen, which is what
@@ -64,8 +69,7 @@
 	/** Distance that commits the mark. Proportional, but bounded so it stays
 	 *  reachable with one thumb on a large phone. */
 	function threshold(): number {
-		const w = el?.offsetWidth ?? 360;
-		return Math.max(72, Math.min(w * 0.32, 104));
+		return Math.max(72, Math.min(rowWidth * 0.32, 104));
 	}
 
 	/** 0 → 1 as the swipe approaches commit. Drives the reveal's intensity. */
@@ -95,6 +99,8 @@
 		startY = e.clientY;
 		startT = performance.now();
 		axis = 'undecided';
+		// One layout read per gesture, reused by threshold()/commit() below.
+		rowWidth = el?.offsetWidth ?? 360;
 		dragging = true;
 	}
 
@@ -174,7 +180,7 @@
 		axis = 'undecided';
 		activePointer = null;
 
-		const width = el?.offsetWidth ?? 360;
+		const width = rowWidth;
 		const reduced =
 			typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -254,6 +260,7 @@
 		class:returning={phase === 'returning'}
 		bind:this={el}
 		style:transform={`translate3d(${dx}px,0,0)`}
+		style:will-change={dragging || committing ? 'transform' : 'auto'}
 		role="button"
 		tabindex="0"
 		aria-label={`${row.title}${epLabel ? `, next ${epLabel}` : ''}`}
@@ -359,7 +366,9 @@
 		border-radius: var(--radius-lg);
 		/* Vertical scrolling stays with the browser; horizontal is ours. */
 		touch-action: pan-y;
-		will-change: transform;
+		/* will-change is set inline only while a row is being dragged or is
+		   committing — promoting every row to its own layer for its whole life
+		   multiplied GPU memory by the length of the list. */
 	}
 	.content.sliding {
 		transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);

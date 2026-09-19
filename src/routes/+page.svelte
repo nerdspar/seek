@@ -50,45 +50,43 @@
 		const mapped = serverRows.map((r) => overrides[key(r)] ?? r);
 		if (!order) return mapped;
 		const byKey = new Map(mapped.map((r) => [key(r), r]));
+		const inOrder = new Set(order);
 		const sorted = order.map((k) => byKey.get(k)).filter((r): r is WatchlistRow => Boolean(r));
 		// Anything the server sent that the local order predates goes on the end.
-		for (const r of mapped) if (!order.includes(key(r))) sorted.push(r);
+		// Set membership rather than order.includes() — the latter made this
+		// O(n²) and it re-runs on every mark.
+		for (const r of mapped) if (!inOrder.has(key(r))) sorted.push(r);
 		return sorted;
 	});
 
-	// A new server payload supersedes any local ordering.
+	/** Null while the current filter combination is still loading. */
+	let resultCount = $state<number | null>(null);
+	let loadFailed = $state<string | null>(null);
+
+	/* One effect owns the streamed page: a new payload supersedes any local
+	   ordering, drives the result count, and clears a stale error. data.page is a
+	   fresh promise per navigation, so this re-runs on every filter change. */
 	$effect(() => {
+		resultCount = null;
+		loadFailed = null;
 		let cancelled = false;
 		data.page
 			.then((p) => {
 				if (cancelled) return;
 				serverRows = p.rows;
 				total = p.total;
+				resultCount = p.total;
 				order = null;
 				overrides = {};
 			})
-			.catch(() => {});
+			.catch((e) => {
+				if (cancelled) return;
+				resultCount = 0;
+				loadFailed = e instanceof Error ? e.message : String(e);
+			});
 		return () => {
 			cancelled = true;
 		};
-	});
-
-	/** Null while the current filter combination is still loading. */
-	let resultCount = $state<number | null>(null);
-	$effect(() => {
-		resultCount = null;
-		let cancelled = false;
-		data.page
-			.then((p) => !cancelled && (resultCount = p.total))
-			.catch(() => !cancelled && (resultCount = 0));
-		return () => {
-			cancelled = true;
-		};
-	});
-
-	let loadFailed = $state<string | null>(null);
-	$effect(() => {
-		data.page.catch((e) => (loadFailed = e instanceof Error ? e.message : String(e)));
 	});
 
 	/**

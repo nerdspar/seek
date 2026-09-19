@@ -101,7 +101,11 @@ function airMoment(item: UpcomingItem): number {
  * already-aired episodes onto the phone.
  */
 export async function sendAtTimeNotifications(): Promise<number> {
-	const nowIso = new Date().toISOString();
+	// One `now` for both the filter's upper bound and the marker we persist, so
+	// the next run resumes exactly where this one stopped — no gap, no re-send of
+	// the window we just covered.
+	const now = Date.now();
+	const nowIso = new Date(now).toISOString();
 	const last = await getLastAtTime();
 	if (!last) {
 		await setLastAtTime(nowIso);
@@ -109,7 +113,6 @@ export async function sendAtTimeNotifications(): Promise<number> {
 	}
 
 	const since = new Date(last).getTime();
-	const now = Date.now();
 	const items = await getUpcoming();
 	const due = items.filter((i) => {
 		const m = airMoment(i);

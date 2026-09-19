@@ -16,7 +16,14 @@ export function startScheduler(): void {
 	if (started || !pushConfigured()) return;
 	started = true;
 
+	/* A tick's work (a cold calendar build plus a push fan-out) can in principle
+	   outrun the interval; without this, two overlapping ticks could both pass the
+	   once-a-day guard before either records the send and double-fire. */
+	let running = false;
+
 	const tick = async () => {
+		if (running) return;
+		running = true;
 		try {
 			const prefs = await getPrefs();
 			if (!prefs.notifyDigest && !prefs.notifyAtTime) return;
@@ -31,6 +38,8 @@ export function startScheduler(): void {
 			if (prefs.notifyAtTime) await sendAtTimeNotifications();
 		} catch {
 			// A bad tick must not kill the interval; the next one tries again.
+		} finally {
+			running = false;
 		}
 	};
 

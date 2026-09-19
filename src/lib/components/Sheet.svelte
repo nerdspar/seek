@@ -26,6 +26,10 @@
 	let dy = $state(0);
 	let dragging = $state(false);
 	let closing = $state(false);
+	/* Sheet height, captured when a drag starts. scrimOpacity is recomputed on
+	   every drag frame; reading `pane.offsetHeight` there forced a layout each
+	   frame. The height is stable during a dismiss, so read it once. */
+	let paneHeight = 400;
 
 	let startY = 0;
 	let startX = 0;
@@ -74,6 +78,7 @@
 		samples = [{ y: e.clientY, t: performance.now() }];
 		axis = 'undecided';
 		startedAtTop = !scrollable || (pane?.scrollTop ?? 0) <= 0;
+		paneHeight = pane?.offsetHeight ?? 400;
 		dragging = true;
 	}
 
@@ -145,9 +150,7 @@
 	}
 
 	// The scrim fades in step with the drag, so the gesture feels connected to it.
-	const scrimOpacity = $derived(
-		closing ? 0 : Math.max(0, 1 - dy / ((pane?.offsetHeight ?? 400) * 0.9))
-	);
+	const scrimOpacity = $derived(closing ? 0 : Math.max(0, 1 - dy / (paneHeight * 0.9)));
 </script>
 
 <svelte:window {onkeydown} />

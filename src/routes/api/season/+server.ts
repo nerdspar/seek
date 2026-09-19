@@ -1,9 +1,17 @@
 import { json, error } from '@sveltejs/kit';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { expire } from '$lib/server/memo';
+import { alreadyApplied, markApplied } from '$lib/server/idempotency';
 import type { RequestHandler } from './$types';
 
 type Body = { source?: string; mediaId?: string; season?: number; episodes?: number; watched?: number };
+
+/* No real season approaches this. It exists only so a bad `episodes` value
+   cannot turn one request into an unbounded run of sequential Floppy writes. */
+const MAX_SEASON_STEPS = 1000;
+
+/** Non-negative integer or 0. Guards the loop bound against junk input. */
+const count = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : 0);
 
 function parse(body: Body) {
 	const { source = 'tmdb', mediaId, season } = body;
@@ -27,13 +35,20 @@ const base = (source: string, mediaId: string, season: number) =>
  * get provoked.
  */
 export const POST: RequestHandler = async ({ request }) => {
+	const key = request.headers.get('Idempotency-Key');
 	const body = (await request.json()) as Body;
 	const { source, mediaId, season } = parse(body);
-	const total = typeof body.episodes === 'number' ? body.episodes : 0;
-	const already = typeof body.watched === 'number' ? body.watched : 0;
+	// Clamped to a ceiling: `episodes` drives a sequential per-episode Floppy
+	// loop, and a crafted value would otherwise mean an unbounded run.
+	const total = Math.min(count(body.episodes), MAX_SEASON_STEPS);
+	const already = count(body.watched);
 	const remaining = Math.max(0, total - already);
 
 	if (!remaining) return json({ ok: true, marked: 0 });
+
+	/* The loop below appends, so a full replay would over-mark. Once a whole
+	   season fill has landed under this key, skip a repeat entirely. */
+	if (alreadyApplied(key)) return json({ ok: true, marked: 0, replay: true });
 
 	let marked = 0;
 	try {
@@ -67,6 +82,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw err;
 	}
 
+	// Recorded only after the whole fill succeeds — a partial run stays retryable.
+	markApplied(key);
 	expire('watchlist:');
 	expire(`show:${source}:${mediaId}`);
 	return json({ ok: true, marked });

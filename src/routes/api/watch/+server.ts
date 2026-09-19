@@ -4,6 +4,7 @@ import { getRow } from '$lib/server/watchlist';
 import { setTracking } from '$lib/server/tracking';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { patch, expire, invalidate } from '$lib/server/memo';
+import { alreadyApplied, markApplied } from '$lib/server/idempotency';
 import type { WatchlistPage } from '$lib/server/watchlist';
 import { Status } from '$lib/types';
 import type { WatchlistRow } from '$lib/types';
@@ -97,13 +98,21 @@ function parse(body: Body) {
 
 /** Mark watched. Appends one play (§12.3). */
 export const POST: RequestHandler = async ({ request }) => {
+	const key = request.headers.get('Idempotency-Key');
 	const { source, mediaId, season, episode, mediaType, title, isMovie } = parse(
 		await request.json()
 	);
 
+	/* A POST appends, so a replayed request (the queue retrying one whose response
+	   was lost) would record a second play. Skip the write when this key's play
+	   has already landed; the refresh below still returns the current row. */
+	const replay = alreadyApplied(key);
 	try {
-		if (isMovie) await markMovieWatched(source, mediaId);
-		else await markEpisodeWatched(source, mediaId, season as number, episode as number);
+		if (!replay) {
+			if (isMovie) await markMovieWatched(source, mediaId);
+			else await markEpisodeWatched(source, mediaId, season as number, episode as number);
+			markApplied(key);
+		}
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) {
 			// Nothing was written — safe for the client to offer a retry.
@@ -168,6 +177,7 @@ export const POST: RequestHandler = async ({ request }) => {
  * it would take more than the single play this is meant to reverse.
  */
 export const DELETE: RequestHandler = async ({ request }) => {
+	const key = request.headers.get('Idempotency-Key');
 	const { source, mediaId, season, episode, mediaType, title, isMovie } = parse(
 		await request.json()
 	);
@@ -175,8 +185,14 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		? watchMoviePath(source, mediaId)
 		: `/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${season}/episodes/${episode}/watch/`;
 
+	/* DELETE pops the newest play, so a replay would remove a second one. Skip it
+	   when this key's removal has already landed. */
+	const replay = alreadyApplied(key);
 	try {
-		await floppy(path, { method: 'DELETE' });
+		if (!replay) {
+			await floppy(path, { method: 'DELETE' });
+			markApplied(key);
+		}
 	} catch (err) {
 		if (err instanceof FloppyError && err.status === 405) {
 			error(502, 'Floppy no longer accepts DELETE on the watch path; undo is unavailable.');
