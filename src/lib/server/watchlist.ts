@@ -297,6 +297,14 @@ async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
 		else if (corrected) row = { ...row, next: corrected };
 	}
 
+	/* Caught up on what's out: the next episode — corrected or Floppy's own — has
+	   a future air date, so there is nothing to watch yet. Null it; the backlog
+	   then drops the show (see getWatchlist) until an episode actually lands. A
+	   streaming drop with no clock time (airDate at date-only) counts as aired. */
+	if (row.next?.airDate && Date.parse(row.next.airDate) > Date.now()) {
+		row = { ...row, next: null };
+	}
+
 	const [title, max] = await Promise.all([
 		row.next
 			? episodeTitle(row.source, row.mediaId, row.next.season, row.next.episode)
@@ -408,10 +416,20 @@ export async function getWatchlist(
 		rows = rows.filter((row) => row.services.some((s) => wanted.has(s)));
 	}
 
+	/* The in-progress backlog is "what can I watch now", so a show that is caught
+	   up on its aired episodes (next-up nulled during enrichment) leaves it — and
+	   returns on its own when a new episode airs. Only here: the library's
+	   all-status views still list every title, caught up or not. Films never have
+	   a next-up and must never be dropped by this. */
+	const droppedCaughtUp = onlyInProgress && shouldEnrich;
+	if (droppedCaughtUp) {
+		rows = rows.filter((row) => row.mediaType === 'movie' || row.next !== null);
+	}
+
 	const p = res.pagination;
 	return {
 		rows,
-		total: services.length || all ? rows.length : (p?.total ?? rows.length),
+		total: services.length || all || droppedCaughtUp ? rows.length : (p?.total ?? rows.length),
 		hasMore: !all && Boolean(p?.next)
 	};
 }
