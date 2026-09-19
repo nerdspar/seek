@@ -55,7 +55,7 @@ export function getTracking(
 			const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
 				// `progress: 'all'` or a finished show drops out of the default query
 				// and reads as untracked.
-				query: { status: ['all'], progress: 'all', search: title, limit: 50 }
+				query: { status: ['all'], progress: 'all', search: title, limit: 100 }
 			});
 			/* Matched on media_id, never the first hit: a title search is fuzzy and
 			   "Below Deck" returns three different shows. */

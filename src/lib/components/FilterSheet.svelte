@@ -22,10 +22,16 @@
 	   blocked first paint for 14s on a cold cache. */
 	let allServices = $state<string[]>([]);
 	$effect(() => {
+		let cancelled = false;
 		fetch('/api/services')
 			.then((r) => (r.ok ? r.json() : { services: [] }))
-			.then((b) => (allServices = b.services ?? []))
+			.then((b) => {
+				if (!cancelled) allServices = b.services ?? [];
+			})
 			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	const STATUSES = [

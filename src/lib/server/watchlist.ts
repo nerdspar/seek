@@ -488,7 +488,7 @@ export async function getRow(
 	title: string
 ): Promise<WatchlistRow | null> {
 	const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-		query: { status: ['all'], progress: 'all', search: title, limit: 50 }
+		query: { status: ['all'], progress: 'all', search: title, limit: 100 }
 	});
 
 	const hit = (res.results ?? []).find(

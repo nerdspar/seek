@@ -17,6 +17,28 @@ type Entry<T> = { at: number; value: T; refreshing: boolean };
 const store = new Map<string, Entry<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 
+/* The store is otherwise unbounded: per-item keys (show:/movie:/extras:/
+   tracking:) accumulate one entry per title ever opened. This caps it. The
+   warmed, bounded hot set is never evicted — dropping the launch screen to make
+   room for a detail page would trade a cheap key for an expensive rebuild. */
+const MAX_ENTRIES = 1500;
+const PROTECTED = ['watchlist:', 'stats:', 'collection:', 'discover:', 'upcoming:', 'services:', 'tracked:', 'library:'];
+
+function evictIfNeeded(): void {
+	if (store.size <= MAX_ENTRIES) return;
+	// Drop the least-recently-refreshed evictable entry.
+	let oldestKey: string | undefined;
+	let oldestAt = Infinity;
+	for (const [k, e] of store) {
+		if (PROTECTED.some((p) => k.startsWith(p))) continue;
+		if (e.at < oldestAt) {
+			oldestAt = e.at;
+			oldestKey = k;
+		}
+	}
+	if (oldestKey !== undefined) store.delete(oldestKey);
+}
+
 function run<T>(key: string, load: () => Promise<T>): Promise<T> {
 	const existing = inflight.get(key) as Promise<T> | undefined;
 	if (existing) return existing;
@@ -24,6 +46,7 @@ function run<T>(key: string, load: () => Promise<T>): Promise<T> {
 	const promise = load()
 		.then((value) => {
 			store.set(key, { at: Date.now(), value, refreshing: false });
+			evictIfNeeded();
 			return value;
 		})
 		.catch((err) => {
@@ -60,6 +83,7 @@ export async function memo<T>(key: string, ttlMs: number, load: () => Promise<T>
 /** Replace a cached value without going back to Floppy. */
 export function put<T>(key: string, value: T): void {
 	store.set(key, { at: Date.now(), value, refreshing: false });
+	evictIfNeeded();
 }
 
 /** Rewrite every entry under a prefix. Used after a write so the list reflects

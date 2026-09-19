@@ -158,6 +158,17 @@
 		const edge = header ? header.getBoundingClientRect().bottom : 0;
 		heroVisible = el.getBoundingClientRect().bottom > edge;
 	}
+	/* Coalesced into a single rAF so a burst of scroll/resize events measures
+	   once per frame rather than reflowing on every event. */
+	let measureQueued = false;
+	function scheduleMeasure() {
+		if (measureQueued) return;
+		measureQueued = true;
+		requestAnimationFrame(() => {
+			measureQueued = false;
+			measureHero();
+		});
+	}
 
 	let statusOpen = $state(false);
 	let ratingOpen = $state(false);
@@ -265,7 +276,7 @@
 	}
 </script>
 
-<svelte:window onscroll={measureHero} onresize={measureHero} />
+<svelte:window onscroll={scheduleMeasure} onresize={scheduleMeasure} />
 
 {#await data.show}
 	<!-- The shell appears the instant the row is tapped, so a tap always does

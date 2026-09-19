@@ -24,6 +24,9 @@ const APP_CACHE = `seek-app-${version}`; // hashed build assets + static files
 const PAGE_CACHE = `seek-pages-${version}`; // server-rendered navigations
 const IMG_CACHE = 'seek-img'; // posters — survives deploys, they never change
 const IMG_MAX = 240;
+/* Navigations + API reads. Capped so the offline snapshot cannot grow without
+   bound — every distinct filter/query URL is its own entry. */
+const PAGE_MAX = 60;
 
 /* Immutable, content-hashed — safe to keep forever and serve cache-first. */
 const PRECACHE = [...build, ...files];
@@ -71,7 +74,9 @@ sw.addEventListener('fetch', (event) => {
 						if (res.ok) cache.put(request, res.clone()).then(() => cap(IMG_CACHE, IMG_MAX));
 						return res;
 					})
-					.catch(() => hit as Response);
+					// Offline with nothing cached: a synthetic 504 rather than an
+					// undefined handed to respondWith (which throws).
+					.catch(() => hit ?? new Response('', { status: 504 }));
 				return hit ?? fetching;
 			})
 		);
@@ -96,7 +101,7 @@ sw.addEventListener('fetch', (event) => {
 					const res = await fetch(request);
 					if (res.ok) {
 						const cache = await caches.open(PAGE_CACHE);
-						cache.put(request, res.clone());
+						void cache.put(request, res.clone()).then(() => cap(PAGE_CACHE, PAGE_MAX));
 					}
 					return res;
 				} catch {

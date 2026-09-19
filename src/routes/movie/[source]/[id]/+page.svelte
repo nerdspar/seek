@@ -70,6 +70,16 @@
 		const edge = header ? header.getBoundingClientRect().bottom : 0;
 		heroVisible = el.getBoundingClientRect().bottom > edge;
 	}
+	/* Coalesced into one rAF per frame — see the show page for the rationale. */
+	let measureQueued = false;
+	function scheduleMeasure() {
+		if (measureQueued) return;
+		measureQueued = true;
+		requestAnimationFrame(() => {
+			measureQueued = false;
+			measureHero();
+		});
+	}
 
 	const year = (iso: string | null) => (iso ? new Date(iso).getFullYear() : null);
 
@@ -164,7 +174,7 @@
 	}
 </script>
 
-<svelte:window onscroll={measureHero} onresize={measureHero} />
+<svelte:window onscroll={scheduleMeasure} onresize={scheduleMeasure} />
 
 {#await data.movie}
 	<PageHeader title="" onback={() => history.back()} />

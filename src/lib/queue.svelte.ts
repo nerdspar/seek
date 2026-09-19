@@ -77,24 +77,37 @@ export async function queuedWrite(
 	const headers = new Headers(init.headers);
 	headers.set('Idempotency-Key', key);
 
+	const store = () =>
+		park({
+			target,
+			op,
+			url,
+			method,
+			body: typeof init.body === 'string' ? init.body : null,
+			key,
+			at: Date.now()
+		});
+
 	try {
 		const res = await fetch(url, { ...init, headers });
-		// A real HTTP response — even an error — is the server's answer; hand it
-		// back and let the caller decide (they roll back on !ok as before).
+		/* 503 is the write endpoints' "Floppy unreachable, nothing was recorded"
+		   signal (see /api/watch, /api/season). The device is online but the
+		   backing store is not, so this is exactly the offline case the queue
+		   exists for — park it and replay later rather than rolling the user back.
+		   Safe against double-apply because a 503 means nothing landed. Any other
+		   response — success or a real error — is the server's answer; hand it back
+		   and let the caller decide (they roll back on !ok as before). */
+		if (res.status === 503 && browser) {
+			await store();
+			return new Response(JSON.stringify({ queued: true }), {
+				status: 202,
+				headers: { 'content-type': 'application/json' }
+			});
+		}
 		return res;
 	} catch {
 		// Network failure / offline: park it and tell the caller it's handled.
-		if (browser) {
-			await park({
-				target,
-				op,
-				url,
-				method,
-				body: typeof init.body === 'string' ? init.body : null,
-				key,
-				at: Date.now()
-			});
-		}
+		if (browser) await store();
 		return new Response(JSON.stringify({ queued: true }), {
 			status: 202,
 			headers: { 'content-type': 'application/json' }
@@ -132,7 +145,7 @@ export async function flush(): Promise<void> {
 					// Done, or permanently rejected (a 4xx will never succeed on
 					// retry) — either way it leaves the queue. A 404/409 here is a
 					// stale action against state that already moved on.
-					await drop(entry.target);
+					await dropIfCurrent(entry.target, entry.key);
 				} else {
 					break; // 5xx: server is up but unhappy; try again later.
 				}
@@ -145,7 +158,18 @@ export async function flush(): Promise<void> {
 	}
 }
 
-async function drop(target: string) {
+/**
+ * Remove a target's entry only if it is still the one we just sent.
+ *
+ * `flush` awaits the network between reading an entry and dropping it. If the
+ * user re-acts on the same target during that await, `park` replaces the row
+ * with a newer intent (same target, new key). Deleting by target alone would
+ * throw that newer action away — sent by neither this flush nor a later one.
+ * Comparing the key drops only the entry that actually completed.
+ */
+async function dropIfCurrent(target: string, key: string) {
+	const current = pending.find((p) => p.target === target);
+	if (!current || current.key !== key) return;
 	await tx('readwrite', (s) => s.delete(target));
 	pending = pending.filter((p) => p.target !== target);
 }

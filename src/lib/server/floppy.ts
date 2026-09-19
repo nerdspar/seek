@@ -67,13 +67,17 @@ async function acquire(): Promise<void> {
 		active++;
 		return;
 	}
+	// Full: wait to be handed a slot. release() passes ownership without touching
+	// `active`, so — unlike bumping the count here — a synchronous acquire slipping
+	// into the gap between the decrement and the wake can no longer overshoot.
 	await new Promise<void>((resolve) => waiting.push(resolve));
-	active++;
 }
 
 function release(): void {
-	active--;
-	waiting.shift()?.();
+	const next = waiting.shift();
+	// Hand this slot straight to a waiter (count unchanged), or free it if none.
+	if (next) next();
+	else active--;
 }
 
 export async function floppy<T = unknown>(path: string, opts: Req = {}): Promise<T> {
