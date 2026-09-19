@@ -311,6 +311,7 @@
 								<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
 									<Poster src={item.poster} width={110} height={165} radius={10} />
 									<span class="add"><AddButton mediaType={item.mediaType} source={item.source} mediaId={item.mediaId} title={item.title} added={item.tracked ?? false} onerror={(m) => (note = m)} /></span>
+									<span class="arradd"><ArrButton mediaType={item.mediaType} tmdbId={item.mediaId} title={item.title} onadd={(i) => (arrRequest = i)} compact size={30} /></span>
 								</button>
 								<span class="cap">{item.title}</span>
 								<span class="sub tnum">{[item.year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join(' · ')}</span>
