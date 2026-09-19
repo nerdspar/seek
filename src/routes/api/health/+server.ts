@@ -1,4 +1,5 @@
 import { json } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import { getInfo, whoami } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
@@ -14,6 +15,9 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ locals }) => {
 	const detail = locals.authed;
 	const out: Record<string, unknown> = { ok: false };
+	// The commit this build came from — reported even if Floppy is down, since
+	// "which version am I running?" is exactly what you ask when things look off.
+	if (detail) out.build = env.SEEK_BUILD_SHA || 'dev';
 
 	try {
 		const info = await getInfo();

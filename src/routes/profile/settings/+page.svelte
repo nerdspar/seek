@@ -474,6 +474,17 @@
 			</p>
 		{/if}
 	</section>
+
+	<section>
+		<h3>About</h3>
+		<div class="row">
+			<span class="rowtext">
+				<span class="label">Version</span>
+				<span class="hint">The build this instance is running</span>
+			</span>
+			<span class="count tnum">{(data.build ?? 'dev').slice(0, 7)}</span>
+		</div>
+	</section>
 </main>
 
 <style>

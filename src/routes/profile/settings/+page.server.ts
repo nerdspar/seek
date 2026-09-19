@@ -1,3 +1,4 @@
+import { env } from '$env/dynamic/private';
 import { getPrefs } from '$lib/server/prefs';
 import { FLOPPY_PUBLIC_URL } from '$lib/server/env';
 import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
@@ -14,6 +15,9 @@ export const load: PageServerLoad = async () => {
 		/* Verified against the running instance: Floppy has no bare /settings/
 		   route and its settings paths carry no trailing slash, so `/settings/`
 		   404s. Lands on notifications because that is what this row points at. */
-		floppyUrl: publicUrl ? `${publicUrl}/settings/notifications` : null
+		floppyUrl: publicUrl ? `${publicUrl}/settings/notifications` : null,
+		/* The commit this build came from (CI stamps it; "dev" locally), so the
+		   deployed version is visible at a glance. */
+		build: env.SEEK_BUILD_SHA || 'dev'
 	};
 };

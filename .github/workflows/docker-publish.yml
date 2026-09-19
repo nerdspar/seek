@@ -49,6 +49,10 @@ jobs:
           context: .
           platforms: linux/amd64 # TrueNAS SCALE is x86-64
           push: true
+          # Stamp the commit into the image so /api/health can report what's
+          # actually running — the answer to "did I redeploy the latest?".
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

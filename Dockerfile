@@ -21,6 +21,10 @@ ENV NODE_ENV=production
 # adapter-node reads these at runtime, so compose env alone configures the app.
 ENV PORT=8100
 ENV HOST=0.0.0.0
+# The commit this image was built from, passed by CI. Surfaced at /api/health so
+# "am I running the latest?" has an answer. Defaults to "dev" for local builds.
+ARG GIT_SHA=dev
+ENV SEEK_BUILD_SHA=$GIT_SHA
 
 COPY --from=build /app/build ./build
 COPY --from=deps /app/node_modules ./node_modules
