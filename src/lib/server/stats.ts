@@ -44,6 +44,9 @@ export type Stats = {
 	mostActiveDay: string | null;
 	mostActiveDayPct: number | null;
 	weekday: { label: string; hours: number }[];
+	/** Hours per calendar month for the window, split by type — the Profile chart.
+	 *  `labels` are month names; each series is the same length. */
+	monthly: { labels: string[]; all: number[]; tv: number[]; movie: number[] };
 	topGenres: { name: string; duration: string }[];
 	topTitles: TopTitle[];
 	/** What you rated highest. Empty until you rate something. */
@@ -109,6 +112,20 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 	const labels = arr(weekdayAll.labels).map(String);
 	const values = arr(arr(weekdayAll.datasets)[0] ? rec(arr(weekdayAll.datasets)[0]).data : []);
 
+	/* Monthly hours, per type. combined_plays_charts.by_month.<type>.datasets[0]
+	   is labelled "Hours" (verified live) — distinct from tv_consumption's own
+	   by_month, which is episode plays. Rounded to whole hours for the chart. */
+	const byMonth = rec(rec(st.combined_plays_charts).by_month);
+	const monthSeries = (type: string): { labels: string[]; data: number[] } => {
+		const m = rec(byMonth[type]);
+		const first = arr(m.datasets)[0];
+		return {
+			labels: arr(m.labels).map(String),
+			data: arr(first ? rec(first).data : []).map((v) => Math.round(num(v)))
+		};
+	};
+	const mAll = monthSeries('all');
+
 	return {
 		rangeLabel: str(rec(res.range).range_name) ?? label,
 		hours: Math.round(num(rec(consumption.primary).total)),
@@ -128,6 +145,12 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 			? summary.most_active_day_percentage
 			: null,
 		weekday: labels.map((l, i) => ({ label: l, hours: num(values[i]) })),
+		monthly: {
+			labels: mAll.labels,
+			all: mAll.data,
+			tv: monthSeries('tv').data,
+			movie: monthSeries('movie').data
+		},
 		topGenres: arr(tv.top_genres)
 			.slice(0, 6)
 			.map((g) => {
