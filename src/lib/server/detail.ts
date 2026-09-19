@@ -43,13 +43,13 @@ const showPath = (source: string, mediaId: string) =>
  * was the bug: Re:ZERO and Slime showing 0 watched while the watchlist, which
  * reads the anime row, had them at 77 and 90).
  */
-async function fetchTvDetail(path: string): Promise<Record<string, unknown>> {
+async function fetchTvDetail(path: string): Promise<{ d: Record<string, unknown>; anime: boolean }> {
 	const d = rec(await floppy(path));
-	if (d.tracked === true) return d;
+	if (d.tracked === true) return { d, anime: false };
 	const anime = rec(
 		await floppy(path, { query: { library_media_type: 'anime' } }).catch(() => ({}))
 	);
-	return anime.tracked === true ? anime : d;
+	return anime.tracked === true ? { d: anime, anime: true } : { d, anime: false };
 }
 
 /**
@@ -183,7 +183,7 @@ export async function getShow(
 	 *  these skips a per-season request each — the dominant cost of this page. */
 	knownSeasonEpisodes: Record<number, number> = {}
 ): Promise<ShowDetail> {
-	const d = await fetchTvDetail(`${showPath(source, mediaId)}/`);
+	const { d, anime } = await fetchTvDetail(`${showPath(source, mediaId)}/`);
 	const details = rec(d.details);
 	const related = rec(d.related);
 
@@ -238,6 +238,7 @@ export async function getShow(
 		maxProgress: num(d.max_progress),
 		progress: num(consumption.progress) ?? 0,
 		tracked: d.tracked === true,
+		anime,
 		status: str(details.status),
 		firstAirDate: str(details.first_air_date),
 		lastAirDate: str(details.last_air_date),
@@ -281,7 +282,7 @@ export async function getSeason(
 	mediaId: string,
 	seasonNumber: number
 ): Promise<SeasonDetail> {
-	const [d, parentTitle] = await Promise.all([
+	const [{ d }, parentTitle] = await Promise.all([
 		fetchTvDetail(`${showPath(source, mediaId)}/${seasonNumber}/`),
 		showTitle(source, mediaId)
 	]);
