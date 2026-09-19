@@ -25,6 +25,17 @@
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
 	onMount(() => void loadArrStatus());
 
+	/* The synopsis is clamped so a long one doesn't push the seasons off-screen.
+	   The "more" link only appears when the text actually overflows the clamp —
+	   measured, so a short synopsis gets no dangling toggle. */
+	let synopsisOpen = $state(false);
+	let synopsisEl: HTMLParagraphElement | undefined = $state();
+	let synopsisOverflows = $state(false);
+	$effect(() => {
+		const el = synopsisEl;
+		if (el && !synopsisOpen) synopsisOverflows = el.scrollHeight > el.clientHeight + 2;
+	});
+
 	/** Optimistic season toggles, layered over whatever the streamed show holds. */
 	let overrides = $state<Record<number, SeasonSummary>>({});
 	let busy = $state<Set<number>>(new Set());
@@ -309,16 +320,23 @@
 	</main>
 {:then show}
 	{@const tracked = trackedEdit ?? show.tracked}
-	{#snippet menuButton()}
-		<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
-		</button>
+	{#snippet headerActions()}
+		<div class="hactions">
+			<!-- Sonarr lives here rather than as its own row, to keep the vertical
+			     space for the synopsis and seasons. -->
+			<ArrButton mediaType="tv" tmdbId={data.mediaId} title={show.title} onadd={(i) => (arrRequest = i)} compact size={38} />
+			{#if tracked}
+				<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
+					<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
+				</button>
+			{/if}
+		</div>
 	{/snippet}
 
 	<PageHeader
 		title={show.title}
 		titleHidden={heroVisible}
-		action={tracked ? menuButton : undefined}
+		action={headerActions}
 		onback={() => history.back()}
 	/>
 
@@ -373,7 +391,7 @@
 					<StateChips
 						tracking={t}
 						{joint}
-						showCompany={data.companyTracking}
+						showCompany={data.companyTracking && !show.anime}
 						busy={trackBusy || jointBusy}
 						onmain={() => (statusOpen = true)}
 						onrating={() => (ratingOpen = true)}
@@ -388,10 +406,6 @@
 					<span>Add to library</span>
 				</button>
 			{/if}
-
-			<div class="arr-request">
-				<ArrButton mediaType="tv" tmdbId={data.mediaId} title={show.title} onadd={(i) => (arrRequest = i)} />
-			</div>
 
 			{#if statusOpen && tracked}
 				<StatusSheet
@@ -426,7 +440,14 @@
 		{/await}
 
 		{#if show.synopsis}
-			<p class="synopsis">{show.synopsis}</p>
+			<div class="synopsis">
+				<p bind:this={synopsisEl} class:clamped={!synopsisOpen}>{show.synopsis}</p>
+				{#if synopsisOverflows || synopsisOpen}
+					<button class="more" onclick={() => (synopsisOpen = !synopsisOpen)}>
+						{synopsisOpen ? 'Show less' : 'more…'}
+					</button>
+				{/if}
+			</div>
 		{/if}
 
 		<section>
@@ -578,12 +599,24 @@
 	}
 	.add:disabled { opacity: 0.6; }
 
-	/* The Sonarr/Radarr add pill sits under the tracking controls and matches
-	   their width. Empty (renders nothing) when the service is not configured. */
-	.arr-request { margin: -6px 0 16px; }
-	.arr-request :global(button) { width: 100%; }
+	/* Sonarr/Radarr add + overflow menu, side by side in the header. */
+	.hactions { display: flex; align-items: center; gap: 2px; }
 
-	.synopsis { margin: 0 0 22px; font-size: 14.5px; line-height: 1.55; }
+	.synopsis { margin: 0 0 22px; }
+	.synopsis p { margin: 0; font-size: 14.5px; line-height: 1.55; }
+	.synopsis p.clamped {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.more {
+		margin-top: 4px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--signal-solid);
+	}
 
 	section h2 {
 		margin: 0 0 10px; font-size: 13px; font-weight: 600;

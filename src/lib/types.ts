@@ -179,6 +179,9 @@ export type ShowDetail = {
 	maxProgress: number | null;
 	progress: number;
 	tracked: boolean;
+	/** Tracked in Floppy's grouped-anime bucket rather than tv. Its writes route
+	 *  to the anime path, and Floppy can't apply tags to it (so no joint chip). */
+	anime: boolean;
 	status: string | null;
 	firstAirDate: string | null;
 	lastAirDate: string | null;

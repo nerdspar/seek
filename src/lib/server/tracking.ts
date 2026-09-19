@@ -22,7 +22,7 @@
  * So writes send integers, which are unambiguous and work for all five states.
  * Never send the filter spelling.
  */
-import { floppy } from './floppy';
+import { floppy, FloppyError } from './floppy';
 import { memo } from './memo';
 import { UNTRACKED, type Tracking } from '$lib/tracking';
 import type { MediaType } from '$lib/types';
@@ -101,8 +101,20 @@ export async function setTracking(
 	if (change.score !== undefined) body.score = change.score;
 	if (!Object.keys(body).length) return;
 
-	await floppy(`/api/v1/media/${mediaType}/${source}/${encodeURIComponent(mediaId)}/`, {
-		method: 'PATCH',
-		body
-	});
+	const patch = (mt: MediaType) =>
+		floppy(`/api/v1/media/${mt}/${source}/${encodeURIComponent(mediaId)}/`, { method: 'PATCH', body });
+
+	try {
+		await patch(mediaType);
+	} catch (err) {
+		/* Grouped anime is tracked in the `anime` bucket, not `tv` — the show page
+		   only knows `tv`, so a PATCH there 404s. Verified live: the anime path is
+		   the one that takes the write (the tv path with ?library_media_type=anime
+		   does not). Retry there before giving up. */
+		if (mediaType === 'tv' && err instanceof FloppyError && err.status === 404) {
+			await patch('anime');
+			return;
+		}
+		throw err;
+	}
 }
