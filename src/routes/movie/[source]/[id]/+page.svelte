@@ -7,6 +7,10 @@
 	import StatusSheet from '$lib/components/StatusSheet.svelte';
 	import RatingSheet from '$lib/components/RatingSheet.svelte';
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
+	import ArrButton from '$lib/components/ArrButton.svelte';
+	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
+	import { loadArrStatus } from '$lib/arr.svelte';
+	import { onMount } from 'svelte';
 	import { formatRuntime } from '$lib/format';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { notify } from '$lib/notices.svelte';
@@ -17,6 +21,8 @@
 	let { data }: { data: PageData } = $props();
 
 	let note = $state<string | null>(null);
+	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
+	onMount(() => void loadArrStatus());
 	let statusOpen = $state(false);
 	let ratingOpen = $state(false);
 	let menuOpen = $state(false);
@@ -264,6 +270,10 @@
 				</button>
 			{/if}
 
+			<div class="arr-request">
+				<ArrButton mediaType="movie" tmdbId={data.mediaId} title={movie.title} onadd={(i) => (arrRequest = i)} />
+			</div>
+
 			{#if statusOpen && tracked}
 				<StatusSheet
 					title={movie.title}
@@ -373,8 +383,16 @@
 	</div>
 {/if}
 
+{#if arrRequest}
+	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
+{/if}
+
 <style>
 	main { padding: 4px 0 calc(var(--safe-b) + 32px); }
+	/* Sonarr/Radarr add pill under the tracking controls; matches their width.
+	   The movie page carries its own side gutter on the chip row. */
+	.arr-request { margin: -6px var(--gutter) 16px; }
+	.arr-request :global(button) { width: 100%; }
 	.hero { display: flex; gap: 14px; padding: 0 var(--gutter); margin-bottom: 16px; }
 	.facts { flex: 1; min-width: 0; }
 	h1 { margin: 0 0 8px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }

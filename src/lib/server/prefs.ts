@@ -69,7 +69,15 @@ export type Prefs = {
 	/** Push each show as it airs — at its real time, or local midnight for an
 	 *  all-day streaming drop. Independent of the daily digest. */
 	notifyAtTime: boolean;
+	/** Where Sonarr/Radarr files new adds and at what quality (§ requests). Null
+	 *  until picked in Settings; the connection itself lives in env. */
+	sonarr: ArrPref | null;
+	radarr: ArrPref | null;
 };
+
+/** The two choices an add needs beyond the title — the rest (monitored, search)
+ *  are decided per add. */
+export type ArrPref = { rootFolderPath: string; qualityProfileId: number };
 
 export const DEFAULTS: Prefs = {
 	markDirection: 'rtl',
@@ -84,7 +92,9 @@ export const DEFAULTS: Prefs = {
 	moodPresets: null,
 	notifyDigest: false,
 	digestHour: 8,
-	notifyAtTime: false
+	notifyAtTime: false,
+	sonarr: null,
+	radarr: null
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */

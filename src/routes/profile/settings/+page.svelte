@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import type { Accent, Appearance, MarkDirection, Prefs } from '$lib/server/prefs';
+	import type { Accent, Appearance, MarkDirection, Prefs, ArrPref } from '$lib/server/prefs';
 	import { setNoticesEnabled } from '$lib/notices.svelte';
 	import { pushStatus, subscribe, unsubscribe, sendTest, type PushStatus } from '$lib/push';
 	import type { PageData } from './$types';
@@ -23,6 +23,28 @@
 			.then((b) => (allServices = b.services ?? []))
 			.catch(() => {});
 	});
+
+	/* Root folders + quality profiles for each configured *arr, fetched from the
+	   instances so the picker offers real choices. */
+	type ArrOpts = {
+		configured: boolean;
+		rootFolders: { path: string; freeSpace: number | null }[];
+		profiles: { id: number; name: string }[];
+	};
+	let arrOptions = $state<{ sonarr: ArrOpts; radarr: ArrOpts } | null>(null);
+	$effect(() => {
+		fetch('/api/arr/options')
+			.then((r) => (r.ok ? r.json() : null))
+			.then((b) => {
+				if (b) arrOptions = b;
+			})
+			.catch(() => {});
+	});
+	const ARR_SERVICES = [
+		{ key: 'sonarr', label: 'Sonarr', kind: 'TV & anime' },
+		{ key: 'radarr', label: 'Radarr', kind: 'Movies' }
+	] as const;
+	const anyArr = $derived(!!arrOptions && (arrOptions.sonarr.configured || arrOptions.radarr.configured));
 
 	/* Optimistic edit layered over the prop, so a save that fails simply reverts
 	   by clearing it. */
@@ -191,6 +213,16 @@
 			edited = before;
 			failed = `Couldn't save — ${err instanceof Error ? err.message : err}`;
 		}
+	}
+
+	/* Saves one *arr choice, preserving the other field (the pref is a pair). */
+	function setArr(service: 'sonarr' | 'radarr', change: Partial<ArrPref>) {
+		const cur = (local[service] ?? {}) as Partial<ArrPref>;
+		const next: ArrPref = {
+			rootFolderPath: change.rootFolderPath ?? cur.rootFolderPath ?? '',
+			qualityProfileId: change.qualityProfileId ?? cur.qualityProfileId ?? -1
+		};
+		void patch({ [service]: next } as Partial<Prefs>);
 	}
 </script>
 
@@ -457,6 +489,40 @@
 
 	{#if failed}<p class="error">{failed}</p>{/if}
 
+	{#if anyArr}
+		<section>
+			<h3>Send to Sonarr / Radarr</h3>
+			{#each ARR_SERVICES as s (s.key)}
+				{#if arrOptions && arrOptions[s.key].configured}
+					{@const opts = arrOptions[s.key]}
+					{@const pref = local[s.key]}
+					<div class="arrsvc">
+						<p class="arrname">{s.label} <span class="hint">· {s.kind}</span></p>
+						{#if !opts.rootFolders.length && !opts.profiles.length}
+							<p class="hint">Couldn’t reach {s.label} — check its URL and API key.</p>
+						{:else}
+							<label class="row">
+								<span class="rowtext"><span class="label">Root folder</span></span>
+								<select class="hour arrsel" value={pref?.rootFolderPath ?? ''} onchange={(e) => setArr(s.key, { rootFolderPath: e.currentTarget.value })}>
+									{#if !pref?.rootFolderPath}<option value="" disabled selected>Choose…</option>{/if}
+									{#each opts.rootFolders as rf (rf.path)}<option value={rf.path}>{rf.path}</option>{/each}
+								</select>
+							</label>
+							<label class="row">
+								<span class="rowtext"><span class="label">Quality profile</span></span>
+								<select class="hour arrsel" value={pref?.qualityProfileId ?? -1} onchange={(e) => setArr(s.key, { qualityProfileId: Number(e.currentTarget.value) })}>
+									{#if !pref}<option value={-1} disabled selected>Choose…</option>{/if}
+									{#each opts.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+								</select>
+							</label>
+						{/if}
+					</div>
+				{/if}
+			{/each}
+			<p class="hint">New adds go to the chosen folder at this quality. You choose “search now” or “monitor only” each time.</p>
+		</section>
+	{/if}
+
 	<section>
 		<h3>Floppy</h3>
 		{#if floppyUrl}
@@ -496,6 +562,12 @@
 
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	section { margin-bottom: 18px; }
+
+	.arrsvc { margin-bottom: 12px; }
+	.arrname { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+	.arrname .hint { font-weight: 400; }
+	/* Root-folder paths get long; let the select take the space and ellipsize. */
+	.arrsel { max-width: 62%; }
 
 	.choices { display: flex; flex-direction: column; gap: 6px; }
 	.choices button {

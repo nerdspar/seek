@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import AddButton from '$lib/components/AddButton.svelte';
+	import ArrButton from '$lib/components/ArrButton.svelte';
+	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
+	import { loadArrStatus } from '$lib/arr.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import type { TmdbResult } from '$lib/types';
 	import type { PageData } from './$types';
@@ -10,6 +14,11 @@
 	let { data }: { data: PageData } = $props();
 
 	let note = $state<string | null>(null);
+
+	/** The title whose Sonarr/Radarr add sheet is open, if any. One sheet for the
+	 *  whole page — a dialog cannot live inside a tile's own <button>. */
+	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
+	onMount(() => void loadArrStatus());
 
 	/* ── Mood and theme search (§6.2) ──────────────────────────────────────
 	   The distinguishing feature: "I want a heist show", not a trending grid.
@@ -221,6 +230,7 @@
 								<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
 									<Poster src={item.poster} width={110} height={165} radius={10} />
 									<span class="add"><AddButton mediaType={item.mediaType} source={item.source} mediaId={item.mediaId} title={item.title} onerror={(m) => (note = m)} /></span>
+									<span class="arradd"><ArrButton mediaType={item.mediaType} tmdbId={item.mediaId} title={item.title} onadd={(i) => (arrRequest = i)} compact size={30} /></span>
 								</button>
 								<span class="cap">{item.title}</span>
 								<span class="sub tnum">{[item.year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join(' · ')}</span>
@@ -252,6 +262,7 @@
 									<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
 										<Poster src={item.poster} width={110} height={165} radius={10} />
 										<span class="add"><AddButton mediaType={item.mediaType} source={item.source} mediaId={item.mediaId} title={item.title} added={item.tracked ?? false} onerror={(m) => (note = m)} /></span>
+										<span class="arradd"><ArrButton mediaType={item.mediaType} tmdbId={item.mediaId} title={item.title} onadd={(i) => (arrRequest = i)} compact size={30} /></span>
 									</button>
 									<span class="cap">{item.title}</span>
 									<span class="sub tnum">{[item.year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join(' · ')}</span>
@@ -275,6 +286,7 @@
 							<button class="tile" onclick={() => open(r.mediaType, r.source, r.mediaId)}>
 								<Poster src={r.poster} width={110} height={165} radius={10} />
 								<span class="add"><AddButton mediaType={r.mediaType} source={r.source} mediaId={r.mediaId} title={r.title} onerror={(m) => (note = m)} /></span>
+								<span class="arradd"><ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={30} /></span>
 							</button>
 							<span class="cap">{r.title}</span>
 							<span class="sub tnum">{[r.year, r.rating ? `★ ${r.rating}` : null].filter(Boolean).join(' · ')}</span>
@@ -321,6 +333,10 @@
 			<span>{note}</span>
 			<button onclick={() => (note = null)} aria-label="Dismiss">×</button>
 		</div>
+	{/if}
+
+	{#if arrRequest}
+		<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
 	{/if}
 </div>
 
@@ -402,6 +418,7 @@
 
 	.tile { position: relative; display: block; width: 110px; }
 	.add { position: absolute; right: 5px; bottom: 5px; }
+	.arradd { position: absolute; right: 5px; top: 5px; }
 
 	.cap {
 		display: block; margin-top: 6px; font-size: 12.5px; font-weight: 600;

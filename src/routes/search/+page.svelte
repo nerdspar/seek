@@ -1,11 +1,18 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import AddButton from '$lib/components/AddButton.svelte';
+	import ArrButton from '$lib/components/ArrButton.svelte';
+	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
+	import { loadArrStatus } from '$lib/arr.svelte';
 	import type { SearchResult } from '$lib/types';
 	import type { PageData } from './$types';
+
+	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
+	onMount(() => void loadArrStatus());
 
 	let { data }: { data: PageData } = $props();
 
@@ -151,6 +158,9 @@
 								onerror={(m) => (failed = m)}
 							/>
 						</span>
+						<span class="gridarradd">
+							<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={30} />
+						</span>
 					</li>
 				{/each}
 			</ul>
@@ -187,11 +197,18 @@
 							<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
 						{/if}
 					</button>
+					<span class="rowarr">
+						<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={34} />
+					</span>
 				</li>
 			{/each}
 		</ul>
 	{/if}
 </main>
+
+{#if arrRequest}
+	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
+{/if}
 
 <style>
 	main {
@@ -273,6 +290,7 @@
 	.grid li { position: relative; }
 	.grid li > button { width: 100%; text-align: left; }
 	.gridadd { position: absolute; right: 5px; top: 128px; }
+	.gridarradd { position: absolute; right: 5px; top: 5px; }
 	.cap {
 		display: -webkit-box; margin-top: 6px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
 		overflow: hidden; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
@@ -289,10 +307,15 @@
 	}
 	.results li {
 		display: grid;
-		grid-template-columns: 1fr auto;
+		grid-template-columns: 1fr auto auto;
 		align-items: center;
 		border-radius: var(--radius);
 		background: var(--surface);
+	}
+	.rowarr {
+		display: grid;
+		place-items: center;
+		padding-right: 8px;
 	}
 	.body {
 		display: grid;
