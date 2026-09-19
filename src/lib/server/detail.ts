@@ -33,6 +33,26 @@ const showPath = (source: string, mediaId: string) =>
 	`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}`;
 
 /**
+ * Fetch a TV detail (a show or one of its seasons), reaching into the
+ * grouped-anime bucket when that is where the tracking lives.
+ *
+ * A grouped-anime title is two Items on one TMDB id: a plain `tv` row that
+ * carries none of your progress, and an `anime` row that carries all of it. The
+ * tv path resolves the empty twin — so an untracked result is the cue to look
+ * at the anime bucket before the page concludes you have watched nothing (which
+ * was the bug: Re:ZERO and Slime showing 0 watched while the watchlist, which
+ * reads the anime row, had them at 77 and 90).
+ */
+async function fetchTvDetail(path: string): Promise<Record<string, unknown>> {
+	const d = rec(await floppy(path));
+	if (d.tracked === true) return d;
+	const anime = rec(
+		await floppy(path, { query: { library_media_type: 'anime' } }).catch(() => ({}))
+	);
+	return anime.tracked === true ? anime : d;
+}
+
+/**
  * A film's detail. Its own function rather than a branch inside getShow: the
  * expensive half of that one is resolving per-season episode counts, and none
  * of it applies here.
@@ -163,7 +183,7 @@ export async function getShow(
 	 *  these skips a per-season request each — the dominant cost of this page. */
 	knownSeasonEpisodes: Record<number, number> = {}
 ): Promise<ShowDetail> {
-	const d = rec(await floppy(`${showPath(source, mediaId)}/`));
+	const d = await fetchTvDetail(`${showPath(source, mediaId)}/`);
 	const details = rec(d.details);
 	const related = rec(d.related);
 
@@ -262,7 +282,7 @@ export async function getSeason(
 	seasonNumber: number
 ): Promise<SeasonDetail> {
 	const [d, parentTitle] = await Promise.all([
-		floppy(`${showPath(source, mediaId)}/${seasonNumber}/`).then(rec),
+		fetchTvDetail(`${showPath(source, mediaId)}/${seasonNumber}/`),
 		showTitle(source, mediaId)
 	]);
 	const related = rec(d.related);
