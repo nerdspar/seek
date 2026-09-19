@@ -69,6 +69,22 @@ export type Prefs = {
 	/** Push each show as it airs — at its real time, or local midnight for an
 	 *  all-day streaming drop. Independent of the daily digest. */
 	notifyAtTime: boolean;
+	/** Where Sonarr/Radarr files new adds and at what quality (§ requests). Null
+	 *  until picked in Settings; the connection itself lives in env. */
+	sonarr: ArrPref | null;
+	radarr: ArrPref | null;
+};
+
+/** Default add settings for one *arr. These pre-fill the add sheet, where any of
+ *  them can be overridden per title. `monitor` is a service-specific enum
+ *  (Sonarr: all/future/…; Radarr: movieOnly/…); `tags` are tag labels, resolved
+ *  to ids (created if new) at add time. Both are optional for back-compat with
+ *  prefs written before they existed. */
+export type ArrPref = {
+	rootFolderPath: string;
+	qualityProfileId: number;
+	monitor?: string;
+	tags?: string[];
 };
 
 export const DEFAULTS: Prefs = {
@@ -84,7 +100,9 @@ export const DEFAULTS: Prefs = {
 	moodPresets: null,
 	notifyDigest: false,
 	digestHour: 8,
-	notifyAtTime: false
+	notifyAtTime: false,
+	sonarr: null,
+	radarr: null
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */

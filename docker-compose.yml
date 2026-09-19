@@ -110,6 +110,18 @@ services:
       # A contact the push services can reach you at — mailto: or https:.
       VAPID_SUBJECT: "mailto:you@example.com" # ⬅ VAPID_SUBJECT
 
+      # --- Sonarr / Radarr: send shows & movies for monitoring ---------------
+      # Optional. Set a service's URL + API key and an "Add to Sonarr/Radarr"
+      # button appears on Discover, Search and the detail pages. Leave blank and
+      # the button simply never shows. The API key (Settings → General →
+      # Security in each app) is read server-side only, never sent to the phone.
+      # Use an address Seek's container can reach — a container name on the same
+      # Docker network, or the LAN IP:port.
+      SONARR_URL: "" # ⬅ e.g. http://sonarr:8989
+      SONARR_API_KEY: "" # ⬅ SONARR_API_KEY
+      RADARR_URL: "" # ⬅ e.g. http://radarr:7878
+      RADARR_API_KEY: "" # ⬅ RADARR_API_KEY
+
     ports:
       # host:container — the app listens on 8100 inside the container. Change
       # the LEFT number if 8100 is already taken on your NAS.

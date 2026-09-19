@@ -7,6 +7,10 @@
 	import StatusSheet from '$lib/components/StatusSheet.svelte';
 	import RatingSheet from '$lib/components/RatingSheet.svelte';
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
+	import ArrButton from '$lib/components/ArrButton.svelte';
+	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
+	import { loadArrStatus } from '$lib/arr.svelte';
+	import { onMount } from 'svelte';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { formatRuntime } from '$lib/format';
 	import { haptic } from '$lib/haptics';
@@ -17,6 +21,9 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
+	onMount(() => void loadArrStatus());
 
 	/** Optimistic season toggles, layered over whatever the streamed show holds. */
 	let overrides = $state<Record<number, SeasonSummary>>({});
@@ -382,6 +389,10 @@
 				</button>
 			{/if}
 
+			<div class="arr-request">
+				<ArrButton mediaType="tv" tmdbId={data.mediaId} title={show.title} onadd={(i) => (arrRequest = i)} />
+			</div>
+
 			{#if statusOpen && tracked}
 				<StatusSheet
 					title={show.title}
@@ -522,6 +533,10 @@
 	</div>
 {/if}
 
+{#if arrRequest}
+	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
+{/if}
+
 <style>
 	main { padding: 0 var(--gutter) calc(var(--safe-b) + 32px); }
 
@@ -563,6 +578,10 @@
 	}
 	.add:disabled { opacity: 0.6; }
 
+	/* The Sonarr/Radarr add pill sits under the tracking controls and matches
+	   their width. Empty (renders nothing) when the service is not configured. */
+	.arr-request { margin: -6px 0 16px; }
+	.arr-request :global(button) { width: 100%; }
 
 	.synopsis { margin: 0 0 22px; font-size: 14.5px; line-height: 1.55; }
 
