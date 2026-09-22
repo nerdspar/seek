@@ -2,17 +2,19 @@
 	import type { Snippet } from 'svelte';
 
 	/**
-	 * Bottom sheet with a grab handle that both taps and drags to dismiss.
+	 * Bottom sheet you can drag down from anywhere to dismiss.
 	 *
-	 * The hard part is a *scrollable* sheet (the filter and episode sheets have
-	 * their own scroll area). If the whole sheet is the scroll container, the
-	 * browser claims every vertical touch for scrolling (`touch-action: pan-y`)
-	 * and cancels the drag — so you get stuck inside with no way out. The fix is
-	 * to split the two jobs: a fixed **handle** at the top owns the dismiss
-	 * gesture (`touch-action: none`, so drags and taps on it always reach us),
-	 * and an inner **body** owns scrolling. Content-drag-to-dismiss still works
-	 * from the body when it is already scrolled to the top, the rule native
-	 * sheets use, but the handle is the guaranteed way out either way.
+	 * Two ways out: a flick down closes it at any distance, and a slow drag closes
+	 * it once it has passed half the sheet's height (otherwise it springs back).
+	 * The grab handle also closes on a plain tap.
+	 *
+	 * The drag works anywhere on the sheet, including over its buttons and its
+	 * scrolling content. The subtlety is a *scrollable* sheet: dragging up, or
+	 * down from a scrolled position, must scroll the content, while dragging down
+	 * from the top must dismiss. We decide which on the first move, and when it is
+	 * a dismiss we `preventDefault` the touch so the browser doesn't also scroll —
+	 * the piece a plain `touch-action` can't express, and the reason the sheet
+	 * used to feel stuck.
 	 */
 	type Props = {
 		label: string;
@@ -30,7 +32,8 @@
 	let closing = $state(false);
 	/* Sheet height, captured when a drag starts. scrimOpacity is recomputed on
 	   every drag frame; reading `pane.offsetHeight` there forced a layout each
-	   frame. The height is stable during a dismiss, so read it once. */
+	   frame. The height is stable during a dismiss, so read it once — and it also
+	   sets the slow-drag threshold (half the sheet). */
 	let paneHeight = 400;
 
 	let startY = 0;
@@ -48,11 +51,12 @@
 	type Sample = { y: number; t: number };
 	let samples: Sample[] = [];
 
-	const DISMISS_PX = 110;
-	const DISMISS_VELOCITY = 0.55; // px per ms
+	const DISMISS_VELOCITY = 0.55; // px per ms — a flick, at any distance
 	const VELOCITY_WINDOW_MS = 90;
 	/** Below this the sample span is too short to infer a flick from. */
 	const MIN_VELOCITY_SPAN_MS = 25;
+	/** Movement before we commit to an axis. */
+	const AXIS_THRESHOLD = 8;
 
 	function flickVelocity(): number {
 		if (samples.length < 2) return 0;
@@ -76,23 +80,34 @@
 		if (!moved) close();
 	}
 
+	/** Would a downward drag from here dismiss (vs. scroll the content)? */
+	function canDismissFrom(target: EventTarget | null): boolean {
+		if (!scrollable) return true;
+		if ((target as HTMLElement | null)?.closest('.grip')) return true;
+		return (body?.scrollTop ?? 0) <= 0;
+	}
+
+	function begin(target: EventTarget | null, x: number, y: number) {
+		startY = y;
+		startX = x;
+		samples = [{ y, t: performance.now() }];
+		axis = 'undecided';
+		moved = false;
+		startedAtTop = canDismissFrom(target);
+		paneHeight = pane?.offsetHeight ?? 400;
+		dragging = true;
+	}
+
 	function onpointerdown(e: PointerEvent) {
 		if (closing || pointer !== null) return;
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
-		// Never start a drag from a control — buttons own their own taps.
-		if ((e.target as HTMLElement | null)?.closest('button, a, input, select, textarea')) return;
+		// Native form controls need their own gestures; everything else on the
+		// sheet — buttons, links, plain content — can start a dismiss drag, and a
+		// tap still reaches the control because we only take over once it moves.
+		if ((e.target as HTMLElement | null)?.closest('input, select, textarea')) return;
 
 		pointer = e.pointerId;
-		startY = e.clientY;
-		startX = e.clientX;
-		samples = [{ y: e.clientY, t: performance.now() }];
-		axis = 'undecided';
-		moved = false;
-		// A drag started on the handle is always a dismiss, never a scroll.
-		const onHandle = !!(e.target as HTMLElement | null)?.closest('.grip');
-		startedAtTop = onHandle || !scrollable || (body?.scrollTop ?? 0) <= 0;
-		paneHeight = pane?.offsetHeight ?? 400;
-		dragging = true;
+		begin(e.target, e.clientX, e.clientY);
 	}
 
 	function onpointermove(e: PointerEvent) {
@@ -103,12 +118,13 @@
 
 		if (axis === 'undecided') {
 			if (Math.abs(rawX) > 12 && Math.abs(rawX) > Math.abs(rawY)) {
+				// Horizontal — hand it back (e.g. a scrolling chip row).
 				axis = 'x';
 				dragging = false;
 				pointer = null;
 				return;
 			}
-			if (Math.abs(rawY) > 8) {
+			if (Math.abs(rawY) > AXIS_THRESHOLD) {
 				// Dragging up, or down from a scrolled position, belongs to the
 				// content rather than the sheet.
 				if (rawY < 0 || !startedAtTop) {
@@ -122,7 +138,7 @@
 				try {
 					pane?.setPointerCapture(e.pointerId);
 				} catch {
-					/* capture is an optimisation */
+					/* capture is an optimisation, and also cancels a button's tap */
 				}
 			} else {
 				return;
@@ -140,7 +156,9 @@
 
 	function onpointerup(e: PointerEvent) {
 		if (e.pointerId !== pointer) return;
-		const shouldClose = axis === 'y' && (dy > DISMISS_PX || flickVelocity() > DISMISS_VELOCITY);
+		// A flick closes at any distance; a slow drag must clear half the sheet.
+		const shouldClose =
+			axis === 'y' && (dy > paneHeight / 2 || flickVelocity() > DISMISS_VELOCITY);
 		dragging = false;
 		pointer = null;
 		axis = 'undecided';
@@ -150,13 +168,36 @@
 		else dy = 0;
 	}
 
-	function oncancel(e: PointerEvent) {
+	function reset(e: PointerEvent) {
 		if (e.pointerId !== pointer) return;
 		dragging = false;
 		pointer = null;
 		axis = 'undecided';
 		samples = [];
 		dy = 0;
+	}
+
+	/* While a dismiss drag is live, stop the browser from also scrolling the body.
+	   Must be a non-passive listener, so it's attached by hand. Deciding here too
+	   (not only in pointermove) matters on iOS, which commits to a scroll on the
+	   first unprevented move. */
+	function suppressScroll(node: HTMLElement) {
+		const handler = (e: TouchEvent) => {
+			if (!dragging) return;
+			if (axis === 'y') {
+				e.preventDefault();
+				return;
+			}
+			if (axis === 'undecided') {
+				const t = e.touches[0];
+				if (!t) return;
+				const rawY = t.clientY - startY;
+				const rawX = t.clientX - startX;
+				if (rawY > 0 && startedAtTop && Math.abs(rawY) > Math.abs(rawX)) e.preventDefault();
+			}
+		};
+		node.addEventListener('touchmove', handler, { passive: false });
+		return { destroy: () => node.removeEventListener('touchmove', handler) };
 	}
 
 	function onkeydown(e: KeyboardEvent) {
@@ -189,10 +230,11 @@
 	aria-modal="true"
 	aria-label={label}
 	tabindex="-1"
+	use:suppressScroll
 	{onpointerdown}
 	{onpointermove}
 	{onpointerup}
-	onpointercancel={oncancel}
+	onpointercancel={reset}
 >
 	<div
 		class="grip"
@@ -232,7 +274,8 @@
 		max-height: 88dvh;
 		background: var(--surface);
 		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-		/* Non-scrolling sheets hand every vertical drag to the dismiss gesture. */
+		/* JS owns the vertical gesture (dismiss vs. scroll); the browser may still
+		   pan horizontally for a scrolling chip row inside. */
 		touch-action: pan-x;
 		will-change: transform;
 		animation: rise 240ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -242,10 +285,6 @@
 		padding-bottom: calc(var(--safe-b) + 16px);
 	}
 	.sheet.scrollable {
-		/* The frame owns the dismiss gesture; the body inside owns scrolling. With
-		   the two split, a drag that starts anywhere but the scrolling body — the
-		   handle, the padding — reliably dismisses instead of being swallowed. */
-		touch-action: none;
 		overflow: hidden;
 	}
 	.sheet.settling {
@@ -258,8 +297,8 @@
 	}
 
 	/* The scrolling area of a scrollable sheet. pan-y lets the browser scroll it;
-	   dismissal from here still works because the drag handler only claims the
-	   gesture when the body is already at the top. */
+	   a dismiss drag from the top is caught in JS, which preventDefaults the touch
+	   so the browser doesn't scroll at the same time. */
 	.body {
 		flex: 1 1 auto;
 		min-height: 0;
@@ -269,8 +308,7 @@
 		padding-bottom: calc(var(--safe-b) + 16px);
 	}
 
-	/* A generous, always-hittable grab handle: full width so a tap or drag lands,
-	   touch-action:none so the browser never steals the gesture for scrolling. */
+	/* A generous, always-hittable grab handle; JS owns its gesture entirely. */
 	.grip {
 		flex: none;
 		display: grid;
