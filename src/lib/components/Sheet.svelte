@@ -2,27 +2,29 @@
 	import type { Snippet } from 'svelte';
 
 	/**
-	 * Bottom sheet with drag-to-dismiss.
+	 * Bottom sheet with a grab handle that both taps and drags to dismiss.
 	 *
-	 * The grip used to be decorative, which is worse than having no grip at all —
-	 * it advertises a gesture that does nothing. Dragging anywhere on the sheet
-	 * now dismisses it.
-	 *
-	 * The one subtlety: a scrollable sheet (the episode sheet has a still, a
-	 * synopsis and a button) must not steal downward drags that are meant to
-	 * scroll its content back up. So a dismiss only begins when the content is
-	 * already at the top, which is the same rule native sheets use.
+	 * The hard part is a *scrollable* sheet (the filter and episode sheets have
+	 * their own scroll area). If the whole sheet is the scroll container, the
+	 * browser claims every vertical touch for scrolling (`touch-action: pan-y`)
+	 * and cancels the drag — so you get stuck inside with no way out. The fix is
+	 * to split the two jobs: a fixed **handle** at the top owns the dismiss
+	 * gesture (`touch-action: none`, so drags and taps on it always reach us),
+	 * and an inner **body** owns scrolling. Content-drag-to-dismiss still works
+	 * from the body when it is already scrolled to the top, the rule native
+	 * sheets use, but the handle is the guaranteed way out either way.
 	 */
 	type Props = {
 		label: string;
 		onclose: () => void;
-		/** Sheets with their own scroll area need the content pane measured. */
+		/** Sheets with their own scroll area put content in a scrolling body. */
 		scrollable?: boolean;
 		children: Snippet;
 	};
 	let { label, onclose, scrollable = false, children }: Props = $props();
 
 	let pane: HTMLElement | undefined = $state();
+	let body: HTMLElement | undefined = $state();
 	let dy = $state(0);
 	let dragging = $state(false);
 	let closing = $state(false);
@@ -36,6 +38,9 @@
 	let startedAtTop = true;
 	let axis: 'undecided' | 'y' | 'x' | 'scroll' = 'undecided';
 	let pointer: number | null = null;
+	/* A drag that moved suppresses the handle's click, so a snap-back drag on the
+	   grip doesn't also fire tap-to-close. */
+	let moved = false;
 	/* Velocity is measured over a short trailing window rather than between
 	   consecutive events. Consecutive-sample velocity divides by a dt that can be
 	   a fraction of a millisecond, which produces a huge number from a tiny
@@ -66,6 +71,11 @@
 		setTimeout(onclose, 190);
 	}
 
+	/** Tap on the grab handle — close, unless the tap was really a drag. */
+	function gripTap() {
+		if (!moved) close();
+	}
+
 	function onpointerdown(e: PointerEvent) {
 		if (closing || pointer !== null) return;
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -77,7 +87,10 @@
 		startX = e.clientX;
 		samples = [{ y: e.clientY, t: performance.now() }];
 		axis = 'undecided';
-		startedAtTop = !scrollable || (pane?.scrollTop ?? 0) <= 0;
+		moved = false;
+		// A drag started on the handle is always a dismiss, never a scroll.
+		const onHandle = !!(e.target as HTMLElement | null)?.closest('.grip');
+		startedAtTop = onHandle || !scrollable || (body?.scrollTop ?? 0) <= 0;
 		paneHeight = pane?.offsetHeight ?? 400;
 		dragging = true;
 	}
@@ -105,6 +118,7 @@
 					return;
 				}
 				axis = 'y';
+				moved = true;
 				try {
 					pane?.setPointerCapture(e.pointerId);
 				} catch {
@@ -180,8 +194,21 @@
 	{onpointerup}
 	onpointercancel={oncancel}
 >
-	<div class="grip" aria-hidden="true"></div>
-	{@render children()}
+	<div
+		class="grip"
+		role="button"
+		aria-label="Close"
+		tabindex="0"
+		onclick={gripTap}
+		onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), close())}
+	>
+		<span class="bar"></span>
+	</div>
+	{#if scrollable}
+		<div class="body" bind:this={body}>{@render children()}</div>
+	{:else}
+		{@render children()}
+	{/if}
 </div>
 
 <style>
@@ -200,8 +227,9 @@
 		right: 0;
 		bottom: 0;
 		z-index: 71;
+		display: flex;
+		flex-direction: column;
 		max-height: 88dvh;
-		padding-bottom: calc(var(--safe-b) + 16px);
 		background: var(--surface);
 		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 		/* Non-scrolling sheets hand every vertical drag to the dismiss gesture. */
@@ -209,15 +237,16 @@
 		will-change: transform;
 		animation: rise 240ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
+	/* Non-scrolling sheets grow to their content and carry the bottom safe area. */
+	.sheet:not(.scrollable) {
+		padding-bottom: calc(var(--safe-b) + 16px);
+	}
 	.sheet.scrollable {
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		/* A scrolling sheet must let the browser scroll it — pan-x here meant the
-		   content simply could not move, which is what made the filter sheet feel
-		   stuck. Dismissal still works: the drag handler only claims the gesture
-		   when the content is already at the top, where there is nothing to
-		   scroll anyway. */
-		touch-action: pan-y;
+		/* The frame owns the dismiss gesture; the body inside owns scrolling. With
+		   the two split, a drag that starts anywhere but the scrolling body — the
+		   handle, the padding — reliably dismisses instead of being swallowed. */
+		touch-action: none;
+		overflow: hidden;
 	}
 	.sheet.settling {
 		transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -228,14 +257,36 @@
 		}
 	}
 
+	/* The scrolling area of a scrollable sheet. pan-y lets the browser scroll it;
+	   dismissal from here still works because the drag handler only claims the
+	   gesture when the body is already at the top. */
+	.body {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		touch-action: pan-y;
+		padding-bottom: calc(var(--safe-b) + 16px);
+	}
+
+	/* A generous, always-hittable grab handle: full width so a tap or drag lands,
+	   touch-action:none so the browser never steals the gesture for scrolling. */
 	.grip {
-		position: sticky;
-		top: 0;
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 100%;
+		height: 28px;
+		cursor: grab;
+		touch-action: none;
+	}
+	.grip:active {
+		cursor: grabbing;
+	}
+	.grip .bar {
 		width: 40px;
 		height: 4px;
-		margin: 9px auto;
 		border-radius: 2px;
 		background: var(--surface-raised);
-		z-index: 2;
 	}
 </style>
