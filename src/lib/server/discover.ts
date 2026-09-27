@@ -11,7 +11,16 @@
  */
 import { floppy } from './floppy';
 import { allTrackedIds } from './search';
-import type { MediaType } from '$lib/types';
+import { memo } from './memo';
+import { dedupe, tmdbConfigured, tmdbDiscover, tmdbGenres, tmdbTrending, type DiscoverParams } from './tmdb';
+import type { MediaType, TmdbResult } from '$lib/types';
+
+/** Two TMDB pages concatenated, so a row still fills up after the library and
+ *  cross-row duplicates are filtered out. */
+const deepDiscover = (p: Omit<DiscoverParams, 'page'>): Promise<TmdbResult[]> =>
+	Promise.all([tmdbDiscover({ ...p, page: 1 }), tmdbDiscover({ ...p, page: 2 })]).then(([a, b]) =>
+		dedupe([...a, ...b])
+	);
 
 export type DiscoverItem = {
 	mediaId: string;
@@ -55,40 +64,150 @@ function mapItem(raw: unknown): DiscoverItem | null {
 	};
 }
 
-/**
- * Rows that are *about* the library rather than suggestions beyond it.
- *
- * Measured against a live instance, each is a clean single status: top_picks
- * is everything Planning, clear_out_next everything In progress, and
- * comfort_rewatches everything Completed. Filtering tracked items would empty
- * all three rather than tidy them — including top_picks, whose own blurb calls
- * itself "New-to-you shows" while being entirely your own watchlist.
- */
-const ABOUT_YOUR_LIBRARY = new Set(['top_picks_for_you', 'clear_out_next', 'comfort_rewatches']);
+const PER_ROW = 20;
+const YEAR = new Date().getFullYear();
+const untrackedItems = (list: TmdbResult[], tracked: Set<string>): DiscoverItem[] =>
+	list.filter((i) => !tracked.has(i.mediaId)).map((i) => ({ ...i, tracked: false }));
 
+/**
+ * The user's most-watched genres, as TMDB genre ids, for the "Because you like
+ * <Genre>" rows. Floppy's stats name the genres; TMDB's list turns the names
+ * back into filterable ids. Cached hard — taste barely moves day to day.
+ */
+function userTopGenres(mediaType: 'tv' | 'movie'): Promise<{ name: string; id: number }[]> {
+	return memo(`discover:genres:${mediaType}`, 6 * 60 * 60 * 1000, async () => {
+		if (!tmdbConfigured()) return [];
+		try {
+			const [overview, genreMap] = await Promise.all([
+				// This endpoint takes ~9s and needs real headroom (see stats.ts).
+				floppy(`/api/v1/statistics/overview/`, { timeoutMs: 90_000 }).then(rec),
+				tmdbGenres(mediaType)
+			]);
+			const st = rec(rec(overview).statistics);
+			const cons = rec(mediaType === 'movie' ? st.movie_consumption : st.tv_consumption);
+			const seen = new Set<number>();
+			const out: { name: string; id: number }[] = [];
+			for (const g of arr(cons.top_genres)) {
+				const name = str(rec(g).name);
+				const id = name ? genreMap.get(name.toLowerCase()) : undefined;
+				if (id && !seen.has(id)) {
+					seen.add(id);
+					out.push({ name: name as string, id });
+				}
+			}
+			return out;
+		} catch {
+			return [];
+		}
+	});
+}
+
+/** Pull one of Floppy's own rows through untouched (its personalisation is real
+ *  and we have no better version of "Top Picks" or "Coming Soon"). */
+function floppyRow(
+	rowsByKey: Map<string, Rec>,
+	key: string,
+	fallbackTitle: string,
+	tracked: Set<string>
+): DiscoverRow | null {
+	const r = rowsByKey.get(key);
+	if (!r) return null;
+	const items = arr(r.items)
+		.map(mapItem)
+		.filter((i): i is DiscoverItem => i !== null)
+		.filter((i) => !tracked.has(i.mediaId))
+		.map((i) => ({ ...i, tracked: false }));
+	if (!items.length) return null;
+	return { key, title: str(r.title) ?? fallbackTitle, why: str(r.why), items };
+}
+
+/**
+ * Discover (§6) — a screen to find something new to watch without leaving the
+ * app. Floppy's raw feed is half library rows (your in-progress and completed
+ * shows) and a talk-show-clogged "trending", so this keeps only its two genuine
+ * discovery rows (Top Picks, Coming Soon) and builds the rest from TMDB:
+ * trending with the daily-format noise stripped, the critically acclaimed, this
+ * year's fresh releases, hidden gems, and rows tuned to the genres you watch
+ * most. Everything already in the library is filtered out, and a title only
+ * appears in the first row it qualifies for.
+ */
 export async function getDiscoverRows(mediaType: MediaType): Promise<DiscoverRow[]> {
-	const [res, tracked] = await Promise.all([
-		floppy(`/api/v1/discover/`, { query: { media_type: mediaType } }).then(rec),
-		allTrackedIds(mediaType)
+	const mt = mediaType === 'movie' ? 'movie' : 'tv';
+	const [floppyRes, tracked, topGenres] = await Promise.all([
+		floppy(`/api/v1/discover/`, { query: { media_type: mediaType } })
+			.then(rec)
+			.catch(() => ({}) as Rec),
+		allTrackedIds(mediaType),
+		userTopGenres(mt)
+	]);
+	const rowsByKey = new Map(
+		arr(floppyRes.rows).map((raw): [string, Rec] => {
+			const r = rec(raw);
+			return [str(r.key) ?? '', r];
+		})
+	);
+
+	// No TMDB key: fall back to Floppy's feed rather than a near-empty screen.
+	if (!tmdbConfigured()) return legacyFloppyRows(rowsByKey, tracked);
+
+	/* A high vote floor is the whole game for TV "acclaimed": TMDB's raw
+	   vote_average is topped by niche titles with a few hundred inflated votes
+	   (they outrank Breaking Bad), so only titles with thousands of votes count. */
+	const genres = topGenres.slice(0, 3);
+	const [trending, acclaimed, fresh, ...genreLists] = await Promise.all([
+		tmdbTrending(mt),
+		deepDiscover({ mediaType: mt, sort: 'top', minVotes: mt === 'tv' ? 2500 : 1500, excludeNoise: true }),
+		deepDiscover({ mediaType: mt, sort: 'recommended', yearGte: YEAR, minVotes: 60, excludeNoise: true, notFuture: true }),
+		...genres.map((g) =>
+			deepDiscover({ mediaType: mt, genres: [g.id], sort: 'recommended', minVotes: 150, excludeNoise: true })
+		)
 	]);
 
-	return arr(res.rows)
-		.map((raw): DiscoverRow | null => {
-			const r = rec(raw);
-			const key = str(r.key) ?? str(r.title) ?? 'row';
-			const all = arr(r.items)
-				.map(mapItem)
-				.filter((i): i is DiscoverItem => i !== null)
-				.map((i) => ({ ...i, tracked: tracked.has(i.mediaId) }));
+	const tmdbRow = (key: string, title: string, why: string | null, list: TmdbResult[]): DiscoverRow | null => {
+		const items = untrackedItems(list, tracked);
+		return items.length ? { key, title, why, items } : null;
+	};
+	const genreRow = (i: number): DiscoverRow | null =>
+		genres[i] ? tmdbRow(`genre_${genres[i].id}`, `Because you like ${genres[i].name}`, null, genreLists[i]) : null;
 
-			/* A library row keeps everything and marks it; a discovery row drops it.
-			   Something already tracked is not a discovery, and offering to add it
-			   only earns a 409 from Floppy. Trending carries a couple of
-			   in-progress shows, which is exactly the case that looked broken. */
-			const items = ABOUT_YOUR_LIBRARY.has(key) ? all : all.filter((i) => !i.tracked);
-			if (!items.length) return null;
+	const candidates: (DiscoverRow | null)[] = [
+		tmdbRow('trending_week', 'Trending This Week', 'What everyone’s watching this week.', trending),
+		tmdbRow('acclaimed', 'Critically Acclaimed', 'The highest-rated, most-loved.', acclaimed),
+		genreRow(0),
+		tmdbRow('new_this_year', `New in ${YEAR}`, 'Popular fresh releases worth a look.', fresh),
+		genreRow(1),
+		genreRow(2),
+		floppyRow(rowsByKey, 'coming_soon', 'Coming Soon', tracked)
+	];
 
-			return { key, title: str(r.title) ?? 'More', why: str(r.why), items };
-		})
-		.filter((r): r is DiscoverRow => r !== null);
+	/* One appearance per title: a show that is trending AND acclaimed shows only
+	   in the first row that earned it, so the feed reads as variety rather than
+	   the same ten posters restated. Cap each row after de-duping so earlier rows
+	   don't starve later ones below their minimum. */
+	const seen = new Set<string>();
+	const out: DiscoverRow[] = [];
+	for (const row of candidates) {
+		if (!row) continue;
+		const items = row.items.filter((i) => !seen.has(i.mediaId)).slice(0, PER_ROW);
+		if (!items.length) continue;
+		for (const i of items) seen.add(i.mediaId);
+		out.push({ ...row, items });
+	}
+	return out;
+}
+
+/** Pre-TMDB behaviour, used only when no key is configured. */
+function legacyFloppyRows(rowsByKey: Map<string, Rec>, tracked: Set<string>): DiscoverRow[] {
+	const ABOUT_YOUR_LIBRARY = new Set(['top_picks_for_you', 'clear_out_next', 'comfort_rewatches']);
+	const out: DiscoverRow[] = [];
+	for (const [key, r] of rowsByKey) {
+		const all = arr(r.items)
+			.map(mapItem)
+			.filter((i): i is DiscoverItem => i !== null)
+			.map((i) => ({ ...i, tracked: tracked.has(i.mediaId) }));
+		const items = ABOUT_YOUR_LIBRARY.has(key) ? all : all.filter((i) => !i.tracked);
+		if (!items.length) continue;
+		out.push({ key, title: str(r.title) ?? 'More', why: str(r.why), items });
+	}
+	return out;
 }

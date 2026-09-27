@@ -78,6 +78,22 @@
 	let sections = $state<Section[] | null>(null);
 	let moodBusy = $state(false);
 
+	/* How a mood grid (Heist, True crime…) is ordered. Sticky across presets so
+	   "show me the newest" keeps meaning that as you hop between chips. */
+	type Sort = 'recommended' | 'newest' | 'top';
+	const SORT_OPTIONS = [
+		{ id: 'recommended', label: 'Recommended' },
+		{ id: 'newest', label: 'Newest' },
+		{ id: 'top', label: 'Highest rated' }
+	] as const;
+	let sort = $state<Sort>('recommended');
+
+	function setSort(next: Sort) {
+		if (next === sort) return;
+		sort = next;
+		if (mood) runMood(new URLSearchParams({ preset: mood }));
+	}
+
 	/* Discover's filter — a mood chip, a typed search, or a platform — lives only
 	   in component state, so opening a show and pressing back used to drop it and
 	   dump you back on the default shelves. A snapshot restores the whole
@@ -87,17 +103,19 @@
 		mood: string | null;
 		freeText: string;
 		ranQuery: string | null;
+		sort: Sort;
 		platform: Platform | null;
 		platformRows: { mode: string; items: TmdbResult[] }[] | null;
 		moodResults: TmdbResult[] | null;
 		sections: Section[] | null;
 	};
 	export const snapshot: Snapshot<Captured> = {
-		capture: () => ({ mood, freeText, ranQuery, platform, platformRows, moodResults, sections }),
+		capture: () => ({ mood, freeText, ranQuery, sort, platform, platformRows, moodResults, sections }),
 		restore: (v) => {
 			mood = v.mood;
 			freeText = v.freeText;
 			ranQuery = v.ranQuery;
+			sort = v.sort;
 			platform = v.platform;
 			platformRows = v.platformRows;
 			moodResults = v.moodResults;
@@ -110,6 +128,7 @@
 		sections = null;
 		try {
 			params.set('type', data.mediaType);
+			params.set('sort', sort);
 			const res = await fetch(`/api/mood?${params}`);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			moodResults = (await res.json()).results;
@@ -305,8 +324,15 @@
 				<h2>{mood ?? `“${freeText.trim()}”`}</h2>
 				<button class="clear" onclick={clearMood}>Clear</button>
 			</div>
+			{#if mood && (moodResults.length || moodBusy)}
+				<div class="sortrow" role="tablist" aria-label="Sort">
+					{#each SORT_OPTIONS as opt (opt.id)}
+						<button role="tab" aria-selected={sort === opt.id} class="sortchip" class:on={sort === opt.id} disabled={moodBusy} onclick={() => setSort(opt.id)}>{opt.label}</button>
+					{/each}
+				</div>
+			{/if}
 			{#if !moodResults.length}
-				<p class="msg">Nothing matched that. Try a different word.</p>
+				<p class="msg">{moodBusy ? '' : 'Nothing matched that. Try a different word.'}</p>
 			{:else}
 				<ul class="grid">
 					{#each moodResults as r (r.mediaId)}
@@ -422,6 +448,19 @@
 	}
 	.moodhead h2 { margin: 0; font-size: 17px; font-weight: 600; }
 	.clear { font-size: 13px; font-weight: 600; color: var(--signal-solid); }
+	.sortrow { display: flex; gap: 6px; margin: 4px 0 2px; overflow-x: auto; }
+	.sortchip {
+		flex: none;
+		min-height: 30px;
+		padding: 0 12px;
+		border-radius: 9px;
+		background: var(--surface);
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--text-dim);
+	}
+	.sortchip.on { background: var(--surface-raised); color: var(--text); }
+	.sortchip:disabled { opacity: 0.6; }
 
 	.shelf { margin-bottom: 26px; }
 	.skhead { display: flex; flex-direction: column; gap: 6px; padding: 0 var(--gutter); }

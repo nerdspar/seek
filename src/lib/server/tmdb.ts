@@ -66,58 +66,146 @@ export function keywordsForLabel(label: string): number[] | null {
 
 export const DEFAULT_PRESET_LABELS = () => MOOD_PRESETS.map((p) => p.label);
 
+/** How a discovery / mood list is ordered. */
+export type DiscoverSort = 'recommended' | 'newest' | 'top';
+
 export type MoodOptions = {
 	keywords: number[];
 	mediaType: 'tv' | 'movie';
 	providers?: number[];
 	minRating?: number;
+	sort?: DiscoverSort;
 };
 
-export async function discoverByKeyword(opts: MoodOptions): Promise<TmdbResult[]> {
-	const { keywords, mediaType, providers = [], minRating } = opts;
-	if (!keywords.length) return [];
+/** Talk, News, Soap — the daily-format noise that clogs a "trending" grid with
+ *  late-night hosts and soaps. Reality (10764) is deliberately kept: Bake Off
+ *  and its kind are real discovery. */
+const NOISE_GENRE_IDS = [10767, 10763, 10766];
+
+type DiscoverRaw = {
+	id: number;
+	name?: string;
+	title?: string;
+	poster_path: string | null;
+	first_air_date?: string;
+	release_date?: string;
+	vote_average?: number;
+	genre_ids?: number[];
+};
+function mapDiscoverRow(r: DiscoverRaw, mediaType: 'tv' | 'movie'): TmdbResult {
+	return {
+		mediaId: String(r.id),
+		source: 'tmdb',
+		mediaType,
+		title: r.title ?? r.name ?? 'Untitled',
+		poster: img(r.poster_path),
+		year: yearOf(r.release_date ?? r.first_air_date),
+		rating: typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
+	};
+}
+
+export type DiscoverParams = {
+	mediaType: 'tv' | 'movie';
+	genres?: number[];
+	keywords?: number[];
+	providers?: number[];
+	sort?: DiscoverSort;
+	minVotes?: number;
+	minRating?: number;
+	/** Only titles first released in this year or later. */
+	yearGte?: number;
+	/** Drop Talk/News/Soap. */
+	excludeNoise?: boolean;
+	/** Exclude anything not yet released (date after today). */
+	notFuture?: boolean;
+	/** TMDB result page (1-based); default 1. */
+	page?: number;
+};
+
+/**
+ * The general `/discover` call behind every built row and every mood grid.
+ * `sort` maps to the TMDB order; `top` (vote_average) forces a high vote floor
+ * so a lone 10/10 rating can't win, and `newest` caps the date at today so
+ * unaired placeholders don't lead the list.
+ */
+export async function tmdbDiscover(p: DiscoverParams): Promise<TmdbResult[]> {
+	if (!TMDB_API_KEY()) return [];
+	const dateField = p.mediaType === 'tv' ? 'first_air_date' : 'primary_release_date';
+	const sort = p.sort ?? 'recommended';
+	const sortBy =
+		sort === 'newest' ? `${dateField}.desc` : sort === 'top' ? 'vote_average.desc' : 'popularity.desc';
 
 	const params: Record<string, string | number> = {
-		with_keywords: keywords.join('|'), // OR, so related keywords widen the net
-		sort_by: 'popularity.desc',
+		sort_by: sortBy,
 		include_adult: 'false',
-		'vote_count.gte': 50 // keeps one-vote curiosities out of the results
+		'vote_count.gte': p.minVotes ?? (sort === 'top' ? 300 : 50)
 	};
-	if (minRating) params['vote_average.gte'] = minRating;
-	if (providers.length) {
-		params.with_watch_providers = providers.join('|');
+	if (p.minRating) params['vote_average.gte'] = p.minRating;
+	if (p.genres?.length) params.with_genres = p.genres.join(','); // AND
+	if (p.keywords?.length) params.with_keywords = p.keywords.join('|'); // OR — widen synonyms
+	if (p.providers?.length) {
+		params.with_watch_providers = p.providers.join('|');
 		params.watch_region = 'US';
 	}
+	if (p.excludeNoise) params.without_genres = NOISE_GENRE_IDS.join(',');
+	if (p.yearGte) params[`${dateField}.gte`] = `${p.yearGte}-01-01`;
+	if (sort === 'newest' || p.notFuture)
+		params[`${dateField}.lte`] = new Date().toISOString().slice(0, 10);
+	if (p.page && p.page > 1) params.page = p.page;
 
-	const cacheKey = `${mediaType}:${JSON.stringify(params)}`;
+	const cacheKey = `disc:${p.mediaType}:${JSON.stringify(params)}`;
 	const hit = discoverCache.get(cacheKey);
 	if (hit) return hit;
+	const data = await tmdb<{ results?: DiscoverRaw[] }>(`/discover/${p.mediaType}`, params);
+	const out = dedupe((data.results ?? []).map((r) => mapDiscoverRow(r, p.mediaType)));
+	discoverCache.set(cacheKey, out);
+	return out;
+}
 
-	type Row = {
-		id: number;
-		name?: string;
-		title?: string;
-		poster_path: string | null;
-		first_air_date?: string;
-		release_date?: string;
-		vote_average?: number;
-	};
-	const data = await tmdb<{ results?: Row[] }>(`/discover/${mediaType}`, params);
-
-	const results = (data.results ?? []).map(
-		(r): TmdbResult => ({
-			mediaId: String(r.id),
-			source: 'tmdb',
-			mediaType,
-			title: r.title ?? r.name ?? 'Untitled',
-			poster: img(r.poster_path),
-			year: yearOf(r.release_date ?? r.first_air_date),
-			rating: typeof r.vote_average === 'number' ? Math.round(r.vote_average * 10) / 10 : null
-		})
+/** This week's trending, with the daily-format noise filtered out by genre.
+ *  `/trending` takes no `without_genres`, so it's filtered on the way out. */
+export async function tmdbTrending(mediaType: 'tv' | 'movie'): Promise<TmdbResult[]> {
+	if (!TMDB_API_KEY()) return [];
+	const cacheKey = `trend:${mediaType}`;
+	const hit = discoverCache.get(cacheKey);
+	if (hit) return hit;
+	const data = await tmdb<{ results?: DiscoverRaw[] }>(`/trending/${mediaType}/week`, {});
+	const cleaned = (data.results ?? []).filter(
+		(r) => !(r.genre_ids ?? []).some((g) => NOISE_GENRE_IDS.includes(g))
 	);
-	const unique = dedupe(results);
-	discoverCache.set(cacheKey, unique);
-	return unique;
+	const out = dedupe(cleaned.map((r) => mapDiscoverRow(r, mediaType)));
+	discoverCache.set(cacheKey, out);
+	return out;
+}
+
+const genreCache = new TTLCache<Map<string, number>>(7 * 24 * 60 * 60 * 1000, 4);
+/** TMDB genre name (lowercased) → id, for turning "you watch a lot of Drama"
+ *  back into a `with_genres` filter. */
+export async function tmdbGenres(mediaType: 'tv' | 'movie'): Promise<Map<string, number>> {
+	const hit = genreCache.get(mediaType);
+	if (hit) return hit;
+	if (!TMDB_API_KEY()) return new Map();
+	const data = await tmdb<{ genres?: { id: number; name: string }[] }>(
+		`/genre/${mediaType}/list`,
+		{}
+	);
+	const m = new Map((data.genres ?? []).map((g) => [g.name.toLowerCase(), g.id]));
+	genreCache.set(mediaType, m);
+	return m;
+}
+
+export async function discoverByKeyword(opts: MoodOptions): Promise<TmdbResult[]> {
+	if (!opts.keywords.length) return [];
+	// A mood is just a keyword-scoped discover — sortable, and free of the
+	// talk-show noise a theme like "true crime" would otherwise drag in.
+	return tmdbDiscover({
+		mediaType: opts.mediaType,
+		keywords: opts.keywords,
+		providers: opts.providers,
+		minRating: opts.minRating,
+		sort: opts.sort,
+		excludeNoise: true
+	});
 }
 
 /**
