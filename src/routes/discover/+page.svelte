@@ -9,6 +9,7 @@
 	import { loadArrStatus } from '$lib/arr.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import type { TmdbResult } from '$lib/types';
+	import type { Snapshot } from '@sveltejs/kit';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -76,6 +77,33 @@
 	let moodResults = $state<TmdbResult[] | null>(null);
 	let sections = $state<Section[] | null>(null);
 	let moodBusy = $state(false);
+
+	/* Discover's filter — a mood chip, a typed search, or a platform — lives only
+	   in component state, so opening a show and pressing back used to drop it and
+	   dump you back on the default shelves. A snapshot restores the whole
+	   selection, and its already-fetched results, on back/forward — which is what
+	   SvelteKit snapshots are for. */
+	type Captured = {
+		mood: string | null;
+		freeText: string;
+		ranQuery: string | null;
+		platform: Platform | null;
+		platformRows: { mode: string; items: TmdbResult[] }[] | null;
+		moodResults: TmdbResult[] | null;
+		sections: Section[] | null;
+	};
+	export const snapshot: Snapshot<Captured> = {
+		capture: () => ({ mood, freeText, ranQuery, platform, platformRows, moodResults, sections }),
+		restore: (v) => {
+			mood = v.mood;
+			freeText = v.freeText;
+			ranQuery = v.ranQuery;
+			platform = v.platform;
+			platformRows = v.platformRows;
+			moodResults = v.moodResults;
+			sections = v.sections;
+		}
+	};
 
 	async function runMood(params: URLSearchParams) {
 		moodBusy = true;
