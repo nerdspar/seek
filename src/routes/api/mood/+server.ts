@@ -1,7 +1,15 @@
 import { withoutTracked } from '$lib/server/search';
 import { json, error } from '@sveltejs/kit';
-import { discoverByKeyword, keywordIds, keywordsForLabel, tmdbConfigured } from '$lib/server/tmdb';
+import {
+	discoverByKeyword,
+	keywordIds,
+	keywordsForLabel,
+	tmdbConfigured,
+	type DiscoverSort
+} from '$lib/server/tmdb';
 import type { RequestHandler } from './$types';
+
+const SORTS: DiscoverSort[] = ['recommended', 'newest', 'top'];
 
 /** Mood and theme search (§6.2). Chips carry keyword ids; free text resolves
  *  through /search/keyword first. */
@@ -12,6 +20,8 @@ export const GET: RequestHandler = async ({ url }) => {
 	const preset = url.searchParams.get('preset');
 	const q = url.searchParams.get('q')?.trim() ?? '';
 	const minRating = Number(url.searchParams.get('minRating')) || undefined;
+	const sortParam = url.searchParams.get('sort');
+	const sort = SORTS.includes(sortParam as DiscoverSort) ? (sortParam as DiscoverSort) : 'recommended';
 
 	try {
 		/* A chip and free text resolve the same way. Built-in labels carry curated
@@ -24,7 +34,10 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (!keywords.length) return json({ results: [], keywords: [] });
 
 		return json({
-			results: await withoutTracked(mediaType, await discoverByKeyword({ keywords, mediaType, minRating })),
+			results: await withoutTracked(
+				mediaType,
+				await discoverByKeyword({ keywords, mediaType, minRating, sort })
+			),
 			keywords
 		});
 	} catch (err) {
