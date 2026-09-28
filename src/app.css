@@ -132,26 +132,24 @@
 	--safe-r: env(safe-area-inset-right, 0px);
 	--safe-l: env(safe-area-inset-left, 0px);
 
-	/* The gap between the safe-area inset and the header's content. In a browser
-	   this only needs to clear the small blur iOS bleeds past the reported inset.
-	   Installed on iOS 26+/27 it must clear the whole "Liquid Glass" scroll-edge
-	   ramp — a ~40pt system blur over the top of a standalone PWA that no meta or
-	   status-bar style reliably disables — so content is pushed below it and the
-	   ramp only ever falls on solid background (bumped in the standalone query
-	   below). */
+	/* The small gap between the safe-area inset and the header's content — the
+	   title looks placed, not shoved against the status bar. It stays tight (no
+	   big standalone bump): the iOS "Liquid Glass" scroll-edge blur is handled
+	   structurally now — no `viewport-fit=cover` (app.html) keeps content inside
+	   the safe area, and the fixed `.status-tint` strip makes iOS treat the top as
+	   solid chrome — rather than by pushing the header down to clear a ~40pt ramp. */
 	--status-clearance: 10px;
 	--header-top: calc(var(--safe-t) + var(--status-clearance));
 
-	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, sans-serif;
-}
+	/* Height of the opaque status-bar tint strip (see .status-tint below and the
+	   element in app.html). Sized to the top inset plus exactly the header's
+	   clearance gap, so the strip fills the empty band above the title and its
+	   bottom edge meets the title — it never overlaps the text. Its job is to be
+	   *present* (a fixed opaque top element iOS will sample), not to physically
+	   cover a 40pt ramp. */
+	--status-tint-h: calc(env(safe-area-inset-top, 0px) + var(--status-clearance));
 
-/* Installed (standalone) on iOS, clear the whole scroll-edge blur ramp, not just
-   the small inset bleed. 2.5rem past the safe area matches the ~40pt ramp; with
-   the header background opaque, the ramp then only blurs solid colour. */
-@media (display-mode: standalone) {
-	:root {
-		--status-clearance: 2.5rem;
-	}
+	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, sans-serif;
 }
 
 * {
@@ -186,6 +184,31 @@
 	min-height: 0;
 	overflow-y: auto;
 	overscroll-behavior-y: contain;
+}
+
+/* Status-bar tint strip (element in app.html). Invisible everywhere except an
+   installed PWA in portrait, where a real opaque element pinned within a few px
+   of the top edge makes iOS 26+/27 sample it as solid status-bar chrome and drop
+   the "Liquid Glass" scroll-edge blur — the tight fix (cf. hunterirving/events),
+   not a 40px content push. Opaque `--bg` so it also colours the status bar to
+   match the page; behind the header (lower z-index) so nothing covers content. */
+.status-tint {
+	display: none;
+}
+@media (display-mode: standalone) and (orientation: portrait) {
+	.status-tint {
+		display: block;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: var(--status-tint-h);
+		/* Above the in-flow header so iOS samples *this* fixed element, but low
+		   enough that sheets, dialogs and the nav-progress bar still cover it. */
+		z-index: 3;
+		pointer-events: none;
+		background: var(--bg);
+	}
 }
 
 html,
