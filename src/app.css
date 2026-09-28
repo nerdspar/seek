@@ -152,10 +152,11 @@
    Every tab page's `.app` is the same frame: the safe area padded once here
    (top + sides; the tab bar owns the bottom), header and tab bar as fixed
    bookends, and a single `<main>` scroll region between them — never the window.
-   `100vh` (not `100dvh`): on an installed iPhone `100dvh` reports the screen
-   minus the status bar and floats the tab bar ~59px up. */
+   `100dvh`, the actual visible viewport: with an opaque (`default`) status bar
+   the web view sits *below* the status bar, so `100vh` overruns the bottom by
+   the status-bar height and clips the tab bar off the screen. */
 .app {
-	height: 100vh;
+	height: 100dvh;
 	display: flex;
 	flex-direction: column;
 	padding: var(--safe-t) var(--safe-r) 0 var(--safe-l);
