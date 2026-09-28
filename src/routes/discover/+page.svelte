@@ -108,9 +108,62 @@
 		platformRows: { mode: string; items: TmdbResult[] }[] | null;
 		moodResults: TmdbResult[] | null;
 		sections: Section[] | null;
+		/** How far each horizontal rail was scrolled, keyed by rail id. */
+		rails: Record<string, number>;
 	};
+
+	/** SvelteKit restores window scroll on back, but never a rail's own horizontal
+	 *  scroll — so a row you'd scrolled through snapped back to the start.
+	 *  `railScroll` holds each rail's offset (kept current by the action below and
+	 *  carried across the back navigation by the snapshot). The action reapplies it
+	 *  the moment the rail mounts, which is the reliable hook: the feed streams in,
+	 *  so the row does not exist yet when `restore()` runs, and re-rendering the
+	 *  row simply re-runs the action on the new element. */
+	// Never reassigned — every action closure and the snapshot share this one
+	// object, so a restore that mutates it is seen no matter the timing.
+	const railScroll: Record<string, number> = {};
+
+	function keepRailScroll(node: HTMLElement, key: string) {
+		let k = key;
+		const save = () => {
+			railScroll[k] = node.scrollLeft;
+		};
+		// Retry briefly: the row streams in and restore() may land either side of
+		// this mount, so re-check the saved offset until it takes (or there is
+		// none). Stops as soon as it sticks, to keep out of a user's way.
+		let tries = 0;
+		const apply = () => {
+			const want = railScroll[k];
+			if (want && node.scrollWidth > node.clientWidth + 4) {
+				node.scrollLeft = want;
+				if (Math.abs(node.scrollLeft - want) < 2) return;
+			}
+			if (tries++ < 40) requestAnimationFrame(apply);
+		};
+		requestAnimationFrame(apply);
+		node.addEventListener('scroll', save, { passive: true });
+		return {
+			update(next: string) {
+				k = next;
+			},
+			destroy() {
+				node.removeEventListener('scroll', save);
+			}
+		};
+	}
+
 	export const snapshot: Snapshot<Captured> = {
-		capture: () => ({ mood, freeText, ranQuery, sort, platform, platformRows, moodResults, sections }),
+		capture: () => ({
+			mood,
+			freeText,
+			ranQuery,
+			sort,
+			platform,
+			platformRows,
+			moodResults,
+			sections,
+			rails: { ...railScroll }
+		}),
 		restore: (v) => {
 			mood = v.mood;
 			freeText = v.freeText;
@@ -120,6 +173,10 @@
 			platformRows = v.platformRows;
 			moodResults = v.moodResults;
 			sections = v.sections;
+			// Mutate the shared object in place (see railScroll) so the rails'
+			// actions read the restored offsets whenever they mount.
+			for (const key of Object.keys(railScroll)) delete railScroll[key];
+			Object.assign(railScroll, v.rails ?? {});
 		}
 	};
 
@@ -271,7 +328,7 @@
 			{#each platformRows.filter((r) => r.items.length) as row (row.mode)}
 				<section class="shelf">
 					<h2>{MODE_LABEL[row.mode] ?? row.mode} {platform?.name}</h2>
-					<ul class="rail">
+					<ul class="rail" use:keepRailScroll={'pf:' + row.mode}>
 						{#each row.items as item (item.mediaId)}
 							<li>
 								<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
@@ -303,7 +360,7 @@
 					<section class="shelf">
 						<h2>{section.title}</h2>
 						{#if section.why}<p class="why">{section.why}</p>{/if}
-						<ul class="rail">
+						<ul class="rail" use:keepRailScroll={'sec:' + section.kind + ':' + section.title}>
 							{#each section.items as item (item.mediaId)}
 								<li>
 									<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
@@ -359,7 +416,7 @@
 				<section class="shelf">
 					<h2>{row.title}</h2>
 					{#if row.why}<p class="why">{row.why}</p>{/if}
-					<ul class="rail">
+					<ul class="rail" use:keepRailScroll={'row:' + row.key}>
 						{#each row.items as item (item.mediaId)}
 							<li>
 								<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
