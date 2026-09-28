@@ -77,20 +77,28 @@ from a machine that can reach Floppy.
 
 ## http: run it in Docker compose
 
-This is the option for running it as a service alongside Floppy and Seek. The
-repo's [`docker-compose.yml`](../docker-compose.yml) already includes a
-`seek-mcp` service — fill in `FLOPPY_TOKEN` (and `MCP_AUTH_TOKEN`, see below) and:
+This is the option for running it as a service alongside Floppy and Seek. Like
+the app, the image is built by [`.github/workflows/docker-publish.yml`](../.github/workflows/docker-publish.yml)
+and pushed to GHCR as `ghcr.io/<owner>/seek-mcp`, so a pull-only host (TrueNAS
+Apps) can run it without building. The repo's
+[`docker-compose.yml`](../docker-compose.yml) already includes a `seek-mcp`
+service pointing at that image — fill in `FLOPPY_TOKEN` (and `MCP_AUTH_TOKEN`,
+see below) and bring it up the way you deploy the rest of the stack.
 
-```sh
-docker compose up -d --build seek-mcp
-```
+It joins Floppy's Docker network and reaches Floppy at `http://floppy:8000`
+internally — the same address Seek uses, no LAN hop. It listens on `:8110` and
+serves MCP at `POST /mcp`, with an unauthenticated `/health` for the container
+healthcheck.
 
-It builds from this directory, joins Floppy's Docker network, and reaches Floppy
-at `http://floppy:8000` internally — the same address Seek uses, no LAN hop. It
-listens on `:8110` and serves MCP at `POST /mcp`, with an unauthenticated
-`/health` for the container healthcheck.
+Two things about the GHCR image on a first deploy:
 
-To run the container by hand instead of via compose:
+- The workflow publishes the `:latest` tag only on the **default branch**, so
+  the image appears after this lands on `main` (or a manual `workflow_dispatch`
+  run — but that only pushes an `sha-…` tag off a feature branch, not `latest`).
+- `seek-mcp` is its **own** GHCR package. After the first push, set its
+  visibility to match `seek` (or grant your pull token access), or the pull 403s.
+
+To build and run it by hand instead (any machine with Docker and this repo):
 
 ```sh
 docker build -t seek-mcp ./mcp
@@ -100,6 +108,10 @@ docker run -d --name seek-mcp -p 8110:8110 \
   -e MCP_AUTH_TOKEN=your-long-random-secret \
   seek-mcp
 ```
+
+That same `docker build … && docker push ghcr.io/<owner>/seek-mcp:latest` (after
+`docker login ghcr.io`) is also how to get the image into GHCR without waiting
+for CI.
 
 ### Point a client at the HTTP server
 

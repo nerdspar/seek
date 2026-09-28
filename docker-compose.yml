@@ -125,9 +125,14 @@ services:
   # and ratings, so a Claude client can recommend from what you have actually
   # watched ("recommend me anime based on what I've watched and rated").
   #
-  # There is no published image, so it is built from ./mcp in this repo. It
-  # speaks MCP over HTTP so it can live here as a long-lived service; on
-  # floppy-net it reaches Floppy at the same http://floppy:8000 Seek uses.
+  # Published to GHCR by the same workflow as seek, so TrueNAS pulls it rather
+  # than building from source it does not have. It speaks MCP over HTTP so it can
+  # live here as a long-lived service; on floppy-net it reaches Floppy at the same
+  # http://floppy:8000 Seek uses.
+  #
+  # NOTE: this image is a separate GHCR package (seek-mcp). After its first push,
+  # set that package's visibility to match seek (or grant your GHCR pull token
+  # access), or the pull below will 403/not-found.
   #
   # Point a Claude client at  http://<nas-ip>:8110/mcp
   #   • Claude Code:    claude mcp add --transport http floppy http://<nas-ip>:8110/mcp
@@ -141,7 +146,11 @@ services:
   #
   # Do not need it? Delete this whole service; nothing else depends on it.
   seek-mcp:
-    build: ./mcp
+    # Image built by .github/workflows/docker-publish.yml. To build on the box
+    # instead (needs the repo checked out here), comment out `image:` and
+    # uncomment `build: ./mcp`.
+    image: ghcr.io/nerdspar/seek-mcp:latest
+    # build: ./mcp
     container_name: seek-mcp
     restart: unless-stopped
     environment:
