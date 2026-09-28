@@ -63,11 +63,14 @@ the body is the one scroll region.
 
 Rules:
 
-1. **Shell**: `height: 100vh` (not `100dvh` — on an installed iPhone `100dvh`
-   reports the screen *minus* the status bar and leaves the tab bar floating
-   ~59px up), `display: flex; flex-direction: column; box-sizing: border-box`,
+1. **Shell**: `height: 100dvh` (the actual visible viewport),
+   `display: flex; flex-direction: column; box-sizing: border-box`,
    `padding: var(--safe-t) var(--safe-r) 0 var(--safe-l)`. The **bottom** inset
-   is deliberately not here — the tab bar owns it (next).
+   is deliberately not here — the tab bar owns it (next). Use `100dvh`, not
+   `100vh`: with an opaque (`default`) status bar the web view sits *below* the
+   status bar, so `100vh` (the full screen) overruns the bottom and clips the
+   tab bar off-screen. (This pairs with keeping the status bar `default`, not
+   `black-translucent` — see the iOS blur note.)
 2. **Header**: a `flex: none` bookend at the top (not `sticky`, not overlapping
    — content scrolls in `main` *below* it), translucent background +
    `backdrop-filter: blur(…)`, `padding-top: var(--status-clearance)` (the shell
