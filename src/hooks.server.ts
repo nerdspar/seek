@@ -154,9 +154,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 					'%seek.colorScheme%',
 					appearance === 'system' ? 'light dark' : appearance
 				)
-				/* black-translucent lets content scroll under the status bar, which
-				   is the effect we want — but it also forces white glyphs, so on a
-				   light page the clock would vanish. */
-				.replace('%seek.statusBar%', appearance === 'light' ? 'default' : 'black-translucent')
+				/* Always `default`, never `black-translucent`. iOS 26+/27 draws an
+				   uncloseable "Liquid Glass" blur over the top edge of a standalone
+				   PWA *only* when it uses black-translucent (confirmed root cause;
+				   no meta or CSS disables the blur otherwise). `default` gives an
+				   opaque status bar coloured by the body background — and since the
+				   chrome shell already keeps content out of that strip, we lose
+				   nothing but the blur. The status-bar meta is frozen at install, so
+				   this only takes effect after the app is re-added to the Home
+				   Screen. */
+				.replace('%seek.statusBar%', 'default')
 	});
 };
