@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import { keepScroll } from '$lib/keepScroll';
 	import AddButton from '$lib/components/AddButton.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
@@ -283,7 +284,7 @@
 	{/each}
 {/snippet}
 
-	<main>
+	<main use:keepScroll={'discover'}>
 		{#if data.moodAvailable}
 			<section class="mood">
 				<form onsubmit={submitFreeText}>
@@ -453,8 +454,7 @@
 </div>
 
 <style>
-	.app { min-height: 100dvh; padding-top: var(--header-top); }
-	header { padding: 10px var(--gutter) 4px; }
+	/* Frame from the global `.app` shell (app.css). */
 	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
 
 	.segments { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
@@ -464,7 +464,7 @@
 	}
 	.segments button.on { background: var(--surface-raised); color: var(--text); }
 
-	main { padding: 6px 0 calc(var(--tabbar-h) + var(--safe-b) + 32px); }
+	main { padding: 6px 0 32px; }
 
 	.platforms { margin-bottom: 14px; }
 	.platform {

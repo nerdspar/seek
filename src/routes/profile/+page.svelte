@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import { keepScroll } from '$lib/keepScroll';
 	import StatsChart from '$lib/components/StatsChart.svelte';
 	import type { PageData } from './$types';
 
@@ -65,7 +66,7 @@
 		</div>
 	</header>
 
-	<main>
+	<main use:keepScroll={'profile'}>
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">
@@ -227,8 +228,7 @@
 </div>
 
 <style>
-	.app { min-height: 100dvh; padding-top: var(--header-top); }
-	header { padding: 10px var(--gutter) 4px; }
+	/* Frame from the global `.app` shell (app.css). */
 	.titlerow {
 		display: flex; align-items: center; justify-content: space-between; gap: 12px;
 		margin-bottom: 10px;
@@ -248,7 +248,7 @@
 	}
 	.chips button.on { background: var(--surface-raised); color: var(--text); }
 
-	main { padding: 10px var(--gutter) calc(var(--tabbar-h) + var(--safe-b) + 32px); }
+	main { padding: 10px var(--gutter) 32px; }
 
 	.headline { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
 	.big {

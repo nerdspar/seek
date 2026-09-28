@@ -69,17 +69,19 @@
 </svg>
 
 <style>
+	/* A flex child of the shell, not `position: fixed` — in an installed iOS PWA
+	   `fixed` anchors to the visual viewport and drifts. It carries its own bottom
+	   safe area so the blurred surface fills the home-indicator strip.
+	   (docs/pwa-chrome-spec.md) */
 	.tabbar {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		z-index: 50;
+		flex: none;
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		height: calc(var(--tabbar-h) + var(--safe-b));
 		padding-bottom: var(--safe-b);
-		background: var(--bg);
+		background: color-mix(in srgb, var(--bg) 82%, transparent);
+		backdrop-filter: blur(18px);
+		-webkit-backdrop-filter: blur(18px);
 		border-top: 1px solid var(--surface);
 	}
 	.tabbar button {

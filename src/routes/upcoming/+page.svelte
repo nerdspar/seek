@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import { keepScroll } from '$lib/keepScroll';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { dayKey, dayLabel, epLabel, formatAirDate, relativeWhen } from '$lib/format';
 	import type { UpcomingItem } from '$lib/types';
@@ -27,7 +28,7 @@
 <div class="app">
 	<header><h1>Upcoming</h1></header>
 
-	<main>
+	<main use:keepScroll={'upcoming'}>
 		{#await data.items}
 			<div class="skdays">
 				{#each Array(3) as _, g (g)}
@@ -98,13 +99,7 @@
 </div>
 
 <style>
-	.app {
-		min-height: 100dvh;
-		padding-top: var(--header-top);
-	}
-	header {
-		padding: 10px var(--gutter) 6px;
-	}
+	/* Frame from the global `.app` shell (app.css). */
 	h1 {
 		margin: 0;
 		font-size: 26px;
@@ -112,7 +107,7 @@
 		letter-spacing: -0.02em;
 	}
 	main {
-		padding: 4px var(--gutter) calc(var(--tabbar-h) + var(--safe-b) + 32px);
+		padding: 4px var(--gutter) 32px;
 	}
 
 	.skdays { display: flex; flex-direction: column; gap: 8px; }
