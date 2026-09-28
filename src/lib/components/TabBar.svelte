@@ -71,7 +71,7 @@
 <style>
 	/* A flex child of the shell, not `position: fixed` — in an installed iOS PWA
 	   `fixed` anchors to the visual viewport and drifts. It carries its own bottom
-	   safe area so the blurred surface fills the home-indicator strip.
+	   safe area so its surface fills the home-indicator strip.
 	   (docs/pwa-chrome-spec.md) */
 	.tabbar {
 		flex: none;
@@ -83,6 +83,24 @@
 		backdrop-filter: blur(18px);
 		-webkit-backdrop-filter: blur(18px);
 		border-top: 1px solid var(--surface);
+	}
+
+	/* Installed PWA: we dropped `viewport-fit=cover` to kill the iOS top blur, but
+	   that also forces `env(safe-area-inset-bottom)` to 0 — so the row would sit
+	   under the home indicator with no cushion. Reserve the indicator height
+	   explicitly (still honouring a larger real inset if one ever comes back), and
+	   make the surface solid: nothing scrolls behind this flex-child bar, so the
+	   blur bought nothing, and a solid fill matches the home-indicator strip so the
+	   bar reads as reaching the bottom edge instead of floating above it. */
+	@media (display-mode: standalone) {
+		.tabbar {
+			--home-indicator: 34px; /* iOS portrait safe-area-inset-bottom */
+			height: calc(var(--tabbar-h) + max(var(--safe-b), var(--home-indicator)));
+			padding-bottom: max(var(--safe-b), var(--home-indicator));
+			background: var(--bg);
+			backdrop-filter: none;
+			-webkit-backdrop-filter: none;
+		}
 	}
 	.tabbar button {
 		display: flex;
