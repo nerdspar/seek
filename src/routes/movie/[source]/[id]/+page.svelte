@@ -420,7 +420,20 @@
 		border-radius: 50%; color: var(--text-dim);
 	}
 
-	.add { justify-content: center; margin-bottom: 16px; background: var(--signal); font-weight: 600; color: #fff; }
+	/* main has no side padding, so the button carries the gutter itself; a
+	   block-level flex fills the width between those margins. */
+	.add {
+		display: flex; align-items: center; justify-content: center; gap: 9px;
+		/* A <button> shrinks to its text on width:auto, so fill the row explicitly
+		   (main has no side padding — the gutter lives in the margins). */
+		width: calc(100% - 2 * var(--gutter));
+		margin: 0 var(--gutter) 16px;
+		min-height: var(--tap);
+		border-radius: var(--radius);
+		background: var(--signal);
+		font-size: 15px; font-weight: 600; color: #fff;
+	}
+	.add:disabled { opacity: 0.6; }
 
 	.synopsis { margin: 6px var(--gutter) 22px; font-size: 14.5px; line-height: 1.55; }
 
