@@ -33,7 +33,7 @@
 		>
 			<!-- Filled when active, outlined when not: the gradient is reserved for
 			     the active tab icon (§10), so the fill has to carry the state. -->
-			<svg viewBox="0 0 24 24" width="23" height="23" aria-hidden="true">
+			<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
 				{#if tab.id === 'watchlist'}
 					<!-- Stacked cards — the list you work through. -->
 					<rect x="3" y="6" width="18" height="13" rx="2.5" fill={active ? 'url(#tabGrad)' : 'none'} stroke="currentColor" stroke-width="1.7" />
@@ -102,8 +102,8 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 3px;
-		font-size: 10.5px;
+		gap: 4px;
+		font-size: 11px;
 		font-weight: 600;
 		color: var(--text-dim);
 	}
