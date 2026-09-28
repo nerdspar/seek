@@ -132,15 +132,26 @@
 	--safe-r: env(safe-area-inset-right, 0px);
 	--safe-l: env(safe-area-inset-left, 0px);
 
-	/* iOS blurs whatever scrolls under the translucent status bar, which is the
-	   effect we want — but the blur bleeds a little past the inset the browser
-	   reports, so padding to exactly --safe-t leaves a header sitting half
-	   underneath it. This is the single knob for that clearance: every header
-	   offsets its content by --header-top rather than --safe-t directly. */
+	/* The gap between the safe-area inset and the header's content. In a browser
+	   this only needs to clear the small blur iOS bleeds past the reported inset.
+	   Installed on iOS 26+/27 it must clear the whole "Liquid Glass" scroll-edge
+	   ramp — a ~40pt system blur over the top of a standalone PWA that no meta or
+	   status-bar style reliably disables — so content is pushed below it and the
+	   ramp only ever falls on solid background (bumped in the standalone query
+	   below). */
 	--status-clearance: 10px;
 	--header-top: calc(var(--safe-t) + var(--status-clearance));
 
 	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, sans-serif;
+}
+
+/* Installed (standalone) on iOS, clear the whole scroll-edge blur ramp, not just
+   the small inset bleed. 2.5rem past the safe area matches the ~40pt ramp; with
+   the header background opaque, the ramp then only blurs solid colour. */
+@media (display-mode: standalone) {
+	:root {
+		--status-clearance: 2.5rem;
+	}
 }
 
 * {
@@ -164,11 +175,11 @@
 .app > header {
 	flex: none;
 	/* The shell already cleared the physical inset; `--status-clearance` is the
-	   extra gap for the blur iOS bleeds past it, so the title looks placed. */
+	   extra gap that keeps the title out of the iOS blur ramp above it. Opaque,
+	   not translucent: nothing scrolls under this bookend, and a solid band is
+	   what makes the ramp's blur invisible. */
 	padding: var(--status-clearance) var(--gutter) 8px;
-	background: color-mix(in srgb, var(--bg) 82%, transparent);
-	backdrop-filter: blur(18px);
-	-webkit-backdrop-filter: blur(18px);
+	background: var(--bg);
 }
 .app > main {
 	flex: 1 1 auto;
