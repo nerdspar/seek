@@ -584,7 +584,7 @@
 	/* Sheet supplied the padding and the scroll container; a page has to do both
 	   itself, including clearing the tab bar and the home indicator. */
 	main {
-		padding: 4px var(--gutter) calc(var(--tabbar-h) + var(--safe-b) + 32px);
+		padding: 4px var(--gutter) calc(var(--tabbar-h) + var(--tabbar-safe-b) + 32px);
 	}
 
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }

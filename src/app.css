@@ -132,6 +132,14 @@
 	--safe-r: env(safe-area-inset-right, 0px);
 	--safe-l: env(safe-area-inset-left, 0px);
 
+	/* The tab bar's bottom footprint — its own safe-area cushion. Normally just the
+	   reported inset, but in an installed PWA we dropped `viewport-fit=cover` (to
+	   kill the iOS top blur), which forces --safe-b to 0, so we reserve the iOS
+	   home-indicator height explicitly (see the standalone override below). Single
+	   source of truth: the tab bar sizes to it, and everything pinned above the bar
+	   (FAB, toasts, notices, scroll padding) offsets by it, so they never drift. */
+	--tabbar-safe-b: var(--safe-b);
+
 	/* The small gap between the safe-area inset and the header's content — the
 	   title looks placed, not shoved against the status bar. It stays tight (no
 	   big standalone bump): the iOS "Liquid Glass" scroll-edge blur is handled
@@ -150,6 +158,16 @@
 	--status-tint-h: calc(env(safe-area-inset-top, 0px) + var(--status-clearance));
 
 	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, sans-serif;
+}
+
+/* Installed PWA only: with no `viewport-fit=cover`, --safe-b is 0, so reserve the
+   iOS portrait home-indicator height. `max()` still yields to a larger real inset
+   if cover ever comes back. A browser tab keeps the plain --safe-b (its own chrome
+   already handles the bottom). */
+@media (display-mode: standalone) {
+	:root {
+		--tabbar-safe-b: max(var(--safe-b), 34px);
+	}
 }
 
 * {

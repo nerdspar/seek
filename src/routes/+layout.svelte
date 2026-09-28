@@ -35,7 +35,7 @@
 		position: fixed;
 		border: none;
 		left: 50%;
-		bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
+		bottom: calc(var(--tabbar-h) + var(--tabbar-safe-b) + 16px);
 		transform: translateX(-50%);
 		z-index: 60;
 		max-width: calc(100% - var(--gutter) * 2);
@@ -61,7 +61,7 @@
 	.pending {
 		position: fixed;
 		left: var(--gutter);
-		bottom: calc(var(--tabbar-h) + var(--safe-b) + 16px);
+		bottom: calc(var(--tabbar-h) + var(--tabbar-safe-b) + 16px);
 		z-index: 55;
 		display: flex;
 		align-items: center;
