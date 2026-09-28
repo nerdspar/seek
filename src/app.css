@@ -129,6 +129,8 @@
 	   and the status bar. */
 	--safe-b: env(safe-area-inset-bottom, 0px);
 	--safe-t: env(safe-area-inset-top, 0px);
+	--safe-r: env(safe-area-inset-right, 0px);
+	--safe-l: env(safe-area-inset-left, 0px);
 
 	/* iOS blurs whatever scrolls under the translucent status bar, which is the
 	   effect we want — but the blur bleeds a little past the inset the browser
@@ -144,6 +146,34 @@
 * {
 	box-sizing: border-box;
 	-webkit-tap-highlight-color: transparent;
+}
+
+/* ── PWA chrome shell (docs/pwa-chrome-spec.md) ─────────────────────────────
+   Every tab page's `.app` is the same frame: the safe area padded once here
+   (top + sides; the tab bar owns the bottom), header and tab bar as fixed
+   bookends, and a single `<main>` scroll region between them — never the window.
+   `100vh` (not `100dvh`): on an installed iPhone `100dvh` reports the screen
+   minus the status bar and floats the tab bar ~59px up. */
+.app {
+	height: 100vh;
+	display: flex;
+	flex-direction: column;
+	padding: var(--safe-t) var(--safe-r) 0 var(--safe-l);
+}
+.app > header {
+	flex: none;
+	/* The shell already cleared the physical inset; `--status-clearance` is the
+	   extra gap for the blur iOS bleeds past it, so the title looks placed. */
+	padding: var(--status-clearance) var(--gutter) 8px;
+	background: color-mix(in srgb, var(--bg) 82%, transparent);
+	backdrop-filter: blur(18px);
+	-webkit-backdrop-filter: blur(18px);
+}
+.app > main {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior-y: contain;
 }
 
 html,

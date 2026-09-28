@@ -6,6 +6,7 @@
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import { keepScroll } from '$lib/keepScroll';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import FilterSheet, { type Filters } from '$lib/components/FilterSheet.svelte';
@@ -420,7 +421,7 @@
 
 	</header>
 
-	<main>
+	<main use:keepScroll={'watchlist'}>
 		{#await data.page}
 			<ul class="rows">
 				{#each Array(6) as _, i (i)}
@@ -526,21 +527,11 @@
 </div>
 
 <style>
-	.app {
-		min-height: 100dvh;
-		padding-top: var(--safe-t);
-	}
-
+	/* Frame comes from the global `.app` shell (app.css); only the header's own
+	   content layout is page-specific. */
 	header {
-		position: sticky;
-		top: 0;
-		z-index: 20;
 		display: flex;
 		align-items: center;
-		padding: 8px var(--gutter);
-		padding-top: calc(8px + var(--header-top));
-		margin-top: calc(-1 * var(--safe-t));
-		background: var(--bg);
 	}
 
 	.sort {
@@ -583,9 +574,10 @@
 		color: var(--text);
 	}
 
+	/* No tab-bar clearance: the bar is a sibling now. 88px keeps the last row
+	   clear of the floating add button. */
 	main {
-		padding: 4px var(--gutter) 0;
-		padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 88px);
+		padding: 4px var(--gutter) 88px;
 	}
 
 	.rows {
