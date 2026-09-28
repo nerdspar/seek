@@ -44,7 +44,7 @@
 		position: fixed;
 		left: var(--gutter);
 		right: var(--gutter);
-		bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px);
+		bottom: calc(var(--tabbar-h) + var(--tabbar-safe-b) + 12px);
 		z-index: 60;
 		display: flex;
 		align-items: center;

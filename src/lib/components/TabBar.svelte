@@ -77,26 +77,21 @@
 		flex: none;
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
-		height: calc(var(--tabbar-h) + var(--safe-b));
-		padding-bottom: var(--safe-b);
+		/* --tabbar-safe-b is the shared cushion (app.css): the reported inset, or the
+		   iOS home-indicator height in an installed PWA where --safe-b is 0. */
+		height: calc(var(--tabbar-h) + var(--tabbar-safe-b));
+		padding-bottom: var(--tabbar-safe-b);
 		background: color-mix(in srgb, var(--bg) 82%, transparent);
 		backdrop-filter: blur(18px);
 		-webkit-backdrop-filter: blur(18px);
 		border-top: 1px solid var(--surface);
 	}
 
-	/* Installed PWA: we dropped `viewport-fit=cover` to kill the iOS top blur, but
-	   that also forces `env(safe-area-inset-bottom)` to 0 — so the row would sit
-	   under the home indicator with no cushion. Reserve the indicator height
-	   explicitly (still honouring a larger real inset if one ever comes back), and
-	   make the surface solid: nothing scrolls behind this flex-child bar, so the
-	   blur bought nothing, and a solid fill matches the home-indicator strip so the
-	   bar reads as reaching the bottom edge instead of floating above it. */
+	/* Installed PWA: make the surface solid. Nothing scrolls behind this flex-child
+	   bar, so the blur bought nothing, and a solid fill matches the home-indicator
+	   strip so the bar reads as reaching the bottom edge, not floating above it. */
 	@media (display-mode: standalone) {
 		.tabbar {
-			--home-indicator: 34px; /* iOS portrait safe-area-inset-bottom */
-			height: calc(var(--tabbar-h) + max(var(--safe-b), var(--home-indicator)));
-			padding-bottom: max(var(--safe-b), var(--home-indicator));
 			background: var(--bg);
 			backdrop-filter: none;
 			-webkit-backdrop-filter: none;

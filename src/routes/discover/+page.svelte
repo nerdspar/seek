@@ -559,7 +559,7 @@
 
 	.note {
 		position: fixed; left: var(--gutter); right: var(--gutter);
-		bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); z-index: 60;
+		bottom: calc(var(--tabbar-h) + var(--tabbar-safe-b) + 12px); z-index: 60;
 		display: flex; align-items: center; gap: 10px;
 		padding: 12px 8px 12px 16px; border-radius: var(--radius);
 		background: var(--surface-raised); box-shadow: var(--shadow-lg);
