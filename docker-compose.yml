@@ -120,6 +120,60 @@ services:
     networks:
       - floppy-net
 
+  # ── Floppy MCP server (optional) ─────────────────────────────────────────
+  # A read-only Model Context Protocol server exposing your Floppy watch history
+  # and ratings, so a Claude client can recommend from what you have actually
+  # watched ("recommend me anime based on what I've watched and rated").
+  #
+  # There is no published image, so it is built from ./mcp in this repo. It
+  # speaks MCP over HTTP so it can live here as a long-lived service; on
+  # floppy-net it reaches Floppy at the same http://floppy:8000 Seek uses.
+  #
+  # Point a Claude client at  http://<nas-ip>:8110/mcp
+  #   • Claude Code:    claude mcp add --transport http floppy http://<nas-ip>:8110/mcp
+  #   • Claude Desktop: Settings → Connectors → Add custom connector → that URL
+  # Both must run on a machine that can reach this port. See mcp/README.md.
+  #
+  # SECURITY: this holds the Floppy token and will hand your library to anyone
+  # who can reach 8110. It is READ-ONLY — no one can change your library through
+  # it — but set MCP_AUTH_TOKEN before exposing the port beyond a trusted LAN,
+  # and send it from the client as `Authorization: Bearer <token>`.
+  #
+  # Do not need it? Delete this whole service; nothing else depends on it.
+  seek-mcp:
+    build: ./mcp
+    container_name: seek-mcp
+    restart: unless-stopped
+    environment:
+      TZ: "America/New_York"
+
+      # Same Floppy as Seek — the container name and INTERNAL port on floppy-net.
+      FLOPPY_URL: "http://floppy:8000" # ⬅ FLOPPY_URL
+
+      # Floppy → Settings → Integrations → API Token (the same one Seek uses).
+      FLOPPY_TOKEN: "PASTE_FLOPPY_TOKEN_HERE" # ⬅ FLOPPY_TOKEN
+
+      # Leave EMPTY on a trusted LAN. Set a long random string (openssl rand -hex
+      # 32) before exposing 8110 through a reverse proxy or tunnel, and pass it as
+      # a Bearer token from the client.
+      MCP_AUTH_TOKEN: "" # ⬅ MCP_AUTH_TOKEN (recommended if exposed)
+
+    ports:
+      # host:container — the server listens on 8110 inside the container. Change
+      # the LEFT number if 8110 is already taken on your NAS.
+      - "8110:8110"
+
+    healthcheck:
+      # /health needs no auth, so this works whether or not MCP_AUTH_TOKEN is set.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8110/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    networks:
+      - floppy-net
+
 # Compose prefixes network names with the project name, and TrueNAS Apps adds a
 # further `ix-` prefix, so Floppy's `floppy-net` exists on the host as
 # `ix-floppy_floppy-net`. `external: true` does no fuzzy matching — the `name:`

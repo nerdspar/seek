@@ -14,11 +14,23 @@ anything in Floppy.
 Floppy is self-hosted on your LAN, and neither claude.ai nor a cloud Claude
 session can reach a private address. This server runs on a machine that *can*
 reach Floppy (the Floppy host itself is fine), and a **local** Claude — Claude
-Desktop or Claude Code on that same network — launches it over stdio. The
-connection to Floppy never leaves your network, and your API token never leaves
-this process.
+Desktop or Claude Code on that same network — reaches it. The connection to
+Floppy never leaves your network, and your API token never leaves this process.
 
-## Build
+## Two ways to run it
+
+Pick one, set by the `MCP_TRANSPORT` env var:
+
+- **stdio** (default) — the Claude client launches this as a subprocess and
+  talks over stdin/stdout. No port, no daemon. Right for a **local Claude
+  Desktop** on the same machine. See [stdio setup](#stdio-run-it-locally).
+- **http** (`MCP_TRANSPORT=http`) — a long-lived HTTP service on `PORT`
+  (default 8110), speaking MCP at `POST /mcp`. Right for running **in a Docker
+  compose stack** next to Floppy and Seek. See [Docker setup](#http-run-it-in-docker-compose).
+
+Either way the tools are identical and read-only.
+
+## stdio: run it locally
 
 Needs Node 20+.
 
@@ -28,7 +40,7 @@ npm install
 npm run build      # compiles src/ → dist/
 ```
 
-## Configure your Claude client
+### Configure Claude Desktop
 
 Add it to Claude Desktop's config file:
 
@@ -62,6 +74,58 @@ that flow.
 
 For Claude Code, add the same server with `claude mcp add` or a `.mcp.json`, run
 from a machine that can reach Floppy.
+
+## http: run it in Docker compose
+
+This is the option for running it as a service alongside Floppy and Seek. The
+repo's [`docker-compose.yml`](../docker-compose.yml) already includes a
+`seek-mcp` service — fill in `FLOPPY_TOKEN` (and `MCP_AUTH_TOKEN`, see below) and:
+
+```sh
+docker compose up -d --build seek-mcp
+```
+
+It builds from this directory, joins Floppy's Docker network, and reaches Floppy
+at `http://floppy:8000` internally — the same address Seek uses, no LAN hop. It
+listens on `:8110` and serves MCP at `POST /mcp`, with an unauthenticated
+`/health` for the container healthcheck.
+
+To run the container by hand instead of via compose:
+
+```sh
+docker build -t seek-mcp ./mcp
+docker run -d --name seek-mcp -p 8110:8110 \
+  -e FLOPPY_URL=http://192.168.1.10:8007 \
+  -e FLOPPY_TOKEN=your-token \
+  -e MCP_AUTH_TOKEN=your-long-random-secret \
+  seek-mcp
+```
+
+### Point a client at the HTTP server
+
+- **Claude Code:**
+  ```sh
+  claude mcp add --transport http floppy http://<host>:8110/mcp \
+    --header "Authorization: Bearer <your MCP_AUTH_TOKEN>"
+  ```
+- **Claude Desktop:** Settings → Connectors → Add custom connector → paste
+  `http://<host>:8110/mcp` (custom connectors require a paid plan).
+
+The client still has to run somewhere that can reach `<host>:8110`.
+
+### Security when exposed
+
+The server holds your Floppy token and will hand your library to anyone who can
+reach `:8110`. It is **read-only** — nothing here can change your library — but
+before exposing that port beyond a trusted LAN:
+
+- set `MCP_AUTH_TOKEN` to a long random string (`openssl rand -hex 32`) so
+  requests need `Authorization: Bearer <token>`, and
+- prefer putting it behind your existing reverse proxy / tunnel rather than
+  publishing the port directly.
+
+With `MCP_AUTH_TOKEN` unset the endpoint is open to anyone who can reach it —
+fine on a trusted LAN, not fine on the open internet.
 
 ## Tools
 
