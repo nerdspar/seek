@@ -9,12 +9,19 @@
 import { getPrefs } from './prefs';
 import { pushConfigured, subscriptionCount } from './push';
 import { sendDailyDigest, sendAtTimeNotifications } from './digest';
+import { jellyfinConfigured } from './jellyfin';
+import { syncAnimeTags } from './anime-sync';
 
 let started = false;
 
 export function startScheduler(): void {
-	if (started || !pushConfigured()) return;
+	if (started) return;
+	// Start if either job has something to do.
+	if (!pushConfigured() && !jellyfinConfigured()) return;
 	started = true;
+
+	if (jellyfinConfigured()) startAnimeSync();
+	if (!pushConfigured()) return;
 
 	/* A tick's work (a cold calendar build plus a push fan-out) can in principle
 	   outrun the interval; without this, two overlapping ticks could both pass the
@@ -46,4 +53,30 @@ export function startScheduler(): void {
 	// Every five minutes, so an "it's on now" push lands reasonably promptly.
 	setInterval(tick, 5 * 60 * 1000);
 	void tick();
+}
+
+/**
+ * Reconcile the Floppy `anime` tag to Jellyfin's Anime library — a few minutes
+ * after boot (let warmup settle) and every six hours after. Idempotent and
+ * diff-only, so a restart or a missed run costs nothing; a transient Jellyfin
+ * outage throws and is logged, leaving existing tags untouched.
+ */
+function startAnimeSync(): void {
+	let running = false;
+	const sync = async () => {
+		if (running) return;
+		running = true;
+		try {
+			const r = await syncAnimeTags();
+			if (r.added || r.removed) {
+				console.log(`[anime-sync] +${r.added} −${r.removed} (anime in Jellyfin: ${r.animeInJellyfin})`);
+			}
+		} catch (err) {
+			console.warn('[anime-sync] failed; keeping existing tags:', err);
+		} finally {
+			running = false;
+		}
+	};
+	setInterval(() => void sync(), 6 * 60 * 60 * 1000);
+	setTimeout(() => void sync(), 60 * 1000);
 }

@@ -1,10 +1,27 @@
 import { error } from '@sveltejs/kit';
-import { getWatchlist } from '$lib/server/watchlist';
+import { getWatchlist, type WatchlistOptions } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
+import { jellyfinConfigured } from '$lib/server/jellyfin';
+import { ANIME_TAG } from '$lib/server/tags';
 import type { MediaType } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 const TYPES: MediaType[] = ['tv', 'movie', 'anime'];
+
+/**
+ * The Shows/Anime split is a view over Floppy's `tv` library, filtered by the
+ * `anime` tag that anime-sync mirrors from Jellyfin — not Floppy's own grouped
+ * `anime` bucket. So "anime" browses tv?tag=anime, and "tv" (Shows) browses the
+ * inverse. The split is only applied when Jellyfin is configured; otherwise tv
+ * shows everything and the Anime tab is simply empty.
+ */
+function listSource(mediaType: MediaType): { source: MediaType; tag?: Partial<WatchlistOptions> } {
+	if (mediaType === 'anime') return { source: 'tv', tag: { tag: ANIME_TAG } };
+	if (mediaType === 'tv' && jellyfinConfigured()) {
+		return { source: 'tv', tag: { tag: ANIME_TAG, tagMode: 'not' } };
+	}
+	return { source: mediaType };
+}
 
 /** Collection views (§7.2) — the same list machinery as the watchlist, but
  *  browsing rather than working through a backlog, so no next-up filter. */
@@ -38,15 +55,17 @@ export const load: PageServerLoad = async ({ params, url }) => {
 
 	/* Streamed: only the 'all' view of each type is warmed, so any other
 	   view/sort combination would otherwise block on a cold build. */
+	const { source, tag } = listSource(mediaType);
 	const page = memo(`library:${mediaType}:${viewKey}:${sortKey}`, 60 * 1000, () =>
-		getWatchlist(mediaType, {
+		getWatchlist(source, {
 			statuses: view.statuses,
 			sort: sortDef.sort,
 			direction: sortDef.direction,
 			// The grid shows poster, title and progress only — no next-up — so
 			// paging the whole library is cheap without per-row enrichment.
 			all: true,
-			enrich: false
+			enrich: false,
+			...tag
 		})
 	);
 

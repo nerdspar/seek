@@ -11,6 +11,8 @@
  * `start_date`/`end_date` narrow the window.
  */
 import { floppy } from './floppy';
+import { jellyfinConfigured } from './jellyfin';
+import { ANIME_TAG } from './tags';
 
 export type RangeKey = 'this_month' | 'this_year' | 'last_year' | 'all_time';
 
@@ -230,13 +232,25 @@ export async function getCollectionCounts(): Promise<CollectionCounts> {
 	   throw instead: memo serves the previous good value or the page shows its
 	   loading/blank state, and the next read retries. A real empty library still
 	   returns a true 0 from the pagination total. */
-	const one = async (mediaType: string) => {
+	const one = async (mediaType: string, extra?: Record<string, string>) => {
 		const res = await floppy<{ pagination?: { total?: number } }>(
 			`/api/v1/media/${mediaType}/`,
-			{ query: { status: ['all'], limit: 1 }, timeoutMs: 30_000 }
+			{ query: { status: ['all'], limit: 1, ...extra }, timeoutMs: 30_000 }
 		);
 		return res.pagination?.total ?? 0;
 	};
+
+	// With Jellyfin, "Anime" is tv?tag=anime and "Shows" is the inverse — the same
+	// split the library uses. Without it, fall back to Floppy's own anime bucket.
+	if (jellyfinConfigured()) {
+		const [tv, movie, anime] = await Promise.all([
+			one('tv', { tag: ANIME_TAG, tag_mode: 'not' }),
+			one('movie'),
+			one('tv', { tag: ANIME_TAG })
+		]);
+		return { tv, movie, anime };
+	}
+
 	const [tv, movie, anime] = await Promise.all([one('tv'), one('movie'), one('anime')]);
 	return { tv, movie, anime };
 }
