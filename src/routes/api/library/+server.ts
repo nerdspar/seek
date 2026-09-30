@@ -10,26 +10,28 @@ type Body = { mediaType?: MediaType; source?: string; mediaId?: string };
 /**
  * Every cache that embeds whether something is tracked.
  *
- * Expiring the tracked set alone is not enough, and was the bug: Discover
- * caches its rows *after* filtering against that set, and the show detail
- * caches `tracked` on the row itself. So adding from Discover left the show
- * page still offering "Add to library", and going back re-rendered the plus
- * from a 30-minute-old row.
+ * The show detail row caches `tracked`, and the `tracked:` search set is the
+ * membership list — both are hard-invalidated so a plus on something you just
+ * added is never served stale.
  *
- * These are invalidated rather than expired. `expire` only marks an entry
- * stale, and the cache deliberately serves stale while it refreshes — which
- * would hand back the same wrong answer on exactly the load that matters. A
- * plus on something you just added is the "actively wrong if served stale"
- * case invalidate exists for.
+ * `discover:` is only *expired*, not invalidated. Rebuilding the Discover feed
+ * is one of the slowest cold paths, and hard-dropping it on every add/remove
+ * meant the next visit to Discover paid a full rebuild — the "flashing empty
+ * squares". The shared membership overlay (status.svelte.ts) already flips the
+ * plus on each tile the instant you act, so the feed itself can serve stale and
+ * refresh behind: a title you just added lingers one refresh with its check
+ * showing, which is fine, and Discover stays instant.
  *
- * The watchlist stays on `expire`: adding files a show under Planning, and the
- * default view is the in-progress backlog, so a stale read is not visibly
- * wrong and this keeps marking cheap.
+ * The watchlist stays on `expire` too: adding files a show under Planning and the
+ * default view is the in-progress backlog, so a stale read is not visibly wrong.
  */
 function invalidateTracked(source: string, mediaId: string) {
 	expire('watchlist:');
 	invalidate('tracked:');
-	invalidate('discover:');
+	expire('discover:');
+	// The Profile's "Recently added" — the whole point is that a just-added title
+	// shows up, so this is actively wrong if served stale.
+	invalidate('recent:');
 	invalidate(`show:${source}:${mediaId}`);
 }
 

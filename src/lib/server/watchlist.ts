@@ -465,6 +465,59 @@ export async function knownServices(): Promise<string[]> {
 	return names;
 }
 
+export type RecentAddition = {
+	mediaType: MediaType;
+	source: string;
+	mediaId: string;
+	title: string;
+	poster: string | null;
+	/** Floppy's `created_at` — when the title entered the library. */
+	addedAt: string;
+};
+
+/**
+ * The most recently added library titles across TV and movies, newest first.
+ *
+ * Floppy carries `created_at` per tracked item but won't sort by it — the sort
+ * enum is closed and 400s on anything else. So this pulls a page of each in
+ * recent-activity order (`updated desc`; an add sets both `created_at` and
+ * `updated`, so a new title is always near the top) and sorts locally by
+ * `created_at`. Unenriched: it needs only poster + title, not the next-up
+ * fan-out, so it is cheap. Captures every add, not just Seek's.
+ */
+export async function getRecentlyAdded(limit = 12): Promise<RecentAddition[]> {
+	const forType = async (mediaType: MediaType): Promise<RecentAddition[]> => {
+		try {
+			const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
+				query: { status: ['all'], sort: 'updated', direction: 'desc', limit: 100 },
+				timeoutMs: 45_000
+			});
+			return (res.results ?? []).flatMap((r) => {
+				const item = (r.item ?? {}) as Record<string, unknown>;
+				const mediaId = String(item.media_id ?? '');
+				const addedAt = typeof r.created_at === 'string' ? r.created_at : null;
+				if (!mediaId || !addedAt) return [];
+				return [
+					{
+						mediaType,
+						source: String(item.source ?? 'tmdb'),
+						mediaId,
+						title: String(item.title ?? 'Untitled'),
+						poster: (item.image as string) ?? null,
+						addedAt
+					}
+				];
+			});
+		} catch {
+			// One type failing shouldn't blank the whole rail.
+			return [];
+		}
+	};
+
+	const [tv, movie] = await Promise.all([forType('tv'), forType('movie')]);
+	return [...tv, ...movie].sort((a, b) => b.addedAt.localeCompare(a.addedAt)).slice(0, limit);
+}
+
 /**
  * Re-read one show's row after a write (§4.2's background row refresh).
  *
