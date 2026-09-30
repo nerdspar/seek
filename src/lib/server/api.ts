@@ -1,5 +1,5 @@
 /** Typed Floppy operations used by Seek. Server-only. */
-import { floppy, FloppyError } from './floppy';
+import { floppy } from './floppy';
 import type { CompleteEpisode, FloppyInfo, MediaType, TrackedMedia, WatchlistRow } from '$lib/types';
 
 /** No auth. Cheapest liveness check Floppy offers. */
@@ -36,8 +36,6 @@ export function getEpisode(source: string, mediaId: string, season: number, epis
 	);
 }
 
-const ANIME_BUCKET_ERROR = /UNIQUE constraint failed:\s*app_tv\.user_id,\s*app_tv\.item_id/i;
-
 /**
  * Mark a movie watched. Appends one play (§12.3), same as an episode.
  *
@@ -64,9 +62,6 @@ export async function markMovieWatched(source: string, mediaId: string): Promise
  *       would silently double the play. Only `FloppyUnreachable` (connect-stage
  *       failure, nothing sent) is safe to retry, and even that is left to the
  *       caller rather than done here.
- * §12.1 Anime filed under a separate library bucket surfaces as a UNIQUE
- *       constraint error; that one specific case is retried with an explicit
- *       library_media_type. Safe because the first attempt provably failed.
  *
  * `end_date` is deliberately omitted so Floppy stamps now (§3).
  */
@@ -78,17 +73,5 @@ export async function markEpisodeWatched(
 ): Promise<TrackedMedia> {
 	const path =
 		`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${season}/episodes/${episode}/watch/`;
-
-	try {
-		return await floppy<TrackedMedia>(path, { method: 'POST', body: {} });
-	} catch (err) {
-		if (err instanceof FloppyError && ANIME_BUCKET_ERROR.test(err.body)) {
-			// The show lives in the Anime library bucket. Nothing was written above.
-			return floppy<TrackedMedia>(path, {
-				method: 'POST',
-				body: { library_media_type: 'anime' }
-			});
-		}
-		throw err;
-	}
+	return floppy<TrackedMedia>(path, { method: 'POST', body: {} });
 }

@@ -32,24 +32,12 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const showPath = (source: string, mediaId: string) =>
 	`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}`;
 
-/**
- * Fetch a TV detail (a show or one of its seasons), reaching into the
- * grouped-anime bucket when that is where the tracking lives.
- *
- * A grouped-anime title is two Items on one TMDB id: a plain `tv` row that
- * carries none of your progress, and an `anime` row that carries all of it. The
- * tv path resolves the empty twin — so an untracked result is the cue to look
- * at the anime bucket before the page concludes you have watched nothing (which
- * was the bug: Re:ZERO and Slime showing 0 watched while the watchlist, which
- * reads the anime row, had them at 77 and 90).
- */
-async function fetchTvDetail(path: string): Promise<{ d: Record<string, unknown>; anime: boolean }> {
-	const d = rec(await floppy(path));
-	if (d.tracked === true) return { d, anime: false };
-	const anime = rec(
-		await floppy(path, { query: { library_media_type: 'anime' } }).catch(() => ({}))
-	);
-	return anime.tracked === true ? { d: anime, anime: true } : { d, anime: false };
+/** Fetch a TV detail (a show or one of its seasons). Anime is tracked in the
+ *  plain `tv` library like everything else now (the Shows/Anime split is a
+ *  Jellyfin-sourced tag, see anime-sync.ts), so there is no separate bucket to
+ *  reach into. */
+async function fetchTvDetail(path: string): Promise<Record<string, unknown>> {
+	return rec(await floppy(path));
 }
 
 /**
@@ -187,7 +175,7 @@ export async function getShow(
 	 *  episode as aired (an ended show, or no air data). */
 	lastAired: { season: number; episode: number } | null = null
 ): Promise<ShowDetail> {
-	const { d, anime } = await fetchTvDetail(`${showPath(source, mediaId)}/`);
+	const d = await fetchTvDetail(`${showPath(source, mediaId)}/`);
 	const details = rec(d.details);
 	const related = rec(d.related);
 
@@ -260,7 +248,6 @@ export async function getShow(
 		maxProgress: num(d.max_progress),
 		progress: num(consumption.progress) ?? 0,
 		tracked: d.tracked === true,
-		anime,
 		status: str(details.status),
 		firstAirDate: str(details.first_air_date),
 		lastAirDate: str(details.last_air_date),
@@ -304,7 +291,7 @@ export async function getSeason(
 	mediaId: string,
 	seasonNumber: number
 ): Promise<SeasonDetail> {
-	const [{ d }, parentTitle] = await Promise.all([
+	const [d, parentTitle] = await Promise.all([
 		fetchTvDetail(`${showPath(source, mediaId)}/${seasonNumber}/`),
 		showTitle(source, mediaId)
 	]);

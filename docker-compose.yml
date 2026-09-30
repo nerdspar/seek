@@ -122,6 +122,17 @@ services:
       RADARR_URL: "" # ⬅ e.g. http://radarr:7878
       RADARR_API_KEY: "" # ⬅ RADARR_API_KEY
 
+      # --- Jellyfin: source of truth for the Shows/Anime split ---------------
+      # Optional. Seek reads which shows live in your Jellyfin "Anime" library
+      # and mirrors it to a Floppy `anime` tag; the Shows/Anime tabs read that
+      # tag. Leave blank and everything shows as TV (no Anime tab). The API key
+      # (Jellyfin Dashboard → API Keys) is read-only and server-side only. Use
+      # an address Seek's container can reach — the public URL works, or a
+      # container name on the same Docker network.
+      JELLYFIN_URL: "" # ⬅ e.g. https://jellyfin.example.com
+      JELLYFIN_API_KEY: "" # ⬅ JELLYFIN_API_KEY
+      JELLYFIN_ANIME_LIBRARY: "Anime" # ⬅ the anime library's name
+
     ports:
       # host:container — the app listens on 8100 inside the container. Change
       # the LEFT number if 8100 is already taken on your NAS.

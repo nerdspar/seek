@@ -13,6 +13,9 @@ import { floppy } from './floppy';
 import { expire } from './memo';
 
 export const JOINT_TAG = 'joint';
+/** Mirrors Jellyfin's Anime library membership; written by the anime-sync job,
+ *  read as the Shows/Anime split (see anime-sync.ts). */
+export const ANIME_TAG = 'anime';
 
 type Tag = { id: number; name: string };
 type TagList = { results?: Tag[] };
@@ -48,15 +51,20 @@ export async function getItemTags(
 }
 
 /**
- * Add or remove the joint tag. The PUT replaces the whole set, so the current
- * tags are read first — otherwise toggling `joint` would silently drop any
- * other tag the user has applied in Floppy.
+ * Add or remove one named tag on an item. The PUT replaces the whole set, so the
+ * current tags are read first — otherwise toggling one tag would silently drop
+ * any other tag the item has in Floppy. Returns the item's resulting tag names.
+ *
+ * `expireWatchlist` is on by default (an interactive toggle should refresh the
+ * lists at once); the bulk anime-sync turns it off and expires once at the end.
  */
-export async function setJoint(
+export async function setItemTag(
 	mediaType: string,
 	source: string,
 	mediaId: string,
-	joint: boolean
+	tag: string,
+	present: boolean,
+	{ expireWatchlist = true }: { expireWatchlist?: boolean } = {}
 ): Promise<string[]> {
 	const [all, current] = await Promise.all([
 		listTags(),
@@ -64,17 +72,27 @@ export async function setJoint(
 	]);
 
 	const next = new Set(current);
-	if (joint) next.add(JOINT_TAG);
-	else next.delete(JOINT_TAG);
+	if (present) next.add(tag);
+	else next.delete(tag);
 
 	const byName = new Map(all.map((t) => [t.name, t.id]));
-	if (joint && !byName.has(JOINT_TAG)) byName.set(JOINT_TAG, await ensureTag(JOINT_TAG));
+	if (present && !byName.has(tag)) byName.set(tag, await ensureTag(tag));
 
 	const tagIds = [...next].map((name) => byName.get(name)).filter((id): id is number => id != null);
 
 	await floppy(tagsPath(mediaType, source, mediaId), { method: 'PUT', body: { tag_ids: tagIds } });
-	expire('watchlist:');
+	if (expireWatchlist) expire('watchlist:');
 	return [...next];
+}
+
+/** Add or remove the joint tag (the household "watched together" flag). */
+export function setJoint(
+	mediaType: string,
+	source: string,
+	mediaId: string,
+	joint: boolean
+): Promise<string[]> {
+	return setItemTag(mediaType, source, mediaId, JOINT_TAG, joint);
 }
 
 /** Query params for the Solo / Joint / All filter (§11). */

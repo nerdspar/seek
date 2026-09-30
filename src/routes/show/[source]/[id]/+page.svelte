@@ -419,7 +419,7 @@
 					<StateChips
 						tracking={t}
 						{joint}
-						showCompany={data.companyTracking && !show.anime}
+						showCompany={data.companyTracking}
 						busy={trackBusy || jointBusy}
 						onmain={() => (statusOpen = true)}
 						onrating={() => (ratingOpen = true)}
