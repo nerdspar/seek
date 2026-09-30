@@ -14,7 +14,27 @@ env:
   IMAGE_NAME: ${{ github.repository }} # metadata-action lowercases this
 
 jobs:
+  # Gate the publish on a green build: a push to main deploys, so a red test
+  # must stop the image from ever being built.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install deps
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
