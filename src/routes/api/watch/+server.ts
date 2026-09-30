@@ -96,6 +96,33 @@ function parse(body: Body) {
 	return { source, mediaId, season, episode, mediaType, title, isMovie };
 }
 
+/**
+ * Every detail/aggregate cache a play (or its undo) can move for this title —
+ * everything except the watchlist, whose per-block handling (patch vs expire vs
+ * revert-invalidate) differs. The show/season/movie pages render the exact state
+ * that just changed, so they are hard-dropped; `tracking:` (the status/score the
+ * chip shows) is dropped too, because marking an episode advances Floppy's status
+ * to In progress and a stale read here is why the chip lagged on "Plan to watch";
+ * the aggregate views are soft-expired.
+ */
+function bustWatchCaches(
+	isMovie: boolean,
+	mediaType: MediaType,
+	source: string,
+	mediaId: string,
+	season: number | undefined
+) {
+	expire('library:');
+	expire('stats:');
+	expire('collection:');
+	invalidate(`tracking:${mediaType}:${source}:${mediaId}`);
+	if (isMovie) invalidate(`movie:${source}:${mediaId}`);
+	else {
+		invalidate(`show:${source}:${mediaId}`);
+		invalidate(`season:${source}:${mediaId}:${season}`);
+	}
+}
+
 /** Mark watched. Appends one play (§12.3). */
 export const POST: RequestHandler = async ({ request }) => {
 	const key = request.headers.get('Idempotency-Key');
@@ -138,32 +165,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Still mark it stale so a background refresh reconciles anything the
 		// patch could not know about, like a show dropping out of the filter.
 		expire('watchlist:');
-		// A watch also moves aggregate views — the Library grid and the Profile's
-		// stats/counts. Soft-expire: they refresh in the background on their next
-		// load rather than paying a full rebuild on this tap.
-		expire('library:');
-		expire('stats:');
-		expire('collection:');
-		// Hard drop, not expire: the show/season pages render the exact progress
-		// this tap just changed, so serving them stale even once would show the
-		// pre-change state (the reason a film's page was already dropped).
-		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else {
-			invalidate(`show:${source}:${mediaId}`);
-			invalidate(`season:${source}:${mediaId}:${season}`);
-		}
+		bustWatchCaches(isMovie, mediaType, source, mediaId, season);
 
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
-		expire('library:');
-		expire('stats:');
-		expire('collection:');
-		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else {
-			invalidate(`show:${source}:${mediaId}`);
-			invalidate(`season:${source}:${mediaId}:${season}`);
-		}
+		bustWatchCaches(isMovie, mediaType, source, mediaId, season);
 		return json({ ok: true, row: null, stale: true });
 	}
 };
@@ -221,25 +228,11 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		   than serving a stale list that still omits it. */
 		if (reverted) invalidate('watchlist:');
 		else expire('watchlist:');
-		expire('library:');
-		expire('stats:');
-		expire('collection:');
-		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else {
-			invalidate(`show:${source}:${mediaId}`);
-			invalidate(`season:${source}:${mediaId}:${season}`);
-		}
+		bustWatchCaches(isMovie, mediaType, source, mediaId, season);
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
-		expire('library:');
-		expire('stats:');
-		expire('collection:');
-		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
-		else {
-			invalidate(`show:${source}:${mediaId}`);
-			invalidate(`season:${source}:${mediaId}:${season}`);
-		}
+		bustWatchCaches(isMovie, mediaType, source, mediaId, season);
 		return json({ ok: true, row: null, stale: true });
 	}
 };

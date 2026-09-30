@@ -20,6 +20,9 @@ function bustSeasonCaches(source: string, mediaId: string, season: number): void
 	expire('library:');
 	expire('stats:');
 	expire('collection:');
+	// Marking a season advances Floppy's status to In progress; drop the cached
+	// status so the chip doesn't linger on "Plan to watch".
+	invalidate(`tracking:tv:${source}:${mediaId}`);
 	invalidate(`show:${source}:${mediaId}`);
 	invalidate(`season:${source}:${mediaId}:${season}`);
 }
