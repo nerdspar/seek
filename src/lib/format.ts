@@ -75,6 +75,9 @@ export function dayLabel(iso: string, from: Date = new Date()): string {
 	const tomorrow = new Date(from);
 	tomorrow.setDate(tomorrow.getDate() + 1);
 	if (dayKey(iso) === dayKey(tomorrow.toISOString())) return 'Tomorrow';
+	const yesterday = new Date(from);
+	yesterday.setDate(yesterday.getDate() - 1);
+	if (dayKey(iso) === dayKey(yesterday.toISOString())) return 'Yesterday';
 
 	return d.toLocaleDateString(undefined, {
 		weekday: 'short',
