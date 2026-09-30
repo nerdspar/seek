@@ -52,6 +52,23 @@
 	const year = (iso: string | null) => (iso ? new Date(iso).getFullYear() : null);
 	const pct = (p: number | null, max: number | null) =>
 		max && max > 0 && p !== null ? Math.min(100, (p / max) * 100) : 0;
+
+	/* The hero's overall bar reads the server totals adjusted by the optimistic
+	   season overrides, so marking a season here moves it at once instead of only
+	   after the next load. Delta form (not a re-sum) keeps the server's own count
+	   as the base — which may exclude specials the way a naive per-season sum would
+	   not — and collapses to the server value when nothing is overridden. */
+	const overallWithOverrides = (show: ShowDetail) => {
+		let dp = 0;
+		let dm = 0;
+		for (const s of show.seasons) {
+			const o = overrides[s.seasonNumber];
+			if (!o) continue;
+			dp += (o.progress ?? 0) - (s.progress ?? 0);
+			dm += (o.maxProgress ?? 0) - (s.maxProgress ?? 0);
+		}
+		return { progress: (show.progress ?? 0) + dp, max: (show.maxProgress ?? 0) + dm };
+	};
 	const complete = (s: SeasonSummary) =>
 		s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress;
 
@@ -374,9 +391,10 @@
 				{/if}
 
 				{#if show.maxProgress}
+					{@const op = overallWithOverrides(show)}
 					<div class="overall">
-						<div class="track"><div class="fill" style:width={`${pct(show.progress, show.maxProgress)}%`}></div></div>
-						<span class="tnum">{show.progress}/{show.maxProgress}</span>
+						<div class="track"><div class="fill" style:width={`${pct(op.progress, op.max)}%`}></div></div>
+						<span class="tnum">{op.progress}/{op.max}</span>
 					</div>
 				{/if}
 			</div>

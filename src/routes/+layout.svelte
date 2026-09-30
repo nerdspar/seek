@@ -3,11 +3,23 @@
 	import NavProgress from '$lib/components/NavProgress.svelte';
 	import { notice, dismissNotice } from '$lib/notices.svelte';
 	import { pendingCount } from '$lib/queue.svelte';
+	import { afterNavigate, invalidateAll } from '$app/navigation';
+	import { consumeWatchlist } from '$lib/dirty';
 	let { children } = $props();
 
 	/* Un-synced writes, waiting for a connection. Silent at zero, which is the
 	   normal case — this only appears when something is genuinely parked. */
 	const pending = $derived(pendingCount());
+
+	/* A write on any page sets a dirty bit (dirty.ts). When the next navigation
+	   lands, re-run the destination's `load` so it shows post-change data instead
+	   of the copy SvelteKit cached on a previous visit — otherwise a status or
+	   watched change made on one page is invisible on the next until its TTL rolls.
+	   Only fires when something actually wrote, so idle back/forward stays free.
+	   Lives here in the root layout so it covers *every* route, not just home. */
+	afterNavigate(() => {
+		if (consumeWatchlist()) void invalidateAll();
+	});
 </script>
 
 <NavProgress />

@@ -1,10 +1,28 @@
 import { json, error } from '@sveltejs/kit';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
-import { expire } from '$lib/server/memo';
+import { expire, invalidate } from '$lib/server/memo';
 import { alreadyApplied, markApplied } from '$lib/server/idempotency';
 import type { RequestHandler } from './$types';
 
 type Body = { source?: string; mediaId?: string; season?: number; episodes?: number; watched?: number };
+
+/**
+ * Every cache a season-level watch change can move. The show page and this season's
+ * episode list render the exact progress that just changed, so they are hard-dropped
+ * (serving them stale even once shows the pre-change state); the watchlist, Library
+ * grid and Profile stats/counts are aggregate and only soft-expired so they refresh
+ * in the background rather than paying a rebuild on this tap. Note the season list
+ * itself was previously never invalidated here, so a whole-season mark left the
+ * season page showing unmarked episodes until its TTL rolled.
+ */
+function bustSeasonCaches(source: string, mediaId: string, season: number): void {
+	expire('watchlist:');
+	expire('library:');
+	expire('stats:');
+	expire('collection:');
+	invalidate(`show:${source}:${mediaId}`);
+	invalidate(`season:${source}:${mediaId}:${season}`);
+}
 
 /* No real season approaches this. It exists only so a bad `episodes` value
    cannot turn one request into an unbounded run of sequential Floppy writes. */
@@ -75,8 +93,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			});
 		}
 	} catch (err) {
-		expire('watchlist:');
-		expire(`show:${source}:${mediaId}`);
+		bustSeasonCaches(source, mediaId, season);
 		if (err instanceof FloppyUnreachable) error(503, `Floppy unreachable after ${marked} of ${remaining}.`);
 		if (err instanceof FloppyError) error(502, `Stopped after ${marked} of ${remaining}: ${err.message}`);
 		throw err;
@@ -84,8 +101,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Recorded only after the whole fill succeeds — a partial run stays retryable.
 	markApplied(key);
-	expire('watchlist:');
-	expire(`show:${source}:${mediaId}`);
+	bustSeasonCaches(source, mediaId, season);
 	return json({ ok: true, marked });
 };
 
@@ -97,15 +113,13 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	const { source, mediaId, season } = parse(await request.json());
 	try {
 		await floppy(`${base(source, mediaId, season)}/`, { method: 'DELETE', timeoutMs: 30_000 });
-		expire('watchlist:');
-		expire(`show:${source}:${mediaId}`);
+		bustSeasonCaches(source, mediaId, season);
 		return json({ ok: true });
 	} catch (err) {
 		// An untracked season has nothing to clear, which is the desired end state
 		// anyway — treat it as success rather than surfacing an error.
 		if (err instanceof FloppyError && err.status === 404) {
-			expire('watchlist:');
-			expire(`show:${source}:${mediaId}`);
+			bustSeasonCaches(source, mediaId, season);
 			return json({ ok: true, alreadyClear: true });
 		}
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was cleared.');

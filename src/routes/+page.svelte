@@ -11,8 +11,6 @@
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import FilterSheet, { type Filters } from '$lib/components/FilterSheet.svelte';
 	import { haptic } from '$lib/haptics';
-	import { afterNavigate } from '$app/navigation';
-	import { consumeWatchlist } from '$lib/dirty';
 	import { queuedWrite } from '$lib/queue.svelte';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { SortKey } from '$lib/server/prefs';
@@ -22,13 +20,9 @@
 
 	let note = $state<string | null>(null);
 
-	/* Coming back from a detail page, SvelteKit re-renders the data it already
-	   had rather than asking the server again — so a show marked on its season
-	   page still showed the episode you had just watched. Only re-run when
-	   something actually wrote; an idle back-navigation stays free. */
-	afterNavigate(() => {
-		if (consumeWatchlist()) void invalidateAll();
-	});
+	/* The dirty→invalidate refresh hook that used to live here now runs in the root
+	   layout (src/routes/+layout.svelte) so it covers every route, not just this
+	   one. */
 
 	/* Optimistic edits live in an overlay keyed by row, and the list is derived
 	   from the server payload plus that overlay. Holding the rows in $state and

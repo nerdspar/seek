@@ -138,26 +138,30 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Still mark it stale so a background refresh reconciles anything the
 		// patch could not know about, like a show dropping out of the filter.
 		expire('watchlist:');
-		// The show page shows season progress, which this just changed. A film's
-		// page reads its watched state straight off the cached progress, so that
-		// one is dropped rather than marked stale — serving it stale would show
-		// the state the tap just reversed.
+		// A watch also moves aggregate views — the Library grid and the Profile's
+		// stats/counts. Soft-expire: they refresh in the background on their next
+		// load rather than paying a full rebuild on this tap.
+		expire('library:');
+		expire('stats:');
+		expire('collection:');
+		// Hard drop, not expire: the show/season pages render the exact progress
+		// this tap just changed, so serving them stale even once would show the
+		// pre-change state (the reason a film's page was already dropped).
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
 		else {
-			expire(`show:${source}:${mediaId}`);
-			/* The season page caches its episode list for five minutes and was
-			   the one thing no write ever dropped, so leaving the page and
-			   coming back showed the episodes unmarked again. Dropped rather
-			   than expired: a checkbox is the definition of actively wrong. */
+			invalidate(`show:${source}:${mediaId}`);
 			invalidate(`season:${source}:${mediaId}:${season}`);
 		}
 
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
+		expire('library:');
+		expire('stats:');
+		expire('collection:');
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
 		else {
-			expire(`show:${source}:${mediaId}`);
+			invalidate(`show:${source}:${mediaId}`);
 			invalidate(`season:${source}:${mediaId}:${season}`);
 		}
 		return json({ ok: true, row: null, stale: true });
@@ -217,17 +221,23 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		   than serving a stale list that still omits it. */
 		if (reverted) invalidate('watchlist:');
 		else expire('watchlist:');
+		expire('library:');
+		expire('stats:');
+		expire('collection:');
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
 		else {
-			expire(`show:${source}:${mediaId}`);
+			invalidate(`show:${source}:${mediaId}`);
 			invalidate(`season:${source}:${mediaId}:${season}`);
 		}
 		return json({ ok: true, row });
 	} catch {
 		expire('watchlist:');
+		expire('library:');
+		expire('stats:');
+		expire('collection:');
 		if (isMovie) invalidate(`movie:${source}:${mediaId}`);
 		else {
-			expire(`show:${source}:${mediaId}`);
+			invalidate(`show:${source}:${mediaId}`);
 			invalidate(`season:${source}:${mediaId}:${season}`);
 		}
 		return json({ ok: true, row: null, stale: true });
