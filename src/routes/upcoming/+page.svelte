@@ -10,6 +10,7 @@
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { keepScroll } from '$lib/keepScroll';
+	import { tabReselect } from '$lib/tabReselect';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { dayKey, dayLabel, epLabel, formatAirDate, relativeWhen } from '$lib/format';
 	import type { UpcomingItem } from '$lib/types';
@@ -78,7 +79,11 @@
 <div class="app">
 	<header><h1>Upcoming</h1></header>
 
-	<main use:keepScroll={'upcoming'} bind:this={mainEl}>
+	<main
+		use:keepScroll={'upcoming'}
+		use:tabReselect={{ tab: 'upcoming', target: () => todayEl }}
+		bind:this={mainEl}
+	>
 		{#await data.items}
 			<div class="skdays">
 				{#each Array(3) as _, g (g)}
