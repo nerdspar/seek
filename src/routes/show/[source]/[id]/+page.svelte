@@ -12,6 +12,7 @@
 	import { loadArrStatus } from '$lib/arr.svelte';
 	import { onMount } from 'svelte';
 	import { statusLabel, type Tracking } from '$lib/tracking';
+	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	import { formatRuntime } from '$lib/format';
 	import { haptic } from '$lib/haptics';
 	import { notify } from '$lib/notices.svelte';
@@ -52,6 +53,23 @@
 	const year = (iso: string | null) => (iso ? new Date(iso).getFullYear() : null);
 	const pct = (p: number | null, max: number | null) =>
 		max && max > 0 && p !== null ? Math.min(100, (p / max) * 100) : 0;
+
+	/* The hero's overall bar reads the server totals adjusted by the optimistic
+	   season overrides, so marking a season here moves it at once instead of only
+	   after the next load. Delta form (not a re-sum) keeps the server's own count
+	   as the base — which may exclude specials the way a naive per-season sum would
+	   not — and collapses to the server value when nothing is overridden. */
+	const overallWithOverrides = (show: ShowDetail) => {
+		let dp = 0;
+		let dm = 0;
+		for (const s of show.seasons) {
+			const o = overrides[s.seasonNumber];
+			if (!o) continue;
+			dp += (o.progress ?? 0) - (s.progress ?? 0);
+			dm += (o.maxProgress ?? 0) - (s.maxProgress ?? 0);
+		}
+		return { progress: (show.progress ?? 0) + dp, max: (show.maxProgress ?? 0) + dm };
+	};
 	const complete = (s: SeasonSummary) =>
 		s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress;
 
@@ -224,14 +242,13 @@
 		}
 	}
 
-	/* Library membership. Optimistic like everything else here, and re-synced
-	   from the server value whenever a fresh load arrives. */
-	let trackedEdit = $state<boolean | null>(null);
+	/* Library membership lives in the shared overlay (status.svelte.ts) so a toggle
+	   here also flips the plus on the Search/Discover tiles for this title without
+	   a reload; the loaded `show.tracked` is the fallback. */
 	let trackBusy = $state(false);
 
 	async function toggleTracked(current: boolean) {
 		if (trackBusy) return;
-		const before = trackedEdit;
 		const next = !current;
 
 		/* Removing throws away whatever progress Floppy holds for the show, which
@@ -240,7 +257,7 @@
 		if (!next) menuOpen = false;
 
 		trackBusy = true;
-		trackedEdit = next;
+		setTitle(data.source, data.mediaId, { tracked: next });
 		try {
 			const res = await queuedWrite(`library:tv:${data.mediaId}`, next ? 'add' : 'remove', '/api/library', {
 				method: next ? 'POST' : 'DELETE',
@@ -249,10 +266,11 @@
 				body: JSON.stringify({ mediaType: 'tv', source: data.source, mediaId: data.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			confirmTitle(data.source, data.mediaId, { tracked: next });
 			touchWatchlist();
 			void notify(next ? 'Added to your library' : 'Removed from your library');
 		} catch (err) {
-			trackedEdit = before;
+			revertTitle(data.source, data.mediaId, ['tracked']);
 			note = `Couldn't ${next ? 'add' : 'remove'} — ${err instanceof Error ? err.message : err}`;
 		} finally {
 			trackBusy = false;
@@ -319,7 +337,7 @@
 		</div>
 	</main>
 {:then show}
-	{@const tracked = trackedEdit ?? show.tracked}
+	{@const tracked = trackedOf(data.source, data.mediaId, show.tracked)}
 	{#snippet headerActions()}
 		<div class="hactions">
 			<!-- Sonarr lives here rather than as its own row, to keep the vertical
@@ -374,9 +392,10 @@
 				{/if}
 
 				{#if show.maxProgress}
+					{@const op = overallWithOverrides(show)}
 					<div class="overall">
-						<div class="track"><div class="fill" style:width={`${pct(show.progress, show.maxProgress)}%`}></div></div>
-						<span class="tnum">{show.progress}/{show.maxProgress}</span>
+						<div class="track"><div class="fill" style:width={`${pct(op.progress, op.max)}%`}></div></div>
+						<span class="tnum">{op.progress}/{op.max}</span>
 					</div>
 				{/if}
 			</div>

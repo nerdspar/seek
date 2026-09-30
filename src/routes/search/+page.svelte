@@ -8,6 +8,7 @@
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
 	import { loadArrStatus } from '$lib/arr.svelte';
+	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	import type { SearchResult } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -30,7 +31,6 @@
 	let results = $state<SearchResult[]>([]);
 	let searching = $state(false);
 	let failed = $state<string | null>(null);
-	let added = $state<Record<string, boolean>>({});
 	let busy = $state<Set<string>>(new Set());
 	let input: HTMLInputElement | undefined = $state();
 
@@ -79,22 +79,25 @@
 	async function toggleAdd(r: SearchResult) {
 		const k = key(r);
 		if (busy.has(k)) return;
-		const isAdded = added[k] ?? r.tracked;
+		const was = trackedOf(r.source, r.mediaId, r.tracked);
+		const next = !was;
 
-		const next = new Set(busy);
-		next.add(k);
-		busy = next;
-		added = { ...added, [k]: !isAdded };
+		const bset = new Set(busy);
+		bset.add(k);
+		busy = bset;
+		// Shared overlay, so the same title flips on Discover and the detail page too.
+		setTitle(r.source, r.mediaId, { tracked: next });
 
 		try {
 			const res = await fetch('/api/library', {
-				method: isAdded ? 'DELETE' : 'POST',
+				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ mediaType: r.mediaType, source: r.source, mediaId: r.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			confirmTitle(r.source, r.mediaId, { tracked: next });
 		} catch (err) {
-			added = { ...added, [k]: isAdded };
+			revertTitle(r.source, r.mediaId, ['tracked']);
 			failed = err instanceof Error ? err.message : String(err);
 		} finally {
 			const done = new Set(busy);
@@ -103,7 +106,7 @@
 		}
 	}
 
-	const isAdded = (r: SearchResult) => added[key(r)] ?? r.tracked;
+	const isAdded = (r: SearchResult) => trackedOf(r.source, r.mediaId, r.tracked);
 </script>
 
 <PageHeader title="Add to library" onback={() => history.back()} />
