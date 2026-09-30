@@ -26,6 +26,18 @@ export const RADARR_URL = () => (env.RADARR_URL ?? '').replace(/\/+$/, '');
 export const RADARR_API_KEY = () => env.RADARR_API_KEY ?? '';
 
 /**
+ * Jellyfin connection (optional). Seek uses Jellyfin purely as the anime
+ * classifier: which shows sit in its "Anime" library is the source of truth for
+ * the Shows/Anime split. The API key is a secret, read-only, and — like the
+ * Floppy token — only ever resolved server-side. Configured only when both URL
+ * and key are present; otherwise the split is simply not surfaced.
+ * JELLYFIN_ANIME_LIBRARY names that library (default "Anime").
+ */
+export const JELLYFIN_URL = () => (env.JELLYFIN_URL ?? '').replace(/\/+$/, '');
+export const JELLYFIN_API_KEY = () => env.JELLYFIN_API_KEY ?? '';
+export const JELLYFIN_ANIME_LIBRARY = () => env.JELLYFIN_ANIME_LIBRARY ?? 'Anime';
+
+/**
  * Browser-reachable Floppy address, for the one link the phone follows directly
  * (§8's link out to Floppy's settings). Distinct from FLOPPY_URL, which is only
  * ever resolved server-side and is typically a container name that a phone
