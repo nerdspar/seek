@@ -67,6 +67,26 @@
 	</header>
 
 	<main use:keepScroll={'profile'}>
+		{#await data.recentlyAdded then recent}
+			{#if recent.length}
+				<section class="recent">
+					<h2>Recently added</h2>
+					<ul class="rail">
+						{#each recent as it (it.mediaType + ':' + it.source + ':' + it.mediaId)}
+							<li>
+								<button
+									onclick={() => goto(`/${it.mediaType === 'movie' ? 'movie' : 'show'}/${it.source}/${it.mediaId}`)}
+								>
+									<Poster src={it.poster} width={92} height={138} radius={9} />
+									<span class="cap">{it.title}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+		{/await}
+
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">
@@ -271,6 +291,38 @@
 	.l { font-size: 10.5px; color: var(--text-dim); text-align: center; }
 
 	section { margin-bottom: 24px; }
+
+	/* Recently added — a horizontal poster rail that bleeds to the screen edges. */
+	.recent { margin-bottom: 20px; }
+	.rail {
+		display: flex;
+		gap: 12px;
+		list-style: none;
+		margin: 0 calc(var(--gutter) * -1);
+		padding: 2px var(--gutter) 4px;
+		overflow-x: auto;
+		scroll-snap-type: x proximity;
+		-webkit-overflow-scrolling: touch;
+	}
+	.rail::-webkit-scrollbar { display: none; }
+	.rail li { flex: none; width: 92px; scroll-snap-align: start; }
+	.rail button {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		width: 100%;
+		text-align: left;
+	}
+	.cap {
+		font-size: 12px;
+		line-height: 1.25;
+		color: var(--text-dim);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
 	h2 {
 		margin: 0 0 6px; font-size: 12.5px; font-weight: 700;
 		text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim);

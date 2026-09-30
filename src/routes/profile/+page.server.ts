@@ -6,6 +6,7 @@ import {
 	type RangeKey,
 	type Stats
 } from '$lib/server/stats';
+import { getRecentlyAdded } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
 import type { PageServerLoad } from './$types';
 
@@ -25,9 +26,15 @@ export const load: PageServerLoad = async ({ url }) => {
 	// Counts for the Collection rows (§7.2), warmed at boot — see hooks.server.ts.
 	const counts = memo(COUNTS_KEY, COUNTS_TTL, getCollectionCounts);
 
+	/* Recently added to the library, so a show you just tracked is easy to find
+	   again. Streamed and cached; invalidated on add/remove (see /api/library) so
+	   a fresh addition appears at once. Independent of `range`. */
+	const recentlyAdded = memo('recent:added', 60 * 1000, () => getRecentlyAdded(12));
+
 	return {
 		range,
 		stats,
-		counts
+		counts,
+		recentlyAdded
 	};
 };

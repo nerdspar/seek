@@ -29,6 +29,9 @@ function invalidateTracked(source: string, mediaId: string) {
 	expire('watchlist:');
 	invalidate('tracked:');
 	expire('discover:');
+	// The Profile's "Recently added" — the whole point is that a just-added title
+	// shows up, so this is actively wrong if served stale.
+	invalidate('recent:');
 	invalidate(`show:${source}:${mediaId}`);
 }
 
