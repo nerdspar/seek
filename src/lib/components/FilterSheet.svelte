@@ -1,8 +1,14 @@
 <script lang="ts">
 	import Sheet from './Sheet.svelte';
-	import type { Company } from '$lib/server/tags';
+	import type { Company, AnimeFilter } from '$lib/server/tags';
 
-	export type Filters = { status: string; company: Company; services: string[] };
+	export type { AnimeFilter };
+	export type Filters = {
+		status: string;
+		company: Company;
+		anime: AnimeFilter;
+		services: string[];
+	};
 
 	type Props = {
 		filters: Filters;
@@ -10,12 +16,15 @@
 		subscribed: string[];
 		/** Off when the household does not track who watched (§8 preference). */
 		showCompany: boolean;
+		/** Off when Jellyfin isn't configured — there is no anime tag to split on. */
+		showAnime: boolean;
 		/** How many titles the current filters match; null while that is loading. */
 		resultCount: number | null;
 		onchange: (f: Filters) => void;
 		onclose: () => void;
 	};
-	let { filters, subscribed, showCompany, resultCount, onchange, onclose }: Props = $props();
+	let { filters, subscribed, showCompany, showAnime, resultCount, onchange, onclose }: Props =
+		$props();
 
 	/* Fetched here rather than in the page load: building this list pages the
 	   whole library, and awaiting it on the watchlist — the launch screen —
@@ -47,6 +56,12 @@
 		{ id: 'all', label: 'All' },
 		{ id: 'joint', label: 'Joint' },
 		{ id: 'solo', label: 'Solo' }
+	];
+
+	const ANIME: { id: AnimeFilter; label: string }[] = [
+		{ id: 'all', label: 'All' },
+		{ id: 'only', label: 'Only anime' },
+		{ id: 'hide', label: 'Hide anime' }
 	];
 
 	/* Subscribed services first — that is the list the household actually cares
@@ -87,7 +102,10 @@
 		});
 
 	const active = $derived(
-		filters.status !== 'in_progress' || filters.company !== 'all' || filters.services.length > 0
+		filters.status !== 'in_progress' ||
+			filters.company !== 'all' ||
+			filters.anime !== 'all' ||
+			filters.services.length > 0
 	);
 </script>
 
@@ -108,7 +126,10 @@
 				</span>
 			</div>
 			{#if active}
-				<button class="reset" onclick={() => onchange({ status: 'in_progress', company: 'all', services: [] })}>
+				<button
+					class="reset"
+					onclick={() => onchange({ status: 'in_progress', company: 'all', anime: 'all', services: [] })}
+				>
 					Reset
 				</button>
 			{/if}
@@ -133,6 +154,19 @@
 				{#each COMPANY as c (c.id)}
 					<button class:on={filters.company === c.id} onclick={() => onchange({ ...filters, company: c.id })}>
 						{c.label}
+					</button>
+				{/each}
+			</div>
+		</section>
+		{/if}
+
+		{#if showAnime}
+		<section>
+			<h3>Anime</h3>
+			<div class="chips">
+				{#each ANIME as a (a.id)}
+					<button class:on={filters.anime === a.id} onclick={() => onchange({ ...filters, anime: a.id })}>
+						{a.label}
 					</button>
 				{/each}
 			</div>

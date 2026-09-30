@@ -103,3 +103,15 @@ export function companyQuery(company: Company): Record<string, string | undefine
 	if (company === 'solo') return { tag: JOINT_TAG, tag_mode: 'not' };
 	return {};
 }
+
+/** The watchlist's anime filter. */
+export type AnimeFilter = 'all' | 'only' | 'hide';
+
+/** getWatchlist tag options for the anime filter: 'only' keeps the anime-tagged
+ *  shows, 'hide' keeps the rest, 'all' applies no anime filter. Returns the
+ *  camelCase getWatchlist options (tag / tagMode), not raw Floppy query params. */
+export function animeTagQuery(filter: AnimeFilter): { tag?: string; tagMode?: 'not' } {
+	if (filter === 'only') return { tag: ANIME_TAG };
+	if (filter === 'hide') return { tag: ANIME_TAG, tagMode: 'not' };
+	return {};
+}
