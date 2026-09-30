@@ -1,5 +1,13 @@
+<script module lang="ts">
+	// The first open of Upcoming in a session lands anchored at Today (scroll up
+	// for the last 30 days); return navigations restore whatever keepScroll saved.
+	// Module-scoped so it survives the component's unmount/remount.
+	let anchoredThisSession = false;
+</script>
+
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { keepScroll } from '$lib/keepScroll';
@@ -12,23 +20,117 @@
 
 	// One timestamp for the whole render, so every relative marker agrees.
 	const now = new Date();
+	const todayKey = dayKey(now.toISOString());
 
-	type Group = { key: string; label: string; iso: string; items: UpcomingItem[] };
+	/* How far ahead to show. The feed always also carries the last 30 days (sliced
+	   server-side); those show above Today regardless — this only caps the future.
+	   No fetch cost to a wider window: Seek pulls the whole calendar once. */
+	const RANGES = [
+		{ id: '1m', label: '1M', months: 1 },
+		{ id: '3m', label: '3M', months: 3 },
+		{ id: '6m', label: '6M', months: 6 },
+		{ id: '1y', label: '1Y', months: 12 }
+	] as const;
+	const STORE_KEY = 'seek:upcoming:range';
 
-	const groupBy = (items: UpcomingItem[]) =>
-		items.reduce<Group[]>((acc, item) => {
-			const key = dayKey(item.start);
-			const last = acc[acc.length - 1];
-			if (last?.key === key) last.items.push(item);
-			else acc.push({ key, label: dayLabel(item.start, now), iso: item.start, items: [item] });
-			return acc;
-		}, []);
+	let range = $state<string>('3m');
+	let mainEl: HTMLElement | undefined = $state();
+	let todayEl: HTMLElement | undefined = $state();
+
+	onMount(() => {
+		try {
+			const saved = localStorage.getItem(STORE_KEY);
+			if (saved && RANGES.some((r) => r.id === saved)) range = saved;
+		} catch {
+			/* private mode / blocked storage: keep the default */
+		}
+	});
+
+	/* The first open of a session lands at Today — scroll up for the last 30 days;
+	   return navigations are keepScroll's job (hence the once-per-session guard).
+	   Driven off the Today row actually existing (markToday binds it once the
+	   streamed list renders), not a timer, so it can't miss a slow load. */
+	$effect(() => {
+		const main = mainEl;
+		const el = todayEl;
+		if (!main || !el || anchoredThisSession) return;
+		anchoredThisSession = true;
+		/* Direct, not via requestAnimationFrame: getBoundingClientRect forces
+		   layout, and the rows carry fixed poster dimensions so the offset is
+		   already final — and a backgrounded tab pauses rAF, which would strand it. */
+		main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top;
+	});
+
+	/* Binds `todayEl` to the first non-past day's section. */
+	function markToday(node: HTMLElement, isAnchor: boolean) {
+		if (isAnchor) todayEl = node;
+		return {
+			update(next: boolean) {
+				if (next) todayEl = node;
+				else if (todayEl === node) todayEl = undefined;
+			},
+			destroy() {
+				if (todayEl === node) todayEl = undefined;
+			}
+		};
+	}
+	function pickRange(id: string) {
+		range = id;
+		try {
+			localStorage.setItem(STORE_KEY, id);
+		} catch {
+			/* ignore */
+		}
+	}
+
+	const forwardCutoff = $derived.by(() => {
+		const months = RANGES.find((r) => r.id === range)?.months ?? 3;
+		const d = new Date(now);
+		d.setMonth(d.getMonth() + months);
+		return d.getTime();
+	});
+
+	type Group = { key: string; label: string; iso: string; past: boolean; items: UpcomingItem[] };
+
+	const groupBy = (items: UpcomingItem[]): Group[] =>
+		items
+			// Past items (start < now) always pass; the range only caps the future.
+			.filter((i) => new Date(i.start).getTime() <= forwardCutoff)
+			.reduce<Group[]>((acc, item) => {
+				const key = dayKey(item.start);
+				const last = acc[acc.length - 1];
+				if (last?.key === key) last.items.push(item);
+				else
+					acc.push({
+						key,
+						label: dayLabel(item.start, now),
+						iso: item.start,
+						past: key < todayKey,
+						items: [item]
+					});
+				return acc;
+			}, []);
+
 </script>
 
 <div class="app">
-	<header><h1>Upcoming</h1></header>
+	<header>
+		<h1>Upcoming</h1>
+		<div class="ranges" role="tablist" aria-label="How far ahead to show">
+			{#each RANGES as r (r.id)}
+				<button
+					role="tab"
+					aria-selected={range === r.id}
+					class:on={range === r.id}
+					onclick={() => pickRange(r.id)}
+				>
+					{r.label}
+				</button>
+			{/each}
+		</div>
+	</header>
 
-	<main use:keepScroll={'upcoming'}>
+	<main use:keepScroll={'upcoming'} bind:this={mainEl}>
 		{#await data.items}
 			<div class="skdays">
 				{#each Array(3) as _, g (g)}
@@ -39,14 +141,22 @@
 				{/each}
 			</div>
 		{:then items}
+			{@const groups = groupBy(items)}
+			{@const anchorKey = groups.find((g) => !g.past)?.key}
+			{@const upcomingCount = groups.reduce((n, g) => n + (g.past ? 0 : g.items.length), 0)}
 			{#if !items.length}
 				<div class="empty">
 					<h2>Nothing scheduled</h2>
 					<p>No upcoming episodes for anything you're tracking.</p>
 				</div>
+			{:else if !groups.length}
+				<div class="empty">
+					<h2>Nothing in this range</h2>
+					<p>Nothing scheduled that soon — try a longer range above.</p>
+				</div>
 			{:else}
-			{#each groupBy(items) as group (group.key)}
-				<section>
+			{#each groups as group (group.key)}
+				<section class:past={group.past} use:markToday={group.key === anchorKey}>
 					<div class="day">
 						<span class="label">{group.label}</span>
 						{#if relativeWhen(group.iso, now)}
@@ -85,7 +195,7 @@
 					</ul>
 				</section>
 			{/each}
-			<p class="count tnum">{items.length} upcoming</p>
+			<p class="count tnum">{upcomingCount} upcoming</p>
 			{/if}
 		{:catch err}
 			<div class="empty">
@@ -100,6 +210,39 @@
 
 <style>
 	/* Frame from the global `.app` shell (app.css). */
+	header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	/* Segmented control for how far ahead to show. */
+	.ranges {
+		display: inline-flex;
+		flex: none;
+		gap: 2px;
+		padding: 2px;
+		border-radius: 999px;
+		background: var(--surface);
+	}
+	.ranges button {
+		min-width: 34px;
+		min-height: 30px;
+		padding: 0 9px;
+		border-radius: 999px;
+		font-size: 12px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-dim);
+	}
+	.ranges button.on {
+		background: var(--surface-raised);
+		color: var(--text);
+	}
+	/* Already-aired days sit above Today; muted so the eye lands on what's next. */
+	section.past {
+		opacity: 0.6;
+	}
 	h1 {
 		margin: 0;
 		font-size: 26px;

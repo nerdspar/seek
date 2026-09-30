@@ -94,9 +94,12 @@ async function build(): Promise<UpcomingItem[]> {
 	const [events, index] = await Promise.all([fetchFeed(), libraryIndex()]);
 	const now = Date.now();
 
+	// Keep a 30-day backward window so Upcoming can also answer "what aired
+	// recently" — scroll up past Today. Anything older belongs in the diary. (No
+	// extra Floppy cost: the whole feed is fetched either way and sliced here.)
+	const PAST_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 	return events
-		// Past episodes belong in the diary, not in Upcoming.
-		.filter((e) => new Date(e.start).getTime() >= now - 12 * 60 * 60 * 1000)
+		.filter((e) => new Date(e.start).getTime() >= now - PAST_WINDOW_MS)
 		.map((e): UpcomingItem => {
 			const hit = index.get(e.title.toLowerCase());
 			return {
