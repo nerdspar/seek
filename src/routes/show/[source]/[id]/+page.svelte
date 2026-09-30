@@ -12,6 +12,7 @@
 	import { loadArrStatus } from '$lib/arr.svelte';
 	import { onMount } from 'svelte';
 	import { statusLabel, type Tracking } from '$lib/tracking';
+	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	import { formatRuntime } from '$lib/format';
 	import { haptic } from '$lib/haptics';
 	import { notify } from '$lib/notices.svelte';
@@ -241,14 +242,13 @@
 		}
 	}
 
-	/* Library membership. Optimistic like everything else here, and re-synced
-	   from the server value whenever a fresh load arrives. */
-	let trackedEdit = $state<boolean | null>(null);
+	/* Library membership lives in the shared overlay (status.svelte.ts) so a toggle
+	   here also flips the plus on the Search/Discover tiles for this title without
+	   a reload; the loaded `show.tracked` is the fallback. */
 	let trackBusy = $state(false);
 
 	async function toggleTracked(current: boolean) {
 		if (trackBusy) return;
-		const before = trackedEdit;
 		const next = !current;
 
 		/* Removing throws away whatever progress Floppy holds for the show, which
@@ -257,7 +257,7 @@
 		if (!next) menuOpen = false;
 
 		trackBusy = true;
-		trackedEdit = next;
+		setTitle(data.source, data.mediaId, { tracked: next });
 		try {
 			const res = await queuedWrite(`library:tv:${data.mediaId}`, next ? 'add' : 'remove', '/api/library', {
 				method: next ? 'POST' : 'DELETE',
@@ -266,10 +266,11 @@
 				body: JSON.stringify({ mediaType: 'tv', source: data.source, mediaId: data.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			confirmTitle(data.source, data.mediaId, { tracked: next });
 			touchWatchlist();
 			void notify(next ? 'Added to your library' : 'Removed from your library');
 		} catch (err) {
-			trackedEdit = before;
+			revertTitle(data.source, data.mediaId, ['tracked']);
 			note = `Couldn't ${next ? 'add' : 'remove'} — ${err instanceof Error ? err.message : err}`;
 		} finally {
 			trackBusy = false;
@@ -336,7 +337,7 @@
 		</div>
 	</main>
 {:then show}
-	{@const tracked = trackedEdit ?? show.tracked}
+	{@const tracked = trackedOf(data.source, data.mediaId, show.tracked)}
 	{#snippet headerActions()}
 		<div class="hactions">
 			<!-- Sonarr lives here rather than as its own row, to keep the vertical

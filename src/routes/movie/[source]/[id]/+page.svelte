@@ -13,6 +13,7 @@
 	import { onMount } from 'svelte';
 	import { formatRuntime } from '$lib/format';
 	import { statusLabel, type Tracking } from '$lib/tracking';
+	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	import { notify } from '$lib/notices.svelte';
 	import { touchWatchlist } from '$lib/dirty';
 	import { queuedWrite } from '$lib/queue.svelte';
@@ -60,7 +61,6 @@
 	}
 	let trackBusy = $state(false);
 	let trackEdit = $state<Tracking | null>(null);
-	let trackedEdit = $state<boolean | null>(null);
 
 	/* Same handover as the show page: the hero carries the title, so the header
 	   holds its own back until that scrolls under it. Measured against the
@@ -117,13 +117,12 @@
 
 	async function toggleTracked(current: boolean) {
 		if (trackBusy) return;
-		const before = trackedEdit;
 		const next = !current;
 		if (!next && !confirm('Remove this from your library? Any watched progress goes with it.')) return;
 		if (!next) menuOpen = false;
 
 		trackBusy = true;
-		trackedEdit = next;
+		setTitle(data.source, data.mediaId, { tracked: next });
 		try {
 			const res = await queuedWrite(`library:movie:${data.mediaId}`, next ? 'add' : 'remove', '/api/library', {
 				method: next ? 'POST' : 'DELETE',
@@ -131,10 +130,11 @@
 				body: JSON.stringify({ mediaType: 'movie', source: data.source, mediaId: data.mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			confirmTitle(data.source, data.mediaId, { tracked: next });
 			touchWatchlist();
 			void notify(next ? 'Added to your library' : 'Removed from your library');
 		} catch (err) {
-			trackedEdit = before;
+			revertTitle(data.source, data.mediaId, ['tracked']);
 			note = `Couldn't ${next ? 'add' : 'remove'} — ${err instanceof Error ? err.message : err}`;
 		} finally {
 			trackBusy = false;
@@ -207,7 +207,7 @@
 	<PageHeader
 		title={movie.title}
 		titleHidden={heroVisible}
-		action={movie.tracked || trackedEdit ? menuButton : undefined}
+		action={trackedOf(data.source, data.mediaId, movie.tracked) ? menuButton : undefined}
 		onback={() => history.back()}
 	/>
 
@@ -244,7 +244,7 @@
 
 		{#await data.tracking then serverTracking}
 			{@const t = trackEdit ?? serverTracking}
-			{@const tracked = trackedEdit ?? movie.tracked}
+			{@const tracked = trackedOf(data.source, data.mediaId, movie.tracked)}
 			{@const watched = watchedEdit ?? movie.watched}
 
 			{#if tracked}

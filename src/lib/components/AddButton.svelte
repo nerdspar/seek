@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { notify } from '$lib/notices.svelte';
+	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	/** Inline add/remove for a Discover or search result (§6.4). Owns its own
 	 *  request so any grid can drop it in without threading state. */
 	type Props = {
@@ -13,32 +14,34 @@
 	};
 	let { mediaType, source, mediaId, title, added = false, onerror, size = 32 }: Props = $props();
 
-	/** Local optimistic state, re-synced whenever the owner supplies a new value. */
-	let on = $state(false);
+	/* Membership comes from the shared overlay (status.svelte.ts) laid over the
+	   value the page supplied, so an add/remove done anywhere — here, another grid,
+	   or a detail page — flips this glyph live, and a title nobody has touched falls
+	   through to `added`. */
+	const on = $derived(trackedOf(source, mediaId, added));
 	let busy = $state(false);
-	$effect(() => {
-		on = added;
-	});
 
 	async function toggle(e: MouseEvent) {
 		e.stopPropagation();
 		if (busy) return;
 		const was = on;
+		const next = !was;
 		busy = true;
-		on = !was;
+		setTitle(source, mediaId, { tracked: next });
 		try {
 			const res = await fetch('/api/library', {
-				method: was ? 'DELETE' : 'POST',
+				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ mediaType, source, mediaId })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			confirmTitle(source, mediaId, { tracked: next });
 			/* The glyph flips, which is easy to miss on a poster the size of a
 			   thumbnail — and on iOS there is no haptic to feel instead. */
-			void notify(was ? `Removed ${title}` : `Added ${title}`);
+			void notify(next ? `Added ${title}` : `Removed ${title}`);
 		} catch (err) {
-			on = was;
-			onerror?.(`Couldn't ${was ? 'remove' : 'add'} ${title} — ${err instanceof Error ? err.message : err}`);
+			revertTitle(source, mediaId, ['tracked']);
+			onerror?.(`Couldn't ${next ? 'add' : 'remove'} ${title} — ${err instanceof Error ? err.message : err}`);
 		} finally {
 			busy = false;
 		}
