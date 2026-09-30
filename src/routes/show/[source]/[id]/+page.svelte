@@ -70,8 +70,16 @@
 		}
 		return { progress: (show.progress ?? 0) + dp, max: (show.maxProgress ?? 0) + dm };
 	};
-	const complete = (s: SeasonSummary) =>
-		s.maxProgress !== null && s.progress !== null && s.progress >= s.maxProgress;
+	/* What a whole-season action targets: the episodes that have aired, not the
+	   full announced count. Marking a currently-airing season should catch you up
+	   to what's out, never tick episodes that haven't aired. Falls back to the
+	   total for an ended show (airedMax === maxProgress there anyway). */
+	const airedMaxOf = (s: SeasonSummary) => s.airedMax ?? s.maxProgress;
+
+	const complete = (s: SeasonSummary) => {
+		const m = airedMaxOf(s);
+		return m !== null && m > 0 && s.progress !== null && s.progress >= m;
+	};
 
 	/**
 	 * What to badge a show with.
@@ -123,11 +131,12 @@
 	async function toggleSeason(season: SeasonSummary, e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
-		if (busy.has(season.seasonNumber) || !season.maxProgress) return;
+		const target = airedMaxOf(season);
+		if (busy.has(season.seasonNumber) || !target) return;
 
 		const done = complete(season);
 		const before = { ...season };
-		if (done && !confirm(`Clear all ${season.maxProgress} episodes of ${season.title}?`)) return;
+		if (done && !confirm(`Clear all ${target} episodes of ${season.title}?`)) return;
 
 		haptic();
 		setBusy(season.seasonNumber, true);
@@ -135,7 +144,7 @@
 			...overrides,
 			[season.seasonNumber]: {
 				...season,
-				progress: done ? 0 : season.maxProgress,
+				progress: done ? 0 : target,
 				tracked: true
 			}
 		};
@@ -148,7 +157,7 @@
 					source: data.source,
 					mediaId: data.mediaId,
 					season: season.seasonNumber,
-					episodes: season.maxProgress,
+					episodes: target,
 					watched: season.progress ?? 0
 				})
 			});
@@ -159,7 +168,7 @@
 			void notify(
 				done
 					? `Cleared ${season.title}`
-					: `Marked ${season.maxProgress ?? ''} episode${season.maxProgress === 1 ? '' : 's'} watched`.replace('  ', ' ')
+					: `Marked ${target} episode${target === 1 ? '' : 's'} watched`.replace('  ', ' ')
 			);
 		} catch (err) {
 			overrides = { ...overrides, [season.seasonNumber]: before };
@@ -478,7 +487,7 @@
 						<button
 							class="check"
 							class:watched={complete(s)}
-							disabled={busy.has(s.seasonNumber) || !s.maxProgress}
+							disabled={busy.has(s.seasonNumber) || !airedMaxOf(s)}
 							aria-pressed={complete(s)}
 							aria-label={`Mark ${s.title} watched`}
 							onclick={(e) => toggleSeason(s, e)}
@@ -496,10 +505,10 @@
 								<span class="s-title">{s.seasonNumber === 0 ? 'Specials' : `Season ${s.seasonNumber}`}</span>
 								<div class="s-progress">
 									<div class="track">
-										<div class="fill" style:width={`${pct(s.progress, s.maxProgress)}%`}></div>
+										<div class="fill" style:width={`${pct(s.progress, airedMaxOf(s))}%`}></div>
 									</div>
 									<span class="tnum dim">
-										{#if s.progress !== null && s.maxProgress}{s.progress}/{s.maxProgress}
+										{#if s.progress !== null && airedMaxOf(s)}{s.progress}/{airedMaxOf(s)}
 										{:else if s.progress !== null}{s.progress} watched
 										{:else}Not started{/if}
 									</span>

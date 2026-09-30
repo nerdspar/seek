@@ -181,7 +181,11 @@ export async function getShow(
 	mediaId: string,
 	/** Episode counts per season, if a cheaper source already has them. Supplying
 	 *  these skips a per-season request each — the dominant cost of this page. */
-	knownSeasonEpisodes: Record<number, number> = {}
+	knownSeasonEpisodes: Record<number, number> = {},
+	/** The latest episode that has aired (TMDB's last_episode_to_air), so a
+	 *  whole-season action can stop at what's out. Null → treat every listed
+	 *  episode as aired (an ended show, or no air data). */
+	lastAired: { season: number; episode: number } | null = null
 ): Promise<ShowDetail> {
 	const { d, anime } = await fetchTvDetail(`${showPath(source, mediaId)}/`);
 	const details = rec(d.details);
@@ -199,6 +203,8 @@ export async function getShow(
 				poster: str(item.image),
 				progress: num(s.progress),
 				maxProgress: num(item.number_of_pages),
+				// Filled in below, once maxProgress is settled.
+				airedMax: null,
 				// `id` is null for a season the user has never tracked.
 				tracked: s.id !== null && s.id !== undefined
 			};
@@ -217,6 +223,22 @@ export async function getShow(
 			return { ...s, maxProgress: await seasonMax(source, mediaId, s.seasonNumber) };
 		})
 	);
+
+	/* How many episodes of each season have actually aired, so a whole-season mark
+	   can stop there instead of ticking episodes that have not aired. A past season
+	   is fully aired; the currently-airing one stops at lastAired's episode; a
+	   season that has not started has none. With no air data (an ended show) every
+	   listed episode counts as aired. */
+	const airedMaxFor = (seasonNumber: number, maxProgress: number | null): number | null => {
+		if (maxProgress === null) return null;
+		if (!lastAired || seasonNumber < lastAired.season) return maxProgress;
+		if (seasonNumber === lastAired.season) return Math.min(maxProgress, lastAired.episode);
+		return 0;
+	};
+	const withAired: SeasonSummary[] = withTotals.map((s) => ({
+		...s,
+		airedMax: airedMaxFor(s.seasonNumber, s.maxProgress)
+	}));
 
 	// The show's own consumption row carries total episodes watched.
 	const consumption = rec(arr(d.consumptions)[0]);
@@ -251,7 +273,7 @@ export async function getShow(
 				return { name: str(p.name) ?? '', role: str(p.role), image: str(p.image) };
 			})
 			.filter((c) => c.name),
-		seasons: withTotals
+		seasons: withAired
 	};
 }
 

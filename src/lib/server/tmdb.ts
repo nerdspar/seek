@@ -409,6 +409,13 @@ export type ShowExtras = {
 	 * returns all of them inside the call this function already makes.
 	 */
 	seasonEpisodes: Record<number, number>;
+	/**
+	 * The latest episode that has aired, from TMDB's `last_episode_to_air`. Lets a
+	 * whole-season action stop at what's actually out — marking a currently-airing
+	 * season should not tick episodes that have not aired yet. Null for a show
+	 * that's ended or has no air data (then every listed episode counts as aired).
+	 */
+	lastAired: { season: number; episode: number } | null;
 };
 
 const extrasCache = new TTLCache<ShowExtras>(24 * 60 * 60 * 1000, 500);
@@ -422,7 +429,7 @@ const extrasCache = new TTLCache<ShowExtras>(24 * 60 * 60 * 1000, 500);
  * more honest than stitching those together.
  */
 export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
-	const empty: ShowExtras = { networks: [], services: [], similar: [], seasonEpisodes: {} };
+	const empty: ShowExtras = { networks: [], services: [], similar: [], seasonEpisodes: {}, lastAired: null };
 	if (!TMDB_API_KEY()) return empty;
 
 	const hit = extrasCache.get(mediaId);
@@ -435,6 +442,7 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 		const data = await tmdb<{
 			networks?: { name: string; logo_path: string | null }[];
 			seasons?: { season_number: number; episode_count: number }[];
+			last_episode_to_air?: { season_number: number; episode_number: number } | null;
 			recommendations?: { results?: Row[] };
 			'watch/providers'?: { results?: Record<string, { flatrate?: Provider[] }> };
 		}>(`/tv/${encodeURIComponent(mediaId)}`, {
@@ -461,6 +469,15 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 					.filter((s) => typeof s.season_number === 'number' && typeof s.episode_count === 'number')
 					.map((s) => [s.season_number, s.episode_count])
 			),
+			lastAired:
+				data.last_episode_to_air &&
+				typeof data.last_episode_to_air.season_number === 'number' &&
+				typeof data.last_episode_to_air.episode_number === 'number'
+					? {
+							season: data.last_episode_to_air.season_number,
+							episode: data.last_episode_to_air.episode_number
+						}
+					: null,
 			// Deduplicate before trimming so a repeat does not cost one of the 12 slots.
 			similar: dedupe(
 				(data.recommendations?.results ?? []).map((r) => ({
@@ -496,7 +513,7 @@ export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
  * that mean anything: services and similar titles.
  */
 export async function getMovieExtras(mediaId: string): Promise<ShowExtras> {
-	const empty: ShowExtras = { networks: [], services: [], similar: [], seasonEpisodes: {} };
+	const empty: ShowExtras = { networks: [], services: [], similar: [], seasonEpisodes: {}, lastAired: null };
 	if (!TMDB_API_KEY()) return empty;
 
 	const key = `movie:${mediaId}`;
@@ -533,6 +550,7 @@ export async function getMovieExtras(mediaId: string): Promise<ShowExtras> {
 			networks: [],
 			services,
 			seasonEpisodes: {},
+			lastAired: null,
 			similar: dedupe(
 				(data.recommendations?.results ?? []).map((r) => ({
 					mediaId: String(r.id),

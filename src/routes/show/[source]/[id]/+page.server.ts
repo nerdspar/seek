@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ params }) => {
 
 	const show = extras.then((e) =>
 		memo(`show:${params.source}:${params.id}`, 5 * 60 * 1000, () =>
-			getShow(params.source, params.id, e.seasonEpisodes)
+			getShow(params.source, params.id, e.seasonEpisodes, e.lastAired)
 		)
 	);
 
