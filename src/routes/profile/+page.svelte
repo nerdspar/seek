@@ -67,26 +67,6 @@
 	</header>
 
 	<main use:keepScroll={'profile'}>
-		{#await data.recentlyAdded then recent}
-			{#if recent.length}
-				<section class="recent">
-					<h2>Recently added</h2>
-					<ul class="rail">
-						{#each recent as it (it.mediaType + ':' + it.source + ':' + it.mediaId)}
-							<li>
-								<button
-									onclick={() => goto(`/${it.mediaType === 'movie' ? 'movie' : 'show'}/${it.source}/${it.mediaId}`)}
-								>
-									<Poster src={it.poster} width={92} height={138} radius={9} />
-									<span class="cap">{it.title}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				</section>
-			{/if}
-		{/await}
-
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">
@@ -215,6 +195,26 @@
 						</ul>
 					</section>
 				{/if}
+
+				{#await data.recentlyAdded then recent}
+					{#if recent.length}
+						<section class="recent">
+							<h2>Recently added</h2>
+							<ul class="rail">
+								{#each recent as it (it.mediaType + ':' + it.source + ':' + it.mediaId)}
+									<li>
+										<button
+											onclick={() => goto(`/${it.mediaType === 'movie' ? 'movie' : 'show'}/${it.source}/${it.mediaId}`)}
+										>
+											<Poster src={it.poster} width={92} height={138} radius={9} />
+											<span class="cap">{it.title}</span>
+										</button>
+									</li>
+								{/each}
+							</ul>
+						</section>
+					{/if}
+				{/await}
 
 				{#if stats.topGenres.length}
 					<section>

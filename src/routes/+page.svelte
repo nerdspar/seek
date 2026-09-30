@@ -340,6 +340,7 @@
 		if (data.mediaType !== 'tv') params.set('type', data.mediaType);
 		if (f.status !== 'in_progress') params.set('status', f.status);
 		if (f.company !== 'all') params.set('company', f.company);
+		if (f.anime !== 'all') params.set('anime', f.anime);
 		for (const s of f.services) params.append('service', s);
 		overrides = {};
 		goto(`/${params.toString() ? `?${params}` : ''}`, { noScroll: true, keepFocus: true });
@@ -348,6 +349,7 @@
 	const filtersActive = $derived(
 		data.filters.status !== 'in_progress' ||
 			data.filters.company !== 'all' ||
+			data.filters.anime !== 'all' ||
 			data.filters.services.length > 0
 	);
 
@@ -434,7 +436,7 @@
 				{#if data.mediaType === 'movie'}
 					<p>Your Floppy movie library is empty — 0 movies tracked under any status.</p>
 				{:else if filtersActive}
-					<p>Nothing matches these filters. <button class="link" onclick={() => applyFilters({ status: 'in_progress', company: 'all', services: [] })}>Reset them</button>.</p>
+					<p>Nothing matches these filters. <button class="link" onclick={() => applyFilters({ status: 'in_progress', company: 'all', anime: 'all', services: [] })}>Reset them</button>.</p>
 				{:else}
 					<p>No shows in progress with an unwatched episode.</p>
 				{/if}
@@ -476,6 +478,7 @@
 			filters={data.filters}
 			subscribed={data.subscribed}
 			showCompany={data.companyTracking}
+			showAnime={data.showAnime}
 			{resultCount}
 			onchange={applyFilters}
 			onclose={() => (filterOpen = false)}

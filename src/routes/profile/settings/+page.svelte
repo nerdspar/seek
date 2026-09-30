@@ -240,6 +240,8 @@
 
 <main>
 
+	<h2 class="group">Watchlist</h2>
+
 	<section>
 		<h3>Swipe to mark watched</h3>
 		<div class="choices">
@@ -267,6 +269,27 @@
 			{/each}
 		</div>
 	</section>
+
+	<section>
+		<h3>Watching with</h3>
+		<!-- Whether anyone else is in the room is a household-specific idea. Off, the
+		     chip disappears from both detail pages and the watchlist filter goes with
+		     it; the tags already in Floppy are left alone. -->
+		<button
+			class="row"
+			role="switch"
+			aria-checked={local.companyTracking}
+			onclick={() => patch({ companyTracking: !local.companyTracking })}
+		>
+			<span class="rowtext">
+				<span class="label">Track who you watched with</span>
+				<span class="hint">Alone or together, on shows and films</span>
+			</span>
+			<span class="toggle" class:on={local.companyTracking}><span class="knob"></span></span>
+		</button>
+	</section>
+
+	<h2 class="group">Appearance</h2>
 
 	<section>
 		<h3>Appearance</h3>
@@ -302,6 +325,24 @@
 			{/each}
 		</div>
 	</section>
+
+	<section>
+		<h3>Show page</h3>
+		<button
+			class="row"
+			role="switch"
+			aria-checked={local.seasonArtwork}
+			onclick={() => patch({ seasonArtwork: !local.seasonArtwork })}
+		>
+			<span class="rowtext">
+				<span class="label">Season artwork</span>
+				<span class="hint">Most shows reuse the same poster for every season</span>
+			</span>
+			<span class="toggle" class:on={local.seasonArtwork}><span class="knob"></span></span>
+		</button>
+	</section>
+
+	<h2 class="group">Discover</h2>
 
 	{#if allServices.length}
 		<section>
@@ -386,27 +427,9 @@
 		{/if}
 	</section>
 
-	<section>
-		<h3>Company</h3>
-		<!-- Whether anyone else is in the room is a household-specific idea. Off, the
-		     chip disappears from both detail pages and the watchlist filter goes with
-		     it; the tags already in Floppy are left alone. -->
-		<button
-			class="row"
-			role="switch"
-			aria-checked={local.companyTracking}
-			onclick={() => patch({ companyTracking: !local.companyTracking })}
-		>
-			<span class="rowtext">
-				<span class="label">Track who you watched with</span>
-				<span class="hint">Alone or together, on shows and films</span>
-			</span>
-			<span class="toggle" class:on={local.companyTracking}><span class="knob"></span></span>
-		</button>
-	</section>
+	<h2 class="group">Notifications</h2>
 
 	<section>
-		<h3>Notifications</h3>
 		{#if push && !push.supported}
 			<p class="hint">
 				This device can't receive notifications. On iPhone, add Seek to your Home Screen
@@ -481,23 +504,9 @@
 		{/if}
 	</section>
 
-	<section>
-		<h3>Show page</h3>
-		<button
-			class="row"
-			role="switch"
-			aria-checked={local.seasonArtwork}
-			onclick={() => patch({ seasonArtwork: !local.seasonArtwork })}
-		>
-			<span class="rowtext">
-				<span class="label">Season artwork</span>
-				<span class="hint">Most shows reuse the same poster for every season</span>
-			</span>
-			<span class="toggle" class:on={local.seasonArtwork}><span class="knob"></span></span>
-		</button>
-	</section>
-
 	{#if failed}<p class="error">{failed}</p>{/if}
+
+	<h2 class="group">Connections</h2>
 
 	{#if anyArr}
 		<section>
@@ -568,8 +577,9 @@
 		{/if}
 	</section>
 
+	<h2 class="group">About</h2>
+
 	<section>
-		<h3>About</h3>
 		<div class="row">
 			<span class="rowtext">
 				<span class="label">Version</span>
@@ -586,6 +596,17 @@
 	main {
 		padding: 4px var(--gutter) calc(var(--tabbar-h) + var(--tabbar-safe-b) + 32px);
 	}
+
+	/* Group headers chunk the settings into categories; the per-section h3 below
+	   each is the sub-label. A hairline divider separates one group from the next. */
+	.group {
+		margin: 26px 0 12px;
+		padding-top: 18px;
+		border-top: 1px solid var(--surface-raised);
+		font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+		color: var(--text);
+	}
+	.group:first-of-type { margin-top: 4px; padding-top: 0; border-top: none; }
 
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	section { margin-bottom: 18px; }
