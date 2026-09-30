@@ -334,6 +334,11 @@ export type WatchlistOptions = {
 	statuses?: string[];
 	/** Solo / Joint / All (§11). */
 	company?: Company;
+	/** Filter by an arbitrary Floppy tag name (e.g. the `anime` tag driving the
+	 *  Shows/Anime split). Takes precedence over `company`. `tagMode: 'not'`
+	 *  inverts it — the shows WITHOUT the tag. */
+	tag?: string;
+	tagMode?: 'not';
 	/** Subscription services to keep. Applied in Seek — see servicesOf. */
 	services?: string[];
 	/** Page past Floppy's 200-row ceiling to fetch the whole list. */
@@ -352,6 +357,8 @@ export async function getWatchlist(
 		offset = 0,
 		statuses = ['in_progress'],
 		company = 'all',
+		tag,
+		tagMode,
 		services = [],
 		all = false,
 		enrich: shouldEnrich = true
@@ -370,7 +377,7 @@ export async function getWatchlist(
 				direction,
 				limit,
 				offset: o,
-				...companyQuery(company)
+				...(tag ? { tag, tag_mode: tagMode } : companyQuery(company))
 			},
 			// ~1.2s warm, but slower while Floppy is serving a statistics query.
 			timeoutMs: 45_000
