@@ -124,6 +124,10 @@ export type SeasonSummary = {
 	progress: number | null;
 	/** Total episodes, when Floppy reports one. */
 	maxProgress: number | null;
+	/** Episodes that have actually aired (≤ maxProgress) — what a whole-season
+	 *  mark stops at, so a currently-airing season isn't ticked past what's out.
+	 *  Equals maxProgress for an ended show; null when maxProgress is unknown. */
+	airedMax: number | null;
 	tracked: boolean;
 };
 
