@@ -33,6 +33,16 @@ export function tabReselect(node: HTMLElement, opts: Opts) {
 
 	function animateTo(to: number) {
 		cancelAnimationFrame(raf);
+
+		/* A tap can land while a flick is still momentum-scrolling. Left alone the
+		   native fling keeps writing scrollTop and fights the tween — it flashes and
+		   never settles (the reported bug). Toggling overflow cancels the in-flight
+		   momentum; done in one synchronous reflow so nothing paints in between. */
+		const prevOverflow = node.style.overflowY;
+		node.style.overflowY = 'hidden';
+		void node.offsetHeight;
+		node.style.overflowY = prevOverflow;
+
 		const from = node.scrollTop;
 		const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 		// Honour reduced-motion, and skip the tween when there is nowhere to go.
