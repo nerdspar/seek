@@ -30,6 +30,11 @@ describe('scrollAt (easeOutCubic tween)', () => {
 		expect(scrollAt(100, 900, -0.5)).toBe(100);
 		expect(scrollAt(100, 900, 2)).toBe(900);
 	});
+	it('stays put when there is nowhere to go', () => {
+		expect(scrollAt(300, 300, 0)).toBe(300);
+		expect(scrollAt(300, 300, 0.5)).toBe(300);
+		expect(scrollAt(300, 300, 1)).toBe(300);
+	});
 	it('eases out — past the halfway point by the time progress is half', () => {
 		const mid = scrollAt(0, 1000, 0.5);
 		expect(mid).toBeGreaterThan(500); // decelerating, so already past linear
