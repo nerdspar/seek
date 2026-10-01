@@ -9,6 +9,9 @@
  */
 type ArrState = {
 	loaded: boolean;
+	/** Download-management layer switched on (service configured + Settings pref).
+	 *  Gates every management affordance; the plain add button ignores it. */
+	manage: boolean;
 	sonarr: { configured: boolean; ids: Set<string> };
 	radarr: { configured: boolean; ids: Set<string> };
 };
@@ -17,6 +20,7 @@ const browser = typeof window !== 'undefined';
 
 const state = $state<ArrState>({
 	loaded: false,
+	manage: false,
 	sonarr: { configured: false, ids: new Set() },
 	radarr: { configured: false, ids: new Set() }
 });
@@ -36,6 +40,7 @@ export function loadArrStatus(force = false): Promise<void> {
 			if (body) {
 				state.sonarr = { configured: !!body.sonarr?.configured, ids: new Set(body.sonarr?.ids ?? []) };
 				state.radarr = { configured: !!body.radarr?.configured, ids: new Set(body.radarr?.ids ?? []) };
+				state.manage = !!body.manage;
 			}
 			state.loaded = true;
 		})
@@ -130,6 +135,14 @@ export const defaultMonitor = (mediaType: string) => DEFAULT_MONITOR[serviceKey(
 /** Whether the service that would handle this media type is set up at all. */
 export function arrConfigured(mediaType: string): boolean {
 	return svc(mediaType).configured;
+}
+
+/** Whether the download-management layer should show. True only when a service is
+ *  configured and the Settings toggle is on — every management surface checks it,
+ *  so turning it off leaves just the basic add button. */
+export function arrManageOn(mediaType?: string): boolean {
+	if (!state.manage) return false;
+	return mediaType ? svc(mediaType).configured : true;
 }
 
 export function arrServiceName(mediaType: string): 'Sonarr' | 'Radarr' {

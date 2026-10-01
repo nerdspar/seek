@@ -60,8 +60,8 @@ export const configured = (service: Service) =>
 	service === 'sonarr' ? sonarrConfigured() : radarrConfigured();
 
 type Req = {
-	method?: 'GET' | 'POST' | 'DELETE';
-	query?: Record<string, string | number | undefined>;
+	method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+	query?: Record<string, string | number | boolean | undefined>;
 	body?: unknown;
 	timeoutMs?: number;
 };
@@ -320,4 +320,537 @@ export async function addTitle(
 
 	dropLibraryCache(service);
 	return { ok: true, title };
+}
+
+/* ── Management: detail, edit, monitor, search, releases, queue, files ──────────
+ *
+ * Shapes below were probed against a live Sonarr 4.0 / Radarr 6.4 (see the plan
+ * doc). Series and movie both carry tmdbId, so the title match reuses the proven
+ * tmdbId path rather than needing TVDB. Episodes line up to Floppy's rows by
+ * (season, episode) number — Floppy exposes no per-episode TVDB id. Every mapper
+ * is defensive: a field the API drops becomes null/empty rather than a throw.
+ */
+
+const n = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+const s = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
+const b = (v: unknown): boolean => v === true;
+
+/** Split Sonarr's slash-joined language/subtitle lists ("eng/jpn") into a deduped
+ *  list, dropping the "und"/blank noise. Exported for the unit test. */
+export function parseLangList(v: unknown): string[] {
+	if (typeof v !== 'string') return [];
+	const out: string[] = [];
+	for (const part of v.split('/')) {
+		const t = part.trim().toLowerCase();
+		if (t && t !== 'und' && !out.includes(t)) out.push(t);
+	}
+	return out;
+}
+
+export type ArrMediaInfo = {
+	audioLanguages: string[];
+	subtitles: string[];
+	audioChannels: number | null;
+	audioCodec: string | null;
+	videoCodec: string | null;
+	videoDynamicRange: string | null;
+	resolution: string | null;
+};
+
+export type ArrFile = {
+	id: number;
+	quality: string | null;
+	size: number;
+	languages: string[];
+	customFormatScore: number | null;
+	relativePath: string | null;
+	mediaInfo: ArrMediaInfo | null;
+};
+
+export type ArrSeason = {
+	seasonNumber: number;
+	monitored: boolean;
+	episodeFileCount: number;
+	episodeCount: number;
+	totalEpisodeCount: number;
+};
+
+export type ArrSeries = {
+	id: number;
+	tmdbId: number;
+	tvdbId: number | null;
+	title: string;
+	monitored: boolean;
+	qualityProfileId: number;
+	rootFolderPath: string | null;
+	seriesType: string;
+	seasonFolder: boolean;
+	tags: number[];
+	seasons: ArrSeason[];
+	episodeFileCount: number;
+	totalEpisodeCount: number;
+};
+
+export type ArrMovie = {
+	id: number;
+	tmdbId: number;
+	title: string;
+	monitored: boolean;
+	qualityProfileId: number;
+	rootFolderPath: string | null;
+	minimumAvailability: string;
+	tags: number[];
+	hasFile: boolean;
+	movieFileId: number | null;
+	file: ArrFile | null;
+};
+
+export type ArrEpisode = {
+	id: number;
+	seasonNumber: number;
+	episodeNumber: number;
+	title: string;
+	hasFile: boolean;
+	monitored: boolean;
+	episodeFileId: number | null;
+	airDateUtc: string | null;
+	file: ArrFile | null;
+};
+
+export type ArrRelease = {
+	guid: string;
+	indexerId: number;
+	indexer: string;
+	title: string;
+	size: number;
+	age: number;
+	protocol: string;
+	seeders: number | null;
+	leechers: number | null;
+	grabs: number | null;
+	quality: string | null;
+	languages: string[];
+	customFormatScore: number | null;
+	flags: string[];
+	rejections: string[];
+	rejected: boolean;
+	approved: boolean;
+	fullSeason: boolean;
+	seasonNumber: number | null;
+};
+
+export type ArrQueueItem = {
+	id: number;
+	title: string;
+	status: string;
+	trackedState: string | null;
+	size: number;
+	sizeleft: number;
+	timeleft: string | null;
+	errorMessage: string | null;
+	seriesId: number | null;
+	movieId: number | null;
+	seasonNumber: number | null;
+	episodeId: number | null;
+};
+
+function mapMediaInfo(v: unknown): ArrMediaInfo | null {
+	if (!v || typeof v !== 'object') return null;
+	const o = rec(v);
+	return {
+		audioLanguages: parseLangList(o.audioLanguages),
+		subtitles: parseLangList(o.subtitles),
+		audioChannels: n(o.audioChannels),
+		audioCodec: s(o.audioCodec),
+		videoCodec: s(o.videoCodec),
+		videoDynamicRange: s(o.videoDynamicRangeType) ?? s(o.videoDynamicRange),
+		resolution: s(o.resolution)
+	};
+}
+
+function mapFile(v: unknown): ArrFile | null {
+	if (!v || typeof v !== 'object') return null;
+	const o = rec(v);
+	const id = n(o.id);
+	if (id === null) return null;
+	const quality = rec(rec(o.quality).quality);
+	return {
+		id,
+		quality: s(quality.name),
+		size: n(o.size) ?? 0,
+		languages: arrList(o.languages)
+			.map((l) => s(rec(l).name))
+			.filter((x): x is string => x !== null),
+		customFormatScore: n(o.customFormatScore),
+		relativePath: s(o.relativePath),
+		mediaInfo: mapMediaInfo(o.mediaInfo)
+	};
+}
+
+function mapSeries(o: Record<string, unknown>): ArrSeries {
+	const stats = rec(o.statistics);
+	return {
+		id: n(o.id) ?? 0,
+		tmdbId: n(o.tmdbId) ?? 0,
+		tvdbId: n(o.tvdbId),
+		title: s(o.title) ?? 'Untitled',
+		monitored: b(o.monitored),
+		qualityProfileId: n(o.qualityProfileId) ?? -1,
+		rootFolderPath: s(o.rootFolderPath),
+		seriesType: s(o.seriesType) ?? 'standard',
+		seasonFolder: o.seasonFolder !== false,
+		tags: arrList(o.tags)
+			.map((t) => n(t))
+			.filter((x): x is number => x !== null),
+		seasons: arrList(o.seasons)
+			.map((entry): ArrSeason | null => {
+				const se = rec(entry);
+				const num = n(se.seasonNumber);
+				if (num === null) return null;
+				const st = rec(se.statistics);
+				return {
+					seasonNumber: num,
+					monitored: b(se.monitored),
+					episodeFileCount: n(st.episodeFileCount) ?? 0,
+					episodeCount: n(st.episodeCount) ?? 0,
+					totalEpisodeCount: n(st.totalEpisodeCount) ?? 0
+				};
+			})
+			.filter((x): x is ArrSeason => x !== null),
+		episodeFileCount: n(stats.episodeFileCount) ?? 0,
+		totalEpisodeCount: n(stats.totalEpisodeCount) ?? 0
+	};
+}
+
+function mapMovie(o: Record<string, unknown>): ArrMovie {
+	return {
+		id: n(o.id) ?? 0,
+		tmdbId: n(o.tmdbId) ?? 0,
+		title: s(o.title) ?? 'Untitled',
+		monitored: b(o.monitored),
+		qualityProfileId: n(o.qualityProfileId) ?? -1,
+		rootFolderPath: s(o.rootFolderPath),
+		minimumAvailability: s(o.minimumAvailability) ?? 'released',
+		tags: arrList(o.tags)
+			.map((t) => n(t))
+			.filter((x): x is number => x !== null),
+		hasFile: b(o.hasFile),
+		movieFileId: n(o.movieFileId),
+		file: mapFile(o.movieFile)
+	};
+}
+
+function mapRelease(o: Record<string, unknown>): ArrRelease | null {
+	const guid = s(o.guid);
+	const indexerId = n(o.indexerId);
+	if (guid === null || indexerId === null) return null;
+	const quality = rec(rec(o.quality).quality);
+	const flagsRaw = o.indexerFlags;
+	const flags = Array.isArray(flagsRaw)
+		? flagsRaw.map((f) => s(f)).filter((x): x is string => x !== null)
+		: [];
+	return {
+		guid,
+		indexerId,
+		indexer: s(o.indexer) ?? 'Unknown',
+		title: s(o.title) ?? '',
+		size: n(o.size) ?? 0,
+		age: n(o.age) ?? 0,
+		protocol: s(o.protocol) ?? 'unknown',
+		seeders: n(o.seeders),
+		leechers: n(o.leechers),
+		grabs: n(o.grabs),
+		quality: s(quality.name),
+		languages: arrList(o.languages)
+			.map((l) => s(rec(l).name))
+			.filter((x): x is string => x !== null),
+		customFormatScore: n(o.customFormatScore),
+		flags,
+		rejections: arrList(o.rejections)
+			.map((r) => s(r))
+			.filter((x): x is string => x !== null),
+		rejected: b(o.rejected),
+		approved: b(o.approved),
+		fullSeason: b(o.fullSeason),
+		seasonNumber: n(o.seasonNumber)
+	};
+}
+
+/** Sort releases the way a human scans them: accepted first, then best
+ *  custom-format score, then Sonarr's own release weight (lower = better).
+ *  Exported pure for the unit test. */
+export function sortReleases(releases: ArrRelease[]): ArrRelease[] {
+	return [...releases].sort((a, c) => {
+		if (a.rejected !== c.rejected) return a.rejected ? 1 : -1;
+		const sa = a.customFormatScore ?? 0;
+		const sc = c.customFormatScore ?? 0;
+		if (sa !== sc) return sc - sa;
+		return 0;
+	});
+}
+
+/* Detail is read often (open a show, its seasons, back and forth) and is only
+   mutated through this module, so a short TTL with explicit drops on write keeps
+   it snappy without going stale. */
+const detailCache = new TTLCache<unknown>(30 * 1000, 200);
+const dkey = (service: Service, kind: string, id: string | number) => `${service}:${kind}:${id}`;
+
+function dropDetail(service: Service, tmdbId: number | string): void {
+	detailCache.delete(dkey(service, 'series', tmdbId));
+	detailCache.delete(dkey(service, 'movie', tmdbId));
+}
+
+/** The raw Sonarr series object for a TMDB id (full, PUT-able), or null. */
+async function rawSeries(tmdbId: string): Promise<Record<string, unknown> | null> {
+	const rows = await arr<unknown[]>('sonarr', '/series');
+	const hit = arrList(rows).find((r) => String(rec(r).tmdbId) === String(tmdbId));
+	return hit ? rec(hit) : null;
+}
+
+async function rawMovie(tmdbId: string): Promise<Record<string, unknown> | null> {
+	const rows = await arr<unknown[]>('radarr', '/movie');
+	const hit = arrList(rows).find((r) => String(rec(r).tmdbId) === String(tmdbId));
+	return hit ? rec(hit) : null;
+}
+
+/** Series summary for the show page's Downloads strip + season rows. Null when the
+ *  show isn't in Sonarr. */
+export async function getSeries(tmdbId: string): Promise<ArrSeries | null> {
+	if (!sonarrConfigured()) return null;
+	const key = dkey('sonarr', 'series', tmdbId);
+	const cached = detailCache.get(key) as ArrSeries | null | undefined;
+	if (cached !== undefined) return cached;
+	const raw = await rawSeries(tmdbId);
+	const mapped = raw ? mapSeries(raw) : null;
+	detailCache.set(key, mapped);
+	return mapped;
+}
+
+/** Movie summary + its file for the movie page. Null when not in Radarr. */
+export async function getMovie(tmdbId: string): Promise<ArrMovie | null> {
+	if (!radarrConfigured()) return null;
+	const key = dkey('radarr', 'movie', tmdbId);
+	const cached = detailCache.get(key) as ArrMovie | null | undefined;
+	if (cached !== undefined) return cached;
+	const raw = await rawMovie(tmdbId);
+	const mapped = raw ? mapMovie(raw) : null;
+	detailCache.set(key, mapped);
+	return mapped;
+}
+
+/** Episodes for one Sonarr season, joined to their files (so audio languages and
+ *  quality are present on the ones you have). Keyed by episode number for the
+ *  season page to merge onto Floppy's rows. */
+export async function getSeasonEpisodes(seriesId: number, seasonNumber: number): Promise<ArrEpisode[]> {
+	const [eps, files] = await Promise.all([
+		arr<unknown[]>('sonarr', '/episode', { query: { seriesId, seasonNumber } }),
+		arr<unknown[]>('sonarr', '/episodefile', { query: { seriesId } }).catch(() => [] as unknown[])
+	]);
+	const fileById = new Map<number, ArrFile>();
+	for (const f of arrList(files)) {
+		const mapped = mapFile(f);
+		if (mapped) fileById.set(mapped.id, mapped);
+	}
+	return arrList(eps)
+		.map((entry): ArrEpisode | null => {
+			const e = rec(entry);
+			const seasonNum = n(e.seasonNumber);
+			const episodeNum = n(e.episodeNumber);
+			const id = n(e.id);
+			if (seasonNum === null || episodeNum === null || id === null) return null;
+			const fileId = n(e.episodeFileId);
+			return {
+				id,
+				seasonNumber: seasonNum,
+				episodeNumber: episodeNum,
+				title: s(e.title) ?? `Episode ${episodeNum}`,
+				hasFile: b(e.hasFile),
+				monitored: b(e.monitored),
+				episodeFileId: fileId && fileId > 0 ? fileId : null,
+				airDateUtc: s(e.airDateUtc),
+				file: fileId && fileId > 0 ? (fileById.get(fileId) ?? null) : null
+			};
+		})
+		.filter((x): x is ArrEpisode => x !== null)
+		.sort((a, c) => a.episodeNumber - c.episodeNumber);
+}
+
+/* ── Edit settings ─────────────────────────────────────────────────────────── */
+
+export type SeriesEdit = {
+	monitored?: boolean;
+	qualityProfileId?: number;
+	rootFolderPath?: string;
+	seriesType?: string;
+	seasonFolder?: boolean;
+	/** Tag labels; resolved to ids (created if new). */
+	tags?: string[];
+};
+
+export type MovieEdit = {
+	monitored?: boolean;
+	qualityProfileId?: number;
+	rootFolderPath?: string;
+	minimumAvailability?: string;
+	tags?: string[];
+};
+
+/** PUT a series back with the given fields changed. Fetches the current full
+ *  object so unspecified fields are preserved exactly (a partial PUT half-tracks
+ *  a series). */
+export async function editSeries(tmdbId: string, edit: SeriesEdit): Promise<ArrSeries> {
+	const raw = await rawSeries(tmdbId);
+	if (!raw) throw new ArrError('sonarr', 404, `TMDB ${tmdbId} not in Sonarr`);
+	if (edit.monitored !== undefined) raw.monitored = edit.monitored;
+	if (edit.qualityProfileId !== undefined) raw.qualityProfileId = edit.qualityProfileId;
+	if (edit.rootFolderPath !== undefined) raw.rootFolderPath = edit.rootFolderPath;
+	if (edit.seriesType !== undefined) raw.seriesType = edit.seriesType;
+	if (edit.seasonFolder !== undefined) raw.seasonFolder = edit.seasonFolder;
+	if (edit.tags !== undefined) raw.tags = await ensureTags('sonarr', edit.tags);
+	const updated = rec(await arr('sonarr', `/series/${n(raw.id)}`, { method: 'PUT', body: raw, timeoutMs: 30_000 }));
+	dropDetail('sonarr', tmdbId);
+	return mapSeries(Object.keys(updated).length ? updated : raw);
+}
+
+export async function editMovie(tmdbId: string, edit: MovieEdit): Promise<ArrMovie> {
+	const raw = await rawMovie(tmdbId);
+	if (!raw) throw new ArrError('radarr', 404, `TMDB ${tmdbId} not in Radarr`);
+	if (edit.monitored !== undefined) raw.monitored = edit.monitored;
+	if (edit.qualityProfileId !== undefined) raw.qualityProfileId = edit.qualityProfileId;
+	if (edit.rootFolderPath !== undefined) raw.rootFolderPath = edit.rootFolderPath;
+	if (edit.minimumAvailability !== undefined) raw.minimumAvailability = edit.minimumAvailability;
+	if (edit.tags !== undefined) raw.tags = await ensureTags('radarr', edit.tags);
+	const updated = rec(await arr('radarr', `/movie/${n(raw.id)}`, { method: 'PUT', body: raw, timeoutMs: 30_000 }));
+	dropDetail('radarr', tmdbId);
+	return mapMovie(Object.keys(updated).length ? updated : raw);
+}
+
+/** Monitor / unmonitor a whole season (flips the flag on the series object and
+ *  PUTs it, which is how Sonarr tracks season monitoring). */
+export async function setSeasonMonitored(tmdbId: string, seasonNumber: number, monitored: boolean): Promise<void> {
+	const raw = await rawSeries(tmdbId);
+	if (!raw) throw new ArrError('sonarr', 404, `TMDB ${tmdbId} not in Sonarr`);
+	const seasons = arrList(raw.seasons).map((se) => {
+		const o = rec(se);
+		if (n(o.seasonNumber) === seasonNumber) o.monitored = monitored;
+		return o;
+	});
+	raw.seasons = seasons;
+	await arr('sonarr', `/series/${n(raw.id)}`, { method: 'PUT', body: raw, timeoutMs: 30_000 });
+	dropDetail('sonarr', tmdbId);
+}
+
+/** Monitor / unmonitor specific episodes by Sonarr episode id. */
+export async function setEpisodesMonitored(episodeIds: number[], monitored: boolean): Promise<void> {
+	if (!episodeIds.length) return;
+	await arr('sonarr', '/episode/monitor', { method: 'PUT', body: { episodeIds, monitored } });
+}
+
+/* ── Search (automatic) ────────────────────────────────────────────────────── */
+
+export type SearchTarget =
+	| { kind: 'series'; seriesId: number }
+	| { kind: 'season'; seriesId: number; seasonNumber: number }
+	| { kind: 'episodes'; episodeIds: number[] }
+	| { kind: 'movie'; movieId: number };
+
+/** Kick off an automatic search. Returns the command id so the caller can poll,
+ *  though the UI mostly fires and forgets (the queue shows the result). */
+export async function runSearch(target: SearchTarget): Promise<number | null> {
+	let service: Service = 'sonarr';
+	let body: Record<string, unknown>;
+	switch (target.kind) {
+		case 'series':
+			body = { name: 'SeriesSearch', seriesId: target.seriesId };
+			break;
+		case 'season':
+			body = { name: 'SeasonSearch', seriesId: target.seriesId, seasonNumber: target.seasonNumber };
+			break;
+		case 'episodes':
+			body = { name: 'EpisodeSearch', episodeIds: target.episodeIds };
+			break;
+		case 'movie':
+			service = 'radarr';
+			body = { name: 'MoviesSearch', movieIds: [target.movieId] };
+			break;
+	}
+	const res = rec(await arr(service, '/command', { method: 'POST', body }));
+	return n(res.id);
+}
+
+/* ── Interactive search (manual releases) ──────────────────────────────────── */
+
+export type ReleaseQuery =
+	| { service: 'sonarr'; episodeId: number }
+	| { service: 'sonarr'; seriesId: number; seasonNumber: number }
+	| { service: 'radarr'; movieId: number };
+
+/** Fetch candidate releases for an episode / season / movie. Slow (hits indexers,
+ *  5–30s), so callers give it a long timeout and a spinner. Sorted for scanning. */
+export async function getReleases(q: ReleaseQuery): Promise<ArrRelease[]> {
+	const query: Record<string, string | number> =
+		q.service === 'radarr'
+			? { movieId: q.movieId }
+			: 'episodeId' in q
+				? { episodeId: q.episodeId }
+				: { seriesId: q.seriesId, seasonNumber: q.seasonNumber };
+	const rows = await arr<unknown[]>(q.service, '/release', { query, timeoutMs: 90_000 });
+	return sortReleases(
+		arrList(rows)
+			.map((r) => mapRelease(rec(r)))
+			.filter((r): r is ArrRelease => r !== null)
+	);
+}
+
+/** Grab a chosen release — the one real side-effect of interactive search. */
+export async function grabRelease(service: Service, guid: string, indexerId: number): Promise<void> {
+	await arr(service, '/release', { method: 'POST', body: { guid, indexerId }, timeoutMs: 30_000 });
+}
+
+/* ── Queue (what's downloading now) ────────────────────────────────────────── */
+
+export async function getQueue(service: Service): Promise<ArrQueueItem[]> {
+	const res = rec(
+		await arr(service, '/queue', {
+			query: {
+				pageSize: 50,
+				includeEpisode: service === 'sonarr',
+				includeMovie: service === 'radarr'
+			}
+		})
+	);
+	return arrList(res.records)
+		.map((entry): ArrQueueItem | null => {
+			const o = rec(entry);
+			const id = n(o.id);
+			if (id === null) return null;
+			return {
+				id,
+				title: s(o.title) ?? '',
+				status: s(o.status) ?? 'unknown',
+				trackedState: s(o.trackedDownloadState),
+				size: n(o.size) ?? 0,
+				sizeleft: n(o.sizeleft) ?? 0,
+				timeleft: s(o.timeleft),
+				errorMessage: s(o.errorMessage),
+				seriesId: n(o.seriesId),
+				movieId: n(o.movieId),
+				seasonNumber: n(o.seasonNumber),
+				episodeId: n(o.episodeId)
+			};
+		})
+		.filter((x): x is ArrQueueItem => x !== null);
+}
+
+/* ── Delete a downloaded file ──────────────────────────────────────────────── */
+
+export async function deleteFile(service: Service, fileId: number): Promise<void> {
+	const path = service === 'sonarr' ? `/episodefile/${fileId}` : `/moviefile/${fileId}`;
+	await arr(service, path, { method: 'DELETE' });
+}
+
+/** Drop the detail cache for a title after a mutation the caller made elsewhere
+ *  (e.g. a grab that changes file state once imported). */
+export function dropDetailCache(service: Service, tmdbId: string | number): void {
+	dropDetail(service, tmdbId);
 }
