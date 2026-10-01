@@ -7,8 +7,11 @@
 	type Props = {
 		row: WatchlistRow;
 		markDirection?: MarkDirection;
-		pending?: boolean;
+		/** This mark leaves the show caught up and off the current list: the row
+		 *  slides out and does not return — the parent removes it (onremoved). */
+		finishing?: boolean;
 		onmark: (row: WatchlistRow) => void;
+		onremoved?: (row: WatchlistRow) => void;
 		onepisode: (row: WatchlistRow) => void;
 		onshow: (row: WatchlistRow) => void;
 	};
@@ -16,8 +19,9 @@
 	let {
 		row,
 		markDirection = 'rtl',
-		pending = false,
+		finishing = false,
 		onmark,
+		onremoved,
 		onepisode,
 		onshow
 	}: Props = $props();
@@ -190,6 +194,7 @@
 		if (reduced) {
 			dx = 0;
 			phase = 'idle';
+			if (finishing) onremoved?.(row);
 			return;
 		}
 
@@ -197,6 +202,12 @@
 		dx = width * markSign;
 
 		timers.forEach(clearTimeout);
+		if (finishing) {
+			// Last episode: the row has nothing to come back for, so it leaves and
+			// the parent drops it from the list (the gap closes via the list's flip).
+			timers = [setTimeout(() => onremoved?.(row), EXIT_MS)];
+			return;
+		}
 		timers = [
 			// Off screen: hand the row back to its resting position, which the
 			// 'returning' transition animates. By now the optimistic counts have
@@ -233,7 +244,7 @@
 	const unwatchedMovie = $derived(row.mediaType === 'movie' && row.progress < (row.maxProgress ?? 1));
 </script>
 
-<div class="row" class:pending>
+<div class="row">
 	<!-- Reveal sits behind the content and is only visible through the gap the
 	     content leaves as it slides. While dragging it holds a floor so the
 	     intent is legible early; on commit it simply tracks the row, so it is
@@ -467,9 +478,5 @@
 	}
 	.left {
 		flex: none;
-	}
-
-	.row.pending .content {
-		opacity: 0.6;
 	}
 </style>

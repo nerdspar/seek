@@ -482,12 +482,12 @@
 			<h2>Seasons</h2>
 			<ul class="seasons">
 				{#each seasonsOf(show) as s (s.seasonNumber)}
-					<li class:busy={busy.has(s.seasonNumber)}>
+					<li>
 						<!-- Outside the <a> so tapping it toggles rather than navigates. -->
 						<button
 							class="check"
 							class:watched={complete(s)}
-							disabled={busy.has(s.seasonNumber) || !airedMaxOf(s)}
+							disabled={!airedMaxOf(s)}
 							aria-pressed={complete(s)}
 							aria-label={`Mark ${s.title} watched`}
 							onclick={(e) => toggleSeason(s, e)}
@@ -656,7 +656,6 @@
 		display: grid; grid-template-columns: var(--tap) 1fr;
 		align-items: center; border-radius: var(--radius); background: var(--surface);
 	}
-	.seasons li.busy { opacity: 0.6; }
 	.seasons a {
 		display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
 		min-height: 62px; padding: 10px 14px 10px 0; min-width: 0;
