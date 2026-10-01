@@ -8,6 +8,7 @@
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { keepScroll } from '$lib/keepScroll';
 	import { tabReselect } from '$lib/tabReselect';
+	import { pullToRefresh, PULL_THRESHOLD } from '$lib/pullToRefresh';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import FilterSheet, { type Filters } from '$lib/components/FilterSheet.svelte';
@@ -20,6 +21,15 @@
 	let { data }: { data: PageData } = $props();
 
 	let note = $state<string | null>(null);
+
+	/* Pull-to-refresh. The gesture (pullToRefresh) reports the pull offset; the
+	   view translates the list by it and shows a spinner, and a release past the
+	   threshold re-fetches the page via invalidateAll. */
+	let mainEl = $state<HTMLElement>();
+	let pullY = $state(0);
+	let pullSettling = $state(false);
+	let refreshing = $state(false);
+	const REFRESH_REST = 48;
 
 	/* The dirty→invalidate refresh hook that used to live here now runs in the root
 	   layout (src/routes/+layout.svelte) so it covers every route, not just this
@@ -234,19 +244,14 @@
 		haptic();
 		setInFlight(k, true);
 
-		// Optimistic: counts move now, and the pill advances so the swipe reads as
-		// instant rather than waiting ~2s on the write. episode+1 is a guess — wrong
-		// at a season boundary or on absolute numbering — but the server's real
-		// next-up (body.row) replaces it within the moment, and undimmed that
-		// correction is unobtrusive. With nothing left there is no next to show.
-		const moreToWatch = row.left === null ? true : row.left > 1;
+		// Optimistic counts (shown only during the brief slide-off). The episode pill
+		// is NOT guessed — whether there is another AIRED episode after this one is
+		// something only the server knows (`left` counts unaired and old seasons too,
+		// so it can't tell). The row slides out; if the server reports a real next-up
+		// it comes back with it, otherwise the show is caught up and stays gone.
 		patchRow(k, {
 			progress: row.progress + 1,
-			left: row.left === null ? null : Math.max(0, row.left - 1),
-			next:
-				moreToWatch && row.next
-					? { season: row.next.season, episode: row.next.episode + 1, airDate: null, title: null }
-					: null
+			left: row.left === null ? null : Math.max(0, row.left - 1)
 		});
 
 		try {
@@ -273,11 +278,23 @@
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			const body = await res.json();
 
-			// The server re-read the show row, so this is the real next-up rather
-			// than a guess. If the refresh failed the optimistic counts stand and
-			// the row corrects itself on the next load.
-			if (body.row) setRow(k, body.row);
-			reorderAfterMark(k);
+			// The server re-read the show, so body.row is the real state.
+			const wasFinishing =
+				data.filters.status === 'in_progress' && row.mediaType !== 'movie';
+			if (wasFinishing) {
+				// Slid out optimistically. Bring it back only if there is genuinely
+				// another aired episode to watch; a caught-up show (no next) stays
+				// gone. If the re-read failed we can't tell, so err toward keeping it.
+				if (!body.row || body.row.next) {
+					gone = new Set([...gone].filter((x) => x !== k));
+					if (body.row) setRow(k, body.row);
+					reorderAfterMark(k);
+				}
+			} else {
+				// Movie or a non-backlog view: the row stays; just update it in place.
+				if (body.row) setRow(k, body.row);
+				reorderAfterMark(k);
+			}
 
 			toast = { rowKey: k, marked, snapshot, orderBefore, title: row.title, label };
 		} catch (err) {
@@ -445,7 +462,44 @@
 
 	</header>
 
-	<main use:keepScroll={'watchlist'} use:tabReselect={{ tab: 'watchlist' }}>
+	<main
+		use:keepScroll={'watchlist'}
+		use:tabReselect={{ tab: 'watchlist' }}
+		use:pullToRefresh={{
+			armed: () => (mainEl?.scrollTop ?? 0) <= 0 && !refreshing,
+			onpull: (y, settling) => {
+				pullY = y;
+				pullSettling = settling;
+			},
+			onrefresh: async () => {
+				refreshing = true;
+				try {
+					await invalidateAll();
+				} finally {
+					refreshing = false;
+				}
+			}
+		}}
+		bind:this={mainEl}
+	>
+		<div
+			class="ptr"
+			class:settling={pullSettling}
+			style:opacity={refreshing ? 1 : Math.min(1, pullY / PULL_THRESHOLD)}
+			style:transform={`translateY(${(refreshing ? REFRESH_REST : pullY) - 34}px)`}
+			aria-hidden="true"
+		>
+			<svg
+				class="ptr-icon"
+				class:spin={refreshing}
+				style:transform={refreshing ? undefined : `rotate(${(pullY / PULL_THRESHOLD) * 270}deg)`}
+				viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+			>
+				<path d="M21 12a9 9 0 1 1-2.64-6.36" />
+				<path d="M21 4v5h-5" />
+			</svg>
+		</div>
+		<div class="ptr-body" class:settling={pullSettling} style:transform={`translateY(${refreshing ? REFRESH_REST : pullY}px)`}>
 		{#await data.page}
 			<ul class="rows">
 				{#each Array(6) as _, i (i)}
@@ -478,9 +532,7 @@
 					<WatchRow
 						{row}
 						markDirection={data.markDirection}
-						finishing={data.filters.status === 'in_progress' &&
-							row.mediaType !== 'movie' &&
-							row.left === 1}
+						finishing={data.filters.status === 'in_progress' && row.mediaType !== 'movie'}
 						{onmark}
 						{onremoved}
 						onepisode={openEpisode}
@@ -494,6 +546,7 @@
 		{:catch err}
 			<div class="empty"><h2>Can't reach Floppy</h2><p>{err.message}</p></div>
 		{/await}
+		</div>
 	</main>
 
 	<button class="fab" onclick={() => goto('/search')} aria-label="Search">
@@ -605,7 +658,36 @@
 	/* No tab-bar clearance: the bar is a sibling now. 88px keeps the last row
 	   clear of the floating add button. */
 	main {
+		position: relative;
 		padding: 4px var(--gutter) 88px;
+	}
+
+	/* Pull-to-refresh: the spinner rides above the list, the body translates down
+	   with the pull; `settling` animates the spring-back and the rest position. */
+	.ptr {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		display: flex;
+		justify-content: center;
+		color: var(--text-dim);
+		pointer-events: none;
+		z-index: 1;
+	}
+	.ptr.settling {
+		transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
+	}
+	.ptr-icon.spin {
+		animation: ptr-spin 0.7s linear infinite;
+	}
+	@keyframes ptr-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	.ptr-body.settling {
+		transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
 	.rows {
