@@ -3,14 +3,161 @@
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
+	import ArrEpisodeControl from '$lib/components/ArrEpisodeControl.svelte';
+	import InteractiveSearchSheet from '$lib/components/InteractiveSearchSheet.svelte';
+	import FileActionsSheet from '$lib/components/FileActionsSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import { touchWatchlist } from '$lib/dirty';
 	import { queuedWrite } from '$lib/queue.svelte';
 	import { epLabel, formatAirDate } from '$lib/format';
+	import { notify } from '$lib/notices.svelte';
+	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import { episodeState, downloadingEpisodes, audioBadges, type DlState } from '$lib/arrClient';
+	import type { ArrEpisode, ArrFile } from '$lib/server/arr';
+	import { onMount } from 'svelte';
 	import type { EpisodeRow, SeasonDetail } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	/* ── Sonarr download state, merged onto Floppy's episode rows by number ─────
+	   Floppy exposes no per-episode TVDB id, so the join is (season, episode)
+	   number — reliable for standard shows, and an episode with no Sonarr match
+	   simply shows no download control. Loaded only when management is on. */
+	let arrEpisodes = $state<Map<number, ArrEpisode>>(new Map());
+	let downloading = $state<Map<number, number>>(new Map());
+	let arrSeasonMonitored = $state<boolean | null>(null);
+	let seasonBusy = $state(false);
+	let interactive = $state<{ episodeId?: number } | null>(null);
+	let fileSheet = $state<{ ep: EpisodeRow; file: ArrFile; id: number } | null>(null);
+	let fileBusy = $state(false);
+
+	const manageOn = $derived(arrManageOn('tv'));
+
+	async function refreshArr() {
+		if (!arrManageOn('tv')) return;
+		try {
+			const [epsRes, qRes] = await Promise.all([
+				fetch(`/api/arr/episodes?tmdbId=${encodeURIComponent(data.mediaId)}&season=${data.seasonNumber}`),
+				fetch('/api/arr/queue')
+			]);
+			if (epsRes.ok) {
+				const body = (await epsRes.json()) as {
+					inLibrary: boolean;
+					seasonMonitored: boolean | null;
+					episodes: ArrEpisode[];
+				};
+				const m = new Map<number, ArrEpisode>();
+				for (const e of body.episodes) m.set(e.episodeNumber, e);
+				arrEpisodes = m;
+				arrSeasonMonitored = body.seasonMonitored ?? null;
+			}
+			if (qRes.ok) {
+				const q = (await qRes.json()) as { sonarr: Parameters<typeof downloadingEpisodes>[0] };
+				downloading = downloadingEpisodes(q.sonarr ?? []);
+			}
+		} catch {
+			/* a down Sonarr just means no download controls */
+		}
+	}
+
+	const arrOf = (episodeNumber: number) => arrEpisodes.get(episodeNumber);
+	const downloadingIds = $derived(new Set(downloading.keys()));
+	function stateOf(episodeNumber: number): DlState {
+		return episodeState(arrOf(episodeNumber), downloadingIds);
+	}
+
+	async function autoSearch(episodeNumber: number) {
+		const arrEp = arrOf(episodeNumber);
+		if (!arrEp) return;
+		try {
+			const res = await fetch('/api/arr/search', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaType: 'tv', kind: 'episodes', episodeIds: [arrEp.id] })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			void notify(`Searching ${epLabel(data.seasonNumber, episodeNumber)}`);
+			setTimeout(refreshArr, 1500);
+		} catch (err) {
+			note = `Couldn't search — ${err instanceof Error ? err.message : err}`;
+		}
+	}
+
+	async function searchSeasonAuto() {
+		if (seasonBusy) return;
+		seasonBusy = true;
+		try {
+			const res = await fetch('/api/arr/search', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaType: 'tv', tmdbId: data.mediaId, kind: 'season', season: data.seasonNumber })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			void notify('Searching the season for missing episodes');
+			setTimeout(refreshArr, 1500);
+		} catch (err) {
+			note = `Couldn't search — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			seasonBusy = false;
+		}
+	}
+
+	async function toggleSeasonMonitor() {
+		if (seasonBusy) return;
+		const next = !(arrSeasonMonitored ?? true);
+		seasonBusy = true;
+		arrSeasonMonitored = next;
+		try {
+			const res = await fetch('/api/arr/monitor', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ tmdbId: data.mediaId, season: data.seasonNumber, monitored: next })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		} catch (err) {
+			arrSeasonMonitored = !next;
+			note = `Couldn't update monitoring — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			seasonBusy = false;
+		}
+	}
+
+	function openFile(ep: EpisodeRow) {
+		const arrEp = arrOf(ep.episodeNumber);
+		if (arrEp?.file) fileSheet = { ep, file: arrEp.file, id: arrEp.file.id };
+	}
+
+	async function deleteFile(thenReplace = false) {
+		if (!fileSheet || fileBusy) return;
+		const { ep, id } = fileSheet;
+		if (!thenReplace && !confirm(`Delete the downloaded file for ${epLabel(ep.seasonNumber, ep.episodeNumber)}?`)) return;
+		fileBusy = true;
+		try {
+			const res = await fetch('/api/arr/file', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaType: 'tv', fileId: id, tmdbId: data.mediaId })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			const arrEp = arrOf(ep.episodeNumber);
+			fileSheet = null;
+			await refreshArr();
+			if (thenReplace && arrEp) interactive = { episodeId: arrEp.id };
+		} catch (err) {
+			note = `Couldn't delete the file — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			fileBusy = false;
+		}
+	}
+
+	onMount(async () => {
+		await loadArrStatus();
+		await refreshArr();
+	});
 
 	/** Local edits layered over whatever the streamed season resolves to. */
 	let overrides = $state<Record<number, EpisodeRow>>({});
@@ -22,6 +169,9 @@
 
 	const episodesOf = (s: SeasonDetail) => s.episodes.map((e) => overrides[e.episodeNumber] ?? e);
 	const watchedIn = (eps: EpisodeRow[]) => eps.filter((e) => e.plays > 0).length;
+
+	const arrInLibrary = $derived(manageOn && arrEpisodes.size > 0);
+	const arrHaveCount = $derived([...arrEpisodes.values()].filter((e) => e.hasFile).length);
 
 	function setFlight(n: number, on: boolean) {
 		const next = new Set(inFlight);
@@ -138,6 +288,23 @@
 
 		</div>
 
+		{#if arrInLibrary}
+			<div class="arr-head">
+				<svg class="srv" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></svg>
+				<span class="files tnum">{arrHaveCount}/{arrEpisodes.size} files</span>
+				<button class="mon" role="switch" aria-checked={arrSeasonMonitored ?? true} aria-label="Monitor this season" onclick={toggleSeasonMonitor}>
+					<span class="mlabel">Monitored</span>
+					<span class="toggle" class:on={arrSeasonMonitored ?? true}><span class="knob"></span></span>
+				</button>
+				<button class="hicon" disabled={seasonBusy} aria-label="Search the season" onclick={searchSeasonAuto}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+				</button>
+				<button class="hicon" aria-label="Interactive search for the season" onclick={() => (interactive = {})}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.4" /><path d="M4.5 19a5.5 5.5 0 0 1 9.7-3.2" /><circle cx="17.5" cy="16.5" r="2.6" /><path d="m21 20-1.7-1.7" /></svg>
+				</button>
+			</div>
+		{/if}
+
 		<ul class="episodes">
 			{#each episodes as ep (ep.episodeNumber)}
 				<li>
@@ -146,10 +313,23 @@
 							<span class="num tnum">{epLabel(ep.seasonNumber, ep.episodeNumber)}</span>
 							<span class="title">{ep.title}</span>
 						</span>
-						{#if ep.airDate}
-							<span class="air tnum">{formatAirDate(ep.airDate)}</span>
-						{/if}
+						<span class="meta2">
+							{#if ep.airDate}<span class="air tnum">{formatAirDate(ep.airDate)}</span>{/if}
+							{#each audioBadges(arrOf(ep.episodeNumber)?.file) as a (a)}<span class="audio">{a}</span>{/each}
+						</span>
 					</button>
+
+					{#if manageOn}
+						{@const arrEp = arrOf(ep.episodeNumber)}
+						<ArrEpisodeControl
+							state={stateOf(ep.episodeNumber)}
+							percent={arrEp ? (downloading.get(arrEp.id) ?? 0) : 0}
+							label={epLabel(ep.seasonNumber, ep.episodeNumber)}
+							onauto={() => autoSearch(ep.episodeNumber)}
+							oninteractive={() => (interactive = { episodeId: arrEp?.id })}
+							onfile={() => openFile(ep)}
+						/>
+					{/if}
 
 					<button
 						class="check"
@@ -185,6 +365,29 @@
 				onclose={() => (sheetFor = null)}
 			/>
 		{/if}
+	{/if}
+
+	{#if interactive}
+		<InteractiveSearchSheet
+			mediaType="tv"
+			tmdbId={data.mediaId}
+			title={season.showTitle ?? season.title}
+			episodeId={interactive.episodeId}
+			season={data.seasonNumber}
+			onclose={() => (interactive = null)}
+			ongrabbed={refreshArr}
+		/>
+	{/if}
+
+	{#if fileSheet}
+		<FileActionsSheet
+			title={`${season.showTitle ?? season.title} · ${epLabel(fileSheet.ep.seasonNumber, fileSheet.ep.episodeNumber)}`}
+			file={fileSheet.file}
+			busy={fileBusy}
+			onclose={() => (fileSheet = null)}
+			ondelete={() => deleteFile(false)}
+			onreplace={() => deleteFile(true)}
+		/>
 	{/if}
 
 	{#if toast}
@@ -225,10 +428,37 @@
 
 	.episodes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 	.episodes li {
-		display: grid; grid-template-columns: 1fr 52px;
+		display: grid; grid-template-columns: 1fr auto 52px;
 		align-items: center; min-height: 60px;
 		border-radius: var(--radius); background: var(--surface);
 	}
+	.meta2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+	.audio {
+		font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+		color: var(--text-dim); background: var(--surface-raised);
+		border-radius: 5px; padding: 1px 5px;
+	}
+
+	.arr-head {
+		display: flex; align-items: center; gap: 10px;
+		margin: 0 0 12px; padding: 9px 12px;
+		border-radius: var(--radius); background: var(--surface);
+	}
+	.arr-head .srv { color: var(--text-dim); flex: none; }
+	.arr-head .files { font-size: 12.5px; color: var(--text-dim); }
+	.mon { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+	.mlabel { font-size: 12px; color: var(--text); }
+	.mon .toggle { position: relative; width: 40px; height: 23px; border-radius: 999px; background: var(--surface-raised); flex: none; transition: background 160ms ease; }
+	.mon .toggle.on { background: var(--signal); }
+	.mon .knob { position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: transform 160ms ease; }
+	.mon .toggle.on .knob { transform: translateX(17px); }
+	.hicon {
+		display: grid; place-items: center; flex: none;
+		width: 36px; height: 36px; border-radius: 50%;
+		background: var(--surface-raised); color: var(--text-dim);
+	}
+	.hicon:disabled { opacity: 0.5; }
+	.hicon:active { transform: scale(0.92); }
 
 	.body {
 		display: flex; flex-direction: column; justify-content: center; gap: 3px;

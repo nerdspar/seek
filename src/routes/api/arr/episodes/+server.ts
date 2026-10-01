@@ -20,7 +20,8 @@ export const GET: RequestHandler = async ({ url }) => {
 		const series = await getSeries(tmdbId);
 		if (!series) return json({ inLibrary: false, episodes: [] });
 		const episodes = await getSeasonEpisodes(series.id, season);
-		return json({ inLibrary: true, seriesId: series.id, episodes });
+		const seasonMonitored = series.seasons.find((s) => s.seasonNumber === season)?.monitored ?? null;
+		return json({ inLibrary: true, seriesId: series.id, seasonMonitored, episodes });
 	} catch (err) {
 		arrFail(err, 'sonarr');
 	}

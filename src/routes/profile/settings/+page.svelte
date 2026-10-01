@@ -511,6 +511,23 @@
 	{#if anyArr}
 		<section>
 			<h3>Send to Sonarr / Radarr</h3>
+
+			<!-- Master switch for the download-management layer. Off leaves just the
+			     "Add to Sonarr/Radarr" button and hides every edit / search / file
+			     control across the app. Seek-wide for now (per-user with household). -->
+			<button
+				class="row"
+				role="switch"
+				aria-checked={local.arrManage !== false}
+				onclick={() => patch({ arrManage: !(local.arrManage !== false) })}
+			>
+				<span class="rowtext">
+					<span class="label">Download management</span>
+					<span class="hint">Edit settings, search, grab, and manage files. Off shows just the add button.</span>
+				</span>
+				<span class="toggle" class:on={local.arrManage !== false}><span class="knob"></span></span>
+			</button>
+
 			{#each ARR_SERVICES as s (s.key)}
 				{#if arrOptions && arrOptions[s.key].configured}
 					{@const opts = arrOptions[s.key]}

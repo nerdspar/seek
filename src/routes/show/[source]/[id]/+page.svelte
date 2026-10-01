@@ -9,7 +9,9 @@
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
-	import { loadArrStatus } from '$lib/arr.svelte';
+	import DownloadsStrip from '$lib/components/DownloadsStrip.svelte';
+	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import type { ArrSeries } from '$lib/server/arr';
 	import { onMount } from 'svelte';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
@@ -24,7 +26,51 @@
 	let { data }: { data: PageData } = $props();
 
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
-	onMount(() => void loadArrStatus());
+
+	/* Sonarr download state for this show (series settings + per-season file
+	   counts), loaded only when the management layer is switched on. Refreshed
+	   after an edit/search so counts and the monitored summary stay current. */
+	let arrSeries = $state<ArrSeries | null>(null);
+	let seasonSearching = $state<Set<number>>(new Set());
+
+	async function refreshArr() {
+		if (!arrManageOn('tv')) return;
+		try {
+			const r = await fetch(`/api/arr/title?mediaType=tv&tmdbId=${encodeURIComponent(data.mediaId)}`);
+			if (r.ok) arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+		} catch {
+			/* a down Sonarr just means no download controls — the page still works */
+		}
+	}
+	const arrSeasonOf = (n: number) => arrSeries?.seasons.find((s) => s.seasonNumber === n) ?? null;
+
+	async function searchSeason(seasonNumber: number, e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (seasonSearching.has(seasonNumber)) return;
+		seasonSearching = new Set(seasonSearching).add(seasonNumber);
+		try {
+			const res = await fetch('/api/arr/search', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaType: 'tv', tmdbId: data.mediaId, kind: 'season', season: seasonNumber })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			void notify(`Searching ${seasonNumber === 0 ? 'Specials' : `Season ${seasonNumber}`} for missing episodes`);
+		} catch (err) {
+			note = `Couldn't search — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			const next = new Set(seasonSearching);
+			next.delete(seasonNumber);
+			seasonSearching = next;
+		}
+	}
+
+	onMount(async () => {
+		await loadArrStatus();
+		await refreshArr();
+	});
 
 	/* The synopsis is clamped so a long one doesn't push the seasons off-screen.
 	   The "more" link only appears when the text actually overflows the clamp —
@@ -467,6 +513,10 @@
 			{/if}
 		{/await}
 
+		{#if tracked && arrSeries}
+			<DownloadsStrip tmdbId={data.mediaId} title={show.title} series={arrSeries} onchange={refreshArr} />
+		{/if}
+
 		{#if show.synopsis}
 			<div class="synopsis">
 				<p bind:this={synopsisEl} class:clamped={!synopsisOpen}>{show.synopsis}</p>
@@ -482,6 +532,8 @@
 			<h2>Seasons</h2>
 			<ul class="seasons">
 				{#each seasonsOf(show) as s (s.seasonNumber)}
+					{@const arrS = arrSeasonOf(s.seasonNumber)}
+					{@const missing = arrS ? Math.max(0, arrS.episodeCount - arrS.episodeFileCount) : 0}
 					<li>
 						<!-- Outside the <a> so tapping it toggles rather than navigates. -->
 						<button
@@ -518,6 +570,17 @@
 								<path d="m9 18 6-6-6-6" />
 							</svg>
 						</a>
+
+						{#if arrS}
+							<div class="s-arr">
+								<span class="s-files tnum">{arrS.episodeFileCount}/{arrS.episodeCount || arrS.totalEpisodeCount}</span>
+								{#if missing > 0}
+									<button class="s-search" disabled={seasonSearching.has(s.seasonNumber)} aria-label={`Search ${s.title} for ${missing} missing episode${missing === 1 ? '' : 's'}`} onclick={(e) => searchSeason(s.seasonNumber, e)}>
+										<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+									</button>
+								{/if}
+							</div>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -653,9 +716,18 @@
 
 	.seasons { display: flex; flex-direction: column; gap: 6px; margin: 0 0 24px; padding: 0; list-style: none; }
 	.seasons li {
-		display: grid; grid-template-columns: var(--tap) 1fr;
+		display: grid; grid-template-columns: var(--tap) 1fr auto;
 		align-items: center; border-radius: var(--radius); background: var(--surface);
 	}
+	.s-files { font-size: 11px; color: var(--text-dim); }
+	.s-arr { display: flex; align-items: center; gap: 6px; padding-right: 10px; }
+	.s-search {
+		display: grid; place-items: center; flex: none;
+		width: 34px; height: 34px; border-radius: 50%;
+		background: var(--surface-raised); color: var(--text-dim);
+	}
+	.s-search:disabled { opacity: 0.5; }
+	.s-search:active { transform: scale(0.92); }
 	.seasons a {
 		display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
 		min-height: 62px; padding: 10px 14px 10px 0; min-width: 0;
