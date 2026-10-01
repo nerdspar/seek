@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reselectTop } from './tabReselect';
+import { reselectTop, scrollAt } from './tabReselect';
 
 describe('reselectTop', () => {
 	it('scrolls to the very top when there is no anchor', () => {
@@ -18,5 +18,29 @@ describe('reselectTop', () => {
 
 	it('can scroll up (anchor above the current top)', () => {
 		expect(reselectTop(500, 60, 10)).toBe(450);
+	});
+});
+
+describe('scrollAt (easeOutCubic tween)', () => {
+	it('starts at `from` and ends at `to`', () => {
+		expect(scrollAt(100, 900, 0)).toBe(100);
+		expect(scrollAt(100, 900, 1)).toBe(900);
+	});
+	it('clamps progress outside [0,1]', () => {
+		expect(scrollAt(100, 900, -0.5)).toBe(100);
+		expect(scrollAt(100, 900, 2)).toBe(900);
+	});
+	it('eases out — past the halfway point by the time progress is half', () => {
+		const mid = scrollAt(0, 1000, 0.5);
+		expect(mid).toBeGreaterThan(500); // decelerating, so already past linear
+		expect(mid).toBeLessThan(1000);
+	});
+	it('is monotonic across the tween', () => {
+		let prev = -Infinity;
+		for (let t = 0; t <= 1.0001; t += 0.1) {
+			const v = scrollAt(0, 1000, t);
+			expect(v).toBeGreaterThanOrEqual(prev);
+			prev = v;
+		}
 	});
 });
