@@ -42,8 +42,15 @@
 	let serverRows = $state<WatchlistRow[]>([]);
 	let total = $state(0);
 
+	/* Rows removed optimistically — a show whose last episode was just marked, so
+	   it is caught up and no longer belongs in the in-progress backlog. Cleared on
+	   every fresh load, and an undo takes its row back out. */
+	let gone = $state<Set<string>>(new Set());
+
 	const rows = $derived.by(() => {
-		const mapped = serverRows.map((r) => overrides[key(r)] ?? r);
+		const mapped = serverRows
+			.map((r) => overrides[key(r)] ?? r)
+			.filter((r) => !gone.has(key(r)));
 		if (!order) return mapped;
 		const byKey = new Map(mapped.map((r) => [key(r), r]));
 		const inOrder = new Set(order);
@@ -74,6 +81,7 @@
 				resultCount = p.total;
 				order = null;
 				overrides = {};
+				gone = new Set();
 			})
 			.catch((e) => {
 				if (cancelled) return;
@@ -197,6 +205,15 @@
 		if (current) setRow(k, { ...current, ...patch });
 	}
 
+	/* The row finished its slide-off for a last-episode mark (WatchRow decides,
+	   filter-aware via its `finishing` prop). Drop it so the gap closes — the undo
+	   toast, which lives outside the list, still reverses the play. */
+	function onremoved(row: WatchlistRow) {
+		const next = new Set(gone);
+		next.add(key(row));
+		gone = next;
+	}
+
 	async function onmark(row: WatchlistRow) {
 		/* A movie has no next episode, so "nothing next" cannot gate it the way it
 		   gates a show — an unwatched film is exactly the case worth marking. */
@@ -217,12 +234,19 @@
 		haptic();
 		setInFlight(k, true);
 
-		// Optimistic: the counts move now. The episode pill is left alone until
-		// the server names the next one — guessing episode+1 breaks on the
-		// absolute-numbered shows in this library (§12.4).
+		// Optimistic: counts move now, and the pill advances so the swipe reads as
+		// instant rather than waiting ~2s on the write. episode+1 is a guess — wrong
+		// at a season boundary or on absolute numbering — but the server's real
+		// next-up (body.row) replaces it within the moment, and undimmed that
+		// correction is unobtrusive. With nothing left there is no next to show.
+		const moreToWatch = row.left === null ? true : row.left > 1;
 		patchRow(k, {
 			progress: row.progress + 1,
-			left: row.left === null ? null : Math.max(0, row.left - 1)
+			left: row.left === null ? null : Math.max(0, row.left - 1),
+			next:
+				moreToWatch && row.next
+					? { season: row.next.season, episode: row.next.episode + 1, airDate: null, title: null }
+					: null
 		});
 
 		try {
@@ -298,6 +322,8 @@
 			// the refresh failed, since the play itself is confirmed removed.
 			setRow(t.rowKey, body.row ?? t.snapshot);
 			order = t.orderBefore;
+			// If this was a last-episode mark, the row was removed — take it back.
+			gone = new Set([...gone].filter((x) => x !== t.rowKey));
 			toast = null;
 		} catch (err) {
 			note = `Undo failed — ${err instanceof Error ? err.message : err}. The play is still recorded.`;
@@ -311,6 +337,7 @@
 		if (id === data.mediaType) return;
 		// Optimistic edits belong to the segment that produced them.
 		overrides = {};
+		gone = new Set();
 		toast = null;
 		goto(`/?type=${id}`, { noScroll: true });
 	}
@@ -451,8 +478,11 @@
 					<WatchRow
 						{row}
 						markDirection={data.markDirection}
-						pending={inFlight.has(key(row))}
+						finishing={data.filters.status === 'in_progress' &&
+							row.mediaType !== 'movie' &&
+							row.left === 1}
 						{onmark}
+						{onremoved}
 						onepisode={openEpisode}
 						onshow={openShow}
 					/>

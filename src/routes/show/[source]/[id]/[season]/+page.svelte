@@ -140,7 +140,7 @@
 
 		<ul class="episodes">
 			{#each episodes as ep (ep.episodeNumber)}
-				<li class:busy={inFlight.has(ep.episodeNumber)}>
+				<li>
 					<button class="body" onclick={() => (sheetFor = ep.episodeNumber)}>
 						<span class="line1">
 							<span class="num tnum">{epLabel(ep.seasonNumber, ep.episodeNumber)}</span>
@@ -157,7 +157,6 @@
 						aria-label={ep.plays > 0 ? `Unmark ${epLabel(ep.seasonNumber, ep.episodeNumber)}` : `Mark ${epLabel(ep.seasonNumber, ep.episodeNumber)} watched`}
 						aria-pressed={ep.plays > 0}
 						onclick={() => toggle(ep, season.showTitle ?? '')}
-						disabled={inFlight.has(ep.episodeNumber)}
 					>
 						{#if ep.plays > 0}
 							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
@@ -230,7 +229,6 @@
 		align-items: center; min-height: 60px;
 		border-radius: var(--radius); background: var(--surface);
 	}
-	.episodes li.busy { opacity: 0.6; }
 
 	.body {
 		display: flex; flex-direction: column; justify-content: center; gap: 3px;
