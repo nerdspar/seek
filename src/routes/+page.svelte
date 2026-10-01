@@ -7,6 +7,7 @@
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { keepScroll } from '$lib/keepScroll';
+	import { tabReselect } from '$lib/tabReselect';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import FilterSheet, { type Filters } from '$lib/components/FilterSheet.svelte';
@@ -417,7 +418,7 @@
 
 	</header>
 
-	<main use:keepScroll={'watchlist'}>
+	<main use:keepScroll={'watchlist'} use:tabReselect={{ tab: 'watchlist' }}>
 		{#await data.page}
 			<ul class="rows">
 				{#each Array(6) as _, i (i)}

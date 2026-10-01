@@ -14,7 +14,12 @@
 	];
 
 	function activate(tab: (typeof TABS)[number]) {
-		if (tab.id === current) return;
+		if (tab.id === current) {
+			/* Re-tapping the active tab scrolls its page back to the start — the top,
+			   or Today on Upcoming. Pages opt in with the tabReselect action. */
+			window.dispatchEvent(new CustomEvent('tabreselect', { detail: tab.id }));
+			return;
+		}
 		if (tab.href) return void goto(tab.href);
 		onunbuilt?.(tab.label);
 	}

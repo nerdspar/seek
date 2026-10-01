@@ -4,6 +4,7 @@
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { keepScroll } from '$lib/keepScroll';
+	import { tabReselect } from '$lib/tabReselect';
 	import AddButton from '$lib/components/AddButton.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
@@ -284,7 +285,7 @@
 	{/each}
 {/snippet}
 
-	<main use:keepScroll={'discover'}>
+	<main use:keepScroll={'discover'} use:tabReselect={{ tab: 'discover' }}>
 		{#if data.moodAvailable}
 			<section class="mood">
 				<form onsubmit={submitFreeText}>
