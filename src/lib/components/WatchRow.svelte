@@ -7,8 +7,10 @@
 	type Props = {
 		row: WatchlistRow;
 		markDirection?: MarkDirection;
-		/** This mark leaves the show caught up and off the current list: the row
-		 *  slides out and does not return — the parent removes it (onremoved). */
+		/** Marking optimistically removes the row from this list (the in-progress
+		 *  backlog): the row slides out and does not return — the parent removes it
+		 *  (onremoved), and re-inserts it only if the server reports another aired
+		 *  episode. */
 		finishing?: boolean;
 		onmark: (row: WatchlistRow) => void;
 		onremoved?: (row: WatchlistRow) => void;
