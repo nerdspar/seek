@@ -3,6 +3,7 @@
 	import { haptic } from '$lib/haptics';
 	import { loadArrStatus, loadArrOptions, arrOptionsFor, arrManageOn } from '$lib/arr.svelte';
 	import { formatSize, audioBadges, queuePercent } from '$lib/arrClient';
+	import { navigating } from '$app/state';
 	import InteractiveSearchSheet from './InteractiveSearchSheet.svelte';
 	import FileActionsSheet from './FileActionsSheet.svelte';
 	import type { ArrMovie, ArrQueueItem } from '$lib/server/arr';
@@ -23,6 +24,11 @@
 	];
 
 	let movie = $state<ArrMovie | null>(null);
+	/* The tmdbId the loaded movie belongs to; `shown` is null until it matches the
+	   current prop, so navigating film→film never flashes the previous film's
+	   download state (the derived recomputes before the reset effect runs). */
+	let movieId = $state<string | null>(null);
+	const shown = $derived(movieId === tmdbId ? movie : null);
 	let percent = $state<number | null>(null);
 	let openSettings = $state(false);
 	let busy = $state(false);
@@ -41,7 +47,10 @@
 				fetch(`/api/arr/title?mediaType=movie&tmdbId=${encodeURIComponent(tmdbId)}`),
 				fetch('/api/arr/queue')
 			]);
-			if (tRes.ok) movie = ((await tRes.json()) as { movie: ArrMovie | null }).movie ?? null;
+			if (tRes.ok) {
+				movie = ((await tRes.json()) as { movie: ArrMovie | null }).movie ?? null;
+				movieId = tmdbId;
+			}
 			if (qRes.ok && movie) {
 				const q = ((await qRes.json()) as { radarr: ArrQueueItem[] }).radarr ?? [];
 				const item = q.find((i) => i.movieId === movie!.id);
@@ -169,15 +178,15 @@
 	}
 </script>
 
-{#if on && movie}
+{#if on && shown && !navigating.to}
 	<div class="wrap">
 		<div class="statusrow">
-			{#if movie.hasFile && movie.file}
+			{#if shown.hasFile && shown.file}
 				<button class="status have" onclick={() => (fileOpen = true)}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>
-					<span>{movie.file.quality ?? 'Downloaded'}</span>
-					{#each audioBadges(movie.file) as a (a)}<span class="audio">{a}</span>{/each}
-					<span class="size tnum">{formatSize(movie.file.size)}</span>
+					<span>{shown.file.quality ?? 'Downloaded'}</span>
+					{#each audioBadges(shown.file) as a (a)}<span class="audio">{a}</span>{/each}
+					<span class="size tnum">{formatSize(shown.file.size)}</span>
 				</button>
 			{:else if percent !== null}
 				<span class="status dl"><span class="spin"></span>Downloading {percent}%</span>
@@ -195,7 +204,7 @@
 		<button class="bar" aria-expanded={openSettings} onclick={() => (openSettings = !openSettings)}>
 			<svg class="srv" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></svg>
 			<span class="label">Radarr settings</span>
-			<span class="summary">{movie.monitored ? 'monitored' : 'unmonitored'}{qualityName ? ` · ${qualityName}` : ''}</span>
+			<span class="summary">{shown.monitored ? 'monitored' : 'unmonitored'}{qualityName ? ` · ${qualityName}` : ''}</span>
 			<svg class="chev" class:open={openSettings} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
 		</button>
 
@@ -230,11 +239,11 @@
 	</div>
 {/if}
 
-{#if interactive && movie}
+{#if interactive && shown}
 	<InteractiveSearchSheet mediaType="movie" {tmdbId} {title} onclose={() => (interactive = false)} ongrabbed={refresh} />
 {/if}
-{#if fileOpen && movie?.file}
-	<FileActionsSheet {title} file={movie.file} busy={fileBusy} onclose={() => (fileOpen = false)} ondelete={() => deleteFile(false)} onreplace={() => deleteFile(true)} />
+{#if fileOpen && shown?.file}
+	<FileActionsSheet {title} file={shown.file} busy={fileBusy} onclose={() => (fileOpen = false)} ondelete={() => deleteFile(false)} onreplace={() => deleteFile(true)} />
 {/if}
 
 <style>
