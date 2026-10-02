@@ -41,6 +41,19 @@ describe('matchEpisode', () => {
 		expect(matchEpisode(floppy, sonarr)).toBeNull();
 	});
 
+	it('disambiguates a same-day season drop by episode number', () => {
+		// Whole season released on one date — every episode shares it, so nearest
+		// date is ambiguous and must fall through to the episode number.
+		const day = '2022-05-27T07:00:00Z';
+		const sonarr = [
+			ep({ id: 1, seasonNumber: 4, episodeNumber: 1, airDateUtc: day }),
+			ep({ id: 2, seasonNumber: 4, episodeNumber: 2, airDateUtc: day }),
+			ep({ id: 3, seasonNumber: 4, episodeNumber: 3, airDateUtc: day })
+		];
+		expect(matchEpisode({ seasonNumber: 4, episodeNumber: 2, airDate: day }, sonarr)?.id).toBe(2);
+		expect(matchEpisode({ seasonNumber: 4, episodeNumber: 3, airDate: day }, sonarr)?.id).toBe(3);
+	});
+
 	it('falls back to (season, episode) number when there is no air date', () => {
 		const sonarr = [ep({ id: 3, seasonNumber: 2, episodeNumber: 4 })];
 		expect(matchEpisode({ seasonNumber: 2, episodeNumber: 4, airDate: null }, sonarr)?.id).toBe(3);

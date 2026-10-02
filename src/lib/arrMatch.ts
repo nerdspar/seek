@@ -24,26 +24,32 @@ export type FloppyEpisodeKey = {
 	airDate: string | null;
 };
 
+const byNumber = (floppy: FloppyEpisodeKey, sonarr: ArrEpisode[]): ArrEpisode | null =>
+	sonarr.find(
+		(e) => e.seasonNumber === floppy.seasonNumber && e.episodeNumber === floppy.episodeNumber
+	) ?? null;
+
 export function matchEpisode(floppy: FloppyEpisodeKey, sonarr: ArrEpisode[]): ArrEpisode | null {
 	if (floppy.airDate) {
 		const t = Date.parse(floppy.airDate);
 		if (!Number.isNaN(t)) {
-			let best: ArrEpisode | null = null;
-			let bestDiff = Infinity;
-			for (const e of sonarr) {
-				if (!e.airDateUtc) continue;
-				const d = Math.abs(Date.parse(e.airDateUtc) - t);
-				if (d < bestDiff) {
-					bestDiff = d;
-					best = e;
-				}
+			const within = sonarr.filter(
+				(e) => e.airDateUtc && Math.abs(Date.parse(e.airDateUtc) - t) <= MATCH_WINDOW_MS
+			);
+			if (within.length === 1) return within[0];
+			if (within.length > 1) {
+				// A same-day release (a whole season dropped at once) puts every
+				// episode on one date, so "nearest date" can't tell them apart.
+				// Disambiguate by episode number, then fall back to nearest date.
+				const exact = byNumber(floppy, within);
+				if (exact) return exact;
+				return [...within].sort(
+					(a, b) =>
+						Math.abs(Date.parse(a.airDateUtc!) - t) - Math.abs(Date.parse(b.airDateUtc!) - t) ||
+						a.episodeNumber - b.episodeNumber
+				)[0];
 			}
-			if (best && bestDiff <= MATCH_WINDOW_MS) return best;
 		}
 	}
-	return (
-		sonarr.find(
-			(e) => e.seasonNumber === floppy.seasonNumber && e.episodeNumber === floppy.episodeNumber
-		) ?? null
-	);
+	return byNumber(floppy, sonarr);
 }
