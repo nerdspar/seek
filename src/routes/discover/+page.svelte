@@ -44,6 +44,7 @@
 		platform = p;
 		platformRows = null;
 		clearMood();
+		resetRails();
 		platformBusy = true;
 		try {
 			const res = await fetch(`/api/platform?id=${p.id}&type=${data.mediaType}`);
@@ -93,6 +94,7 @@
 	function setSort(next: Sort) {
 		if (next === sort) return;
 		sort = next;
+		resetRails();
 		if (mood) runMood(new URLSearchParams({ preset: mood }));
 	}
 
@@ -124,9 +126,22 @@
 	// Never reassigned — every action closure and the snapshot share this one
 	// object, so a restore that mutates it is seen no matter the timing.
 	const railScroll: Record<string, number> = {};
+	/* Live rail nodes, so a filter change can snap them back to the start. */
+	const railNodes = new Set<HTMLElement>();
+
+	/** Changing the provider/theme/sort replaces a rail's contents in place (the
+	 *  key is stable), so the row would keep whatever offset it was left at —
+	 *  stranded at the end, hiding the new data. Reset every rail to the start and
+	 *  drop the saved offsets. User-initiated only; never called on back-nav, so
+	 *  the snapshot restore still works. */
+	function resetRails() {
+		for (const key of Object.keys(railScroll)) delete railScroll[key];
+		for (const node of railNodes) node.scrollLeft = 0;
+	}
 
 	function keepRailScroll(node: HTMLElement, key: string) {
 		let k = key;
+		railNodes.add(node);
 		const save = () => {
 			railScroll[k] = node.scrollLeft;
 		};
@@ -150,6 +165,7 @@
 			},
 			destroy() {
 				node.removeEventListener('scroll', save);
+				railNodes.delete(node);
 			}
 		};
 	}
@@ -204,6 +220,7 @@
 		moodBusy = true;
 		moodResults = null;
 		sections = null;
+		resetRails();
 		try {
 			const res = await fetch(`/api/explore?q=${encodeURIComponent(q)}&type=${data.mediaType}`);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
@@ -225,6 +242,7 @@
 		}
 		mood = label;
 		freeText = '';
+		resetRails();
 		runMood(new URLSearchParams({ preset: label }));
 	}
 
