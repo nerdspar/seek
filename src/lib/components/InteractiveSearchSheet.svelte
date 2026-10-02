@@ -110,22 +110,25 @@
 
 <Sheet label={`Interactive search · ${title}`} scrollable {onclose}>
 	<div class="head">
-		<h2>Interactive search</h2>
-		<p class="sub">{title}</p>
+		<div class="head-text">
+			<h2>Interactive search</h2>
+			<p class="sub">{title}</p>
+		</div>
+		{#if !loading && !error && releases.length}
+			<div class="controls">
+				<button class="ctl" class:on={panel === 'sort'} aria-label="Sort" onclick={() => toggle('sort')}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v12m0 0 3-3m-3 3-3-3M16 18V6m0 0 3 3m-3-3-3 3" /></svg>
+					Sort
+				</button>
+				<button class="ctl" class:on={panel === 'filter' || anyFilter} aria-label="Filter" onclick={() => toggle('filter')}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4" /></svg>
+					Filter{#if anyFilter}<span class="dot"></span>{/if}
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	{#if !loading && !error && releases.length}
-		<div class="controls">
-			<button class="ctl" class:on={panel === 'sort'} aria-label="Sort" onclick={() => toggle('sort')}>
-				<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v12m0 0 3-3m-3 3-3-3M16 18V6m0 0 3 3m-3-3-3 3" /></svg>
-				Sort
-			</button>
-			<button class="ctl" class:on={panel === 'filter' || anyFilter} aria-label="Filter" onclick={() => toggle('filter')}>
-				<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4" /></svg>
-				Filter{#if anyFilter}<span class="dot"></span>{/if}
-			</button>
-		</div>
-
 		{#if panel === 'sort'}
 			<div class="menu">
 				{#each RELEASE_SORTS as s (s.key)}
@@ -227,11 +230,12 @@
 </Sheet>
 
 <style>
-	.head { padding: 2px 16px 10px; }
+	.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 12px 12px 16px; }
+	.head-text { min-width: 0; }
 	h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
-	.sub { margin: 2px 0 0; font-size: 13px; color: var(--text-dim); }
+	.sub { margin: 2px 0 0; font-size: 13px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-	.controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 12px 10px; }
+	.controls { display: flex; align-items: center; gap: 8px; flex: none; }
 	.ctl { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px; border-radius: 10px; background: var(--surface-raised); color: var(--text); font-size: 13px; font-weight: 600; }
 	.ctl.on { background: var(--signal); color: #fff; }
 	.ctl .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
