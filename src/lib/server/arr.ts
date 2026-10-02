@@ -782,15 +782,21 @@ export async function editMovie(tmdbId: string, edit: MovieEdit): Promise<ArrMov
 
 /** Monitor / unmonitor a whole season (flips the flag on the series object and
  *  PUTs it, which is how Sonarr tracks season monitoring). */
-export async function setSeasonMonitored(tmdbId: string, seasonNumber: number, monitored: boolean): Promise<void> {
+export async function setSeasonsMonitored(
+	tmdbId: string,
+	seasonNumbers: number[],
+	monitored: boolean
+): Promise<void> {
+	if (!seasonNumbers.length) return;
 	const raw = await rawSeries(tmdbId);
 	if (!raw) throw new ArrError('sonarr', 404, `TMDB ${tmdbId} not in Sonarr`);
-	const seasons = arrList(raw.seasons).map((se) => {
+	const set = new Set(seasonNumbers);
+	raw.seasons = arrList(raw.seasons).map((se) => {
 		const o = rec(se);
-		if (n(o.seasonNumber) === seasonNumber) o.monitored = monitored;
+		const num = n(o.seasonNumber);
+		if (num !== null && set.has(num)) o.monitored = monitored;
 		return o;
 	});
-	raw.seasons = seasons;
 	await arr('sonarr', `/series/${n(raw.id)}`, { method: 'PUT', body: raw, timeoutMs: 30_000 });
 	dropDetail('sonarr', tmdbId);
 	dropEpisodesCache();

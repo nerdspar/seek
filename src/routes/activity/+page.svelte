@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Sheet from '$lib/components/Sheet.svelte';
 	import ManualImportSheet from '$lib/components/ManualImportSheet.svelte';
 	import { notify } from '$lib/notices.svelte';
 	import { haptic } from '$lib/haptics';
@@ -26,7 +27,28 @@
 	let acting = $state<string | null>(null);
 	let searchingAll = $state(false);
 	let health = $state<ArrHealth[]>([]);
+	let healthOpen = $state(false);
+	const healthTone = $derived(health.some((h) => h.type === 'error') ? 'bad' : 'warn');
 	let resolve = $state<{ mediaType: string; downloadId: string; title: string } | null>(null);
+	/* downloadIds the user just resolved/removed — Sonarr keeps a manually-imported
+	   item in its queue (importing → imported) for a while, so we hide it ourselves
+	   until it's actually gone, and drop the suppression after a grace period in
+	   case the import failed. */
+	let dismissed = $state<Set<string>>(new Set());
+
+	const visibleQueue = $derived(
+		queue.filter((q) => !(q.downloadId && dismissed.has(q.downloadId)))
+	);
+
+	function dismiss(downloadId: string) {
+		dismissed = new Set(dismissed).add(downloadId);
+		queue = queue.filter((q) => q.downloadId !== downloadId);
+		setTimeout(() => {
+			const next = new Set(dismissed);
+			next.delete(downloadId);
+			dismissed = next;
+		}, 30000);
+	}
 
 	/** A queue item that grabbed but is stuck needing a manual import. */
 	const isBlocked = (q: ArrQueueItem) =>
@@ -209,27 +231,24 @@
 	const svcLabel = (s: string | undefined) => (s === 'radarr' ? 'Radarr' : 'Sonarr');
 </script>
 
-<PageHeader title="Activity" onback={() => window.history.back()} />
+{#snippet bell()}
+	{#if on && health.length}
+		<button class="bell {healthTone}" aria-label={`${health.length} alert${health.length === 1 ? '' : 's'}`} onclick={() => (healthOpen = true)}>
+			<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /></svg>
+			<span class="badge">{health.length}</span>
+		</button>
+	{/if}
+{/snippet}
+
+<PageHeader title="Activity" action={bell} onback={() => window.history.back()} />
 
 <main>
 	{#if !on}
 		<p class="empty">Download management is off. Turn it on in Settings.</p>
 	{:else}
-		{#if health.length}
-			<ul class="health">
-				{#each health as h (h.service + h.source + h.message)}
-					<li class={h.type === 'error' ? 'bad' : 'warn'}>
-						<span class="dot" aria-hidden="true"></span>
-						<span class="htext">{h.message}</span>
-						<span class="hsvc">{svcLabel(h.service)}</span>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-
 		<div class="tabs" role="tablist">
 			<button role="tab" aria-selected={tab === 'queue'} class:on={tab === 'queue'} onclick={() => (tab = 'queue')}>
-				Queue{#if queue.length}<span class="count">{queue.length}</span>{/if}
+				Queue{#if visibleQueue.length}<span class="count">{visibleQueue.length}</span>{/if}
 			</button>
 			<button role="tab" aria-selected={tab === 'history'} class:on={tab === 'history'} onclick={() => (tab = 'history')}>History</button>
 			<button role="tab" aria-selected={tab === 'wanted'} class:on={tab === 'wanted'} onclick={() => (tab = 'wanted')}>
@@ -240,11 +259,11 @@
 		{#if tab === 'queue'}
 			{#if loading.queue}
 				<p class="empty">Loading…</p>
-			{:else if !queue.length}
+			{:else if !visibleQueue.length}
 				<p class="empty">Nothing downloading.</p>
 			{:else}
 				<ul class="rows">
-					{#each queue as item ((item.service ?? '') + item.id)}
+					{#each visibleQueue as item ((item.service ?? '') + item.id)}
 						{@const pct = queuePercent(item)}
 						{@const warn = item.trackedState === 'importBlocked' || item.trackedState === 'importPending' || !!item.warning}
 						<li>
@@ -326,20 +345,53 @@
 		downloadId={resolve.downloadId}
 		title={resolve.title}
 		onclose={() => (resolve = null)}
-		onimported={() => setTimeout(loadQueue, 1500)}
+		onimported={() => {
+			if (resolve) dismiss(resolve.downloadId);
+			setTimeout(loadQueue, 2500);
+		}}
 	/>
+{/if}
+
+{#if healthOpen}
+	<Sheet label="Alerts" scrollable onclose={() => (healthOpen = false)}>
+		<div class="ahead"><h2>Alerts</h2></div>
+		<ul class="health">
+			{#each health as h (h.service + h.source + h.message)}
+				<li class={h.type === 'error' ? 'bad' : 'warn'}>
+					<span class="dot" aria-hidden="true"></span>
+					<span class="htext">{h.message}</span>
+					<span class="hsvc">{svcLabel(h.service)}</span>
+				</li>
+			{/each}
+		</ul>
+	</Sheet>
 {/if}
 
 <style>
 	main { padding: 0 var(--gutter) calc(var(--safe-b) + 32px); }
 
-	.health { list-style: none; margin: 4px 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-	.health li { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-radius: var(--radius); background: var(--surface); font-size: 12.5px; }
+	/* Alerts live behind the header bell now; the list renders inside its sheet. */
+	.ahead { padding: 2px 16px 8px; }
+	.ahead h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+	.health { list-style: none; margin: 0; padding: 0 12px; display: flex; flex-direction: column; gap: 8px; }
+	.health li { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border-radius: var(--radius); background: var(--surface-raised); font-size: 13px; }
 	.health .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 	.health li.warn .dot { background: #ffb545; }
 	.health li.bad .dot { background: #e24b4a; }
 	.htext { flex: 1; min-width: 0; color: var(--text); }
 	.hsvc { flex: none; font-size: 10px; font-weight: 700; color: var(--text-dim); }
+
+	.bell { position: relative; display: grid; place-items: center; width: var(--tap); height: var(--tap); border-radius: 50%; color: var(--text-dim); }
+	.bell.warn { color: #ffb545; }
+	.bell.bad { color: #e24b4a; }
+	.bell .badge {
+		position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px;
+		border-radius: 999px; display: grid; place-items: center;
+		font-size: 10px; font-weight: 700; line-height: 1;
+		background: var(--text-dim); color: var(--bg);
+	}
+	.bell.warn .badge { background: #ffb545; color: #3a2800; }
+	.bell.bad .badge { background: #e24b4a; color: #fff; }
 
 	.tabs { display: flex; gap: 6px; margin: 6px 0 14px; }
 	.tabs button {
