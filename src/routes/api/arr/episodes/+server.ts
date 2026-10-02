@@ -31,25 +31,26 @@ export const GET: RequestHandler = async ({ url }) => {
 		const series = await getSeries(tmdbId);
 		if (!series) return json({ inLibrary: false, episodes: [] });
 
-		// All Sonarr episodes (every season) so the air-date match can reach the
-		// episode wherever TVDB happens to file it.
-		const sonarrAll = await getSeasonEpisodes(series.id);
+		// Fetch both halves concurrently: Sonarr's whole episode list (so the
+		// air-date match can reach the episode wherever TVDB files it) and Floppy's
+		// own season (for the air dates to match against).
+		const [sonarrAll, floppySeason] = await Promise.all([
+			getSeasonEpisodes(series.id),
+			getSeason(source, tmdbId, season).catch(() => null)
+		]);
 
-		// Floppy's own episodes for this TMDB season, for their air dates. If Floppy
-		// can't be read, fall back to the Sonarr episodes numbered under this season.
-		let floppyEps: { seasonNumber: number; episodeNumber: number; airDate: string | null }[];
-		try {
-			const s = await getSeason(source, tmdbId, season);
-			floppyEps = s.episodes.map((e) => ({
-				seasonNumber: e.seasonNumber,
-				episodeNumber: e.episodeNumber,
-				airDate: e.airDate
-			}));
-		} catch {
-			floppyEps = sonarrAll
-				.filter((e) => e.seasonNumber === season)
-				.map((e) => ({ seasonNumber: e.seasonNumber, episodeNumber: e.episodeNumber, airDate: e.airDateUtc }));
-		}
+		// If Floppy can't be read, fall back to the Sonarr episodes numbered under
+		// this season.
+		const floppyEps: { seasonNumber: number; episodeNumber: number; airDate: string | null }[] =
+			floppySeason
+				? floppySeason.episodes.map((e) => ({
+						seasonNumber: e.seasonNumber,
+						episodeNumber: e.episodeNumber,
+						airDate: e.airDate
+					}))
+				: sonarrAll
+						.filter((e) => e.seasonNumber === season)
+						.map((e) => ({ seasonNumber: e.seasonNumber, episodeNumber: e.episodeNumber, airDate: e.airDateUtc }));
 
 		const episodes: ArrEpisode[] = [];
 		const episodeIds: number[] = [];

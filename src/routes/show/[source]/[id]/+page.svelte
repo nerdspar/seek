@@ -11,6 +11,7 @@
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
 	import SeriesManageSheet from '$lib/components/SeriesManageSheet.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import { navigating } from '$app/state';
 	import type { ArrSeries } from '$lib/server/arr';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
@@ -30,33 +31,43 @@
 	   counts), loaded only when the management layer is switched on. Refreshed
 	   after an edit/search so counts and the monitored summary stay current. */
 	let arrSeries = $state<ArrSeries | null>(null);
+	/* The show id arrSeries belongs to. The header reads `arrShown`, which is null
+	   whenever this doesn't match the current show — so on navigation the old
+	   show's monitored icon is gone *synchronously* (a $derived recomputes before
+	   any $effect runs), with no stale frame. */
+	let arrSeriesId = $state<string | null>(null);
+	const arrShown = $derived(arrSeriesId === data.mediaId ? arrSeries : null);
 	let manageOpen = $state(false);
 
 	async function refreshArr() {
 		if (!arrManageOn('tv')) return;
 		try {
 			const r = await fetch(`/api/arr/title?mediaType=tv&tmdbId=${encodeURIComponent(data.mediaId)}`);
-			if (r.ok) arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+			if (r.ok) {
+				arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+				arrSeriesId = data.mediaId;
+			}
 		} catch {
 			/* a down Sonarr just means no download controls — the page still works */
 		}
 	}
 
 	/* Re-fetch whenever the show changes. SvelteKit reuses this component across
-	   show→show navigation, so an onMount-only load would leave the previous
-	   show's download state on screen (a stale monitored icon) and never refresh.
-	   Resetting to null first means the header never shows the wrong show's state. */
+	   show→show navigation, so an onMount-only load would never refresh. The
+	   id-matched `arrShown` above is what prevents a stale icon; this just loads. */
 	$effect(() => {
 		const id = data.mediaId;
 		void data.source;
 		let cancelled = false;
-		arrSeries = null;
 		(async () => {
 			await loadArrStatus();
 			if (cancelled || !arrManageOn('tv')) return;
 			try {
 				const r = await fetch(`/api/arr/title?mediaType=tv&tmdbId=${encodeURIComponent(id)}`);
-				if (!cancelled && r.ok) arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+				if (!cancelled && r.ok) {
+					arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+					arrSeriesId = id;
+				}
 			} catch {
 				/* down Sonarr → no controls */
 			}
@@ -391,11 +402,11 @@
 		<div class="hactions">
 			<!-- When the show is in Sonarr and management is on, this opens the
 			     download-settings sheet; otherwise it's the plain add button. -->
-			{#if arrSeries && arrManageOn('tv')}
+			{#if arrShown && arrManageOn('tv') && !navigating.to}
 				<button
 					class="manage"
-					class:monitored={arrSeries.monitored}
-					aria-label={arrSeries.monitored ? 'Monitored in Sonarr — manage downloads' : 'Not monitored — manage downloads'}
+					class:monitored={arrShown.monitored}
+					aria-label={arrShown.monitored ? 'Monitored in Sonarr — manage downloads' : 'Not monitored — manage downloads'}
 					onclick={() => (manageOpen = true)}
 				>
 					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
@@ -637,11 +648,11 @@
 	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
 {/if}
 
-{#if manageOpen && arrSeries}
+{#if manageOpen && arrShown}
 	<SeriesManageSheet
 		tmdbId={data.mediaId}
-		title={arrSeries.title}
-		series={arrSeries}
+		title={arrShown.title}
+		series={arrShown}
 		onchange={refreshArr}
 		onclose={() => (manageOpen = false)}
 	/>

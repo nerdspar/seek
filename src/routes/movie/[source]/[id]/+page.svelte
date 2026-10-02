@@ -9,9 +9,11 @@
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
-	import MovieDownloads from '$lib/components/MovieDownloads.svelte';
-	import { loadArrStatus } from '$lib/arr.svelte';
-	import { onMount } from 'svelte';
+	import MovieManageSheet from '$lib/components/MovieManageSheet.svelte';
+	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import { queuePercent } from '$lib/arrClient';
+	import { navigating } from '$app/state';
+	import type { ArrMovie, ArrQueueItem } from '$lib/server/arr';
 	import { formatRuntime } from '$lib/format';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
@@ -24,7 +26,50 @@
 
 	let note = $state<string | null>(null);
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
-	onMount(() => void loadArrStatus());
+
+	/* Radarr download state for this film, for the header manage icon + sheet.
+	   Id-matched `arrShown` so navigation never flashes the previous film's state. */
+	let arrMovie = $state<ArrMovie | null>(null);
+	let arrMovieId = $state<string | null>(null);
+	const arrShown = $derived(arrMovieId === data.mediaId ? arrMovie : null);
+	let moviePercent = $state<number | null>(null);
+	let manageOpen = $state(false);
+
+	async function refreshArr() {
+		if (!arrManageOn('movie')) return;
+		try {
+			const [tRes, qRes] = await Promise.all([
+				fetch(`/api/arr/title?mediaType=movie&tmdbId=${encodeURIComponent(data.mediaId)}`),
+				fetch('/api/arr/queue')
+			]);
+			if (tRes.ok) {
+				arrMovie = ((await tRes.json()) as { movie: ArrMovie | null }).movie ?? null;
+				arrMovieId = data.mediaId;
+			}
+			if (qRes.ok && arrMovie) {
+				const q = ((await qRes.json()) as { radarr: ArrQueueItem[] }).radarr ?? [];
+				const item = q.find((i) => i.movieId === arrMovie!.id);
+				moviePercent = item ? queuePercent(item) : null;
+			}
+		} catch {
+			/* a down Radarr just means no controls */
+		}
+	}
+
+	$effect(() => {
+		const id = data.mediaId;
+		let cancelled = false;
+		moviePercent = null;
+		(async () => {
+			await loadArrStatus();
+			if (cancelled || !arrManageOn('movie')) return;
+			void id;
+			await refreshArr();
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
 	let statusOpen = $state(false);
 	let ratingOpen = $state(false);
 	let menuOpen = $state(false);
@@ -199,16 +244,30 @@
 		<Skeleton width="76%" height="14px" />
 	</main>
 {:then movie}
-	{#snippet menuButton()}
-		<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
-		</button>
+	{#snippet headerActions()}
+		<div class="hactions">
+			{#if arrShown && arrManageOn('movie') && !navigating.to}
+				<button
+					class="manage"
+					class:monitored={arrShown.monitored}
+					aria-label={arrShown.monitored ? 'Monitored in Radarr — manage downloads' : 'Not monitored — manage downloads'}
+					onclick={() => (manageOpen = true)}
+				>
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
+				</button>
+			{/if}
+			{#if trackedOf(data.source, data.mediaId, movie.tracked)}
+				<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
+					<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
+				</button>
+			{/if}
+		</div>
 	{/snippet}
 
 	<PageHeader
 		title={movie.title}
 		titleHidden={heroVisible}
-		action={trackedOf(data.source, data.mediaId, movie.tracked) ? menuButton : undefined}
+		action={headerActions}
 		onback={() => history.back()}
 	/>
 
@@ -271,11 +330,11 @@
 				</button>
 			{/if}
 
-			<div class="arr-request">
-				<ArrButton mediaType="movie" tmdbId={data.mediaId} title={movie.title} onadd={(i) => (arrRequest = i)} />
-			</div>
-
-			<MovieDownloads tmdbId={data.mediaId} title={movie.title} />
+			{#if !arrShown}
+				<div class="arr-request">
+					<ArrButton mediaType="movie" tmdbId={data.mediaId} title={movie.title} onadd={(i) => (arrRequest = i)} />
+				</div>
+			{/if}
 
 
 			{#if statusOpen && tracked}
@@ -391,6 +450,17 @@
 	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
 {/if}
 
+{#if manageOpen && arrShown}
+	<MovieManageSheet
+		tmdbId={data.mediaId}
+		title={arrShown.title}
+		movie={arrShown}
+		percent={moviePercent}
+		onchange={refreshArr}
+		onclose={() => (manageOpen = false)}
+	/>
+{/if}
+
 <style>
 	main { padding: 4px 0 calc(var(--safe-b) + 32px); }
 	/* Sonarr/Radarr add pill under the tracking controls; matches their width.
@@ -418,11 +488,13 @@
 
 	.chiprow { margin: 0 var(--gutter); }
 
-	.menu {
+	.hactions { display: flex; align-items: center; gap: 2px; }
+	.menu, .manage {
 		display: grid; place-items: center;
 		width: var(--tap); height: var(--tap);
 		border-radius: 50%; color: var(--text-dim);
 	}
+	.manage.monitored { color: var(--signal-solid); }
 
 	/* main has no side padding, so the button carries the gutter itself; a
 	   block-level flex fills the width between those margins. */

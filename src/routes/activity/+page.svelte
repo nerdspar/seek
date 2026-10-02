@@ -1,10 +1,11 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ManualImportSheet from '$lib/components/ManualImportSheet.svelte';
 	import { notify } from '$lib/notices.svelte';
 	import { haptic } from '$lib/haptics';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import { queuePercent, formatSize, historyEvent, timeAgo } from '$lib/arrClient';
-	import type { ArrQueueItem, ArrHistoryItem, ArrWantedItem } from '$lib/server/arr';
+	import type { ArrQueueItem, ArrHistoryItem, ArrWantedItem, ArrHealth } from '$lib/server/arr';
 	import { onMount } from 'svelte';
 
 	/**
@@ -24,6 +25,22 @@
 	let loading = $state<Record<Tab, boolean>>({ queue: true, history: true, wanted: true });
 	let acting = $state<string | null>(null);
 	let searchingAll = $state(false);
+	let health = $state<ArrHealth[]>([]);
+	let resolve = $state<{ mediaType: string; downloadId: string; title: string } | null>(null);
+
+	/** A queue item that grabbed but is stuck needing a manual import. */
+	const isBlocked = (q: ArrQueueItem) =>
+		!!q.downloadId &&
+		(q.trackedState === 'importBlocked' || q.trackedState === 'importPending' || q.trackedState === 'importFailed');
+
+	async function loadHealth() {
+		try {
+			const r = await fetch('/api/arr/health');
+			if (r.ok) health = ((await r.json()) as { issues: ArrHealth[] }).issues ?? [];
+		} catch {
+			/* health is a nicety — ignore failures */
+		}
+	}
 
 	async function loadQueue() {
 		loading.queue = true;
@@ -62,6 +79,19 @@
 		}
 	}
 
+	/** A quiet queue refresh (no loading flag) for the live poll. */
+	async function pollQueue() {
+		try {
+			const r = await fetch('/api/arr/queue');
+			if (r.ok) {
+				const b = (await r.json()) as { sonarr: ArrQueueItem[]; radarr: ArrQueueItem[] };
+				queue = [...b.sonarr, ...b.radarr];
+			}
+		} catch {
+			/* a dropped poll is harmless — the next tick retries */
+		}
+	}
+
 	onMount(async () => {
 		await loadArrStatus();
 		on = arrManageOn();
@@ -69,6 +99,18 @@
 		void loadQueue();
 		void loadHistory();
 		void loadWanted();
+		void loadHealth();
+	});
+
+	/* Live queue: while the Queue tab is open and the page is visible, poll every
+	   5s so download progress ticks without reopening. Stops on tab switch / leaving
+	   so it never polls in the background. */
+	$effect(() => {
+		if (!on || tab !== 'queue') return;
+		const id = setInterval(() => {
+			if (typeof document === 'undefined' || !document.hidden) void pollQueue();
+		}, 5000);
+		return () => clearInterval(id);
 	});
 
 	async function removeFromQueue(item: ArrQueueItem, blocklist: boolean) {
@@ -173,6 +215,18 @@
 	{#if !on}
 		<p class="empty">Download management is off. Turn it on in Settings.</p>
 	{:else}
+		{#if health.length}
+			<ul class="health">
+				{#each health as h (h.service + h.source + h.message)}
+					<li class={h.type === 'error' ? 'bad' : 'warn'}>
+						<span class="dot" aria-hidden="true"></span>
+						<span class="htext">{h.message}</span>
+						<span class="hsvc">{svcLabel(h.service)}</span>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
 		<div class="tabs" role="tablist">
 			<button role="tab" aria-selected={tab === 'queue'} class:on={tab === 'queue'} onclick={() => (tab = 'queue')}>
 				Queue{#if queue.length}<span class="count">{queue.length}</span>{/if}
@@ -205,6 +259,9 @@
 									{:else}{pct}% · {formatSize(item.size - item.sizeleft)} / {formatSize(item.size)}{#if item.timeleft} · {item.timeleft}{/if}{/if}
 								</span>
 								<div class="qactions">
+									{#if isBlocked(item)}
+										<button class="mini go" onclick={() => (resolve = { mediaType: item.service === 'radarr' ? 'movie' : 'tv', downloadId: item.downloadId!, title: item.name ?? item.title })}>Resolve</button>
+									{/if}
 									<button class="mini" disabled={acting === `q${item.id}`} onclick={() => removeFromQueue(item, false)}>Remove</button>
 									<button class="mini danger" disabled={acting === `q${item.id}`} onclick={() => removeFromQueue(item, true)}>Block</button>
 								</div>
@@ -263,8 +320,26 @@
 	{/if}
 </main>
 
+{#if resolve}
+	<ManualImportSheet
+		mediaType={resolve.mediaType}
+		downloadId={resolve.downloadId}
+		title={resolve.title}
+		onclose={() => (resolve = null)}
+		onimported={() => setTimeout(loadQueue, 1500)}
+	/>
+{/if}
+
 <style>
 	main { padding: 0 var(--gutter) calc(var(--safe-b) + 32px); }
+
+	.health { list-style: none; margin: 4px 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+	.health li { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-radius: var(--radius); background: var(--surface); font-size: 12.5px; }
+	.health .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+	.health li.warn .dot { background: #ffb545; }
+	.health li.bad .dot { background: #e24b4a; }
+	.htext { flex: 1; min-width: 0; color: var(--text); }
+	.hsvc { flex: none; font-size: 10px; font-weight: 700; color: var(--text-dim); }
 
 	.tabs { display: flex; gap: 6px; margin: 6px 0 14px; }
 	.tabs button {
@@ -298,6 +373,7 @@
 		background: var(--surface-raised); color: var(--text); font-size: 12px; font-weight: 600;
 	}
 	.mini.danger { color: #ff7a78; }
+	.mini.go { background: var(--signal); color: #fff; }
 	.mini:disabled { opacity: 0.5; }
 
 	.hist { display: flex; align-items: center; gap: 11px; }

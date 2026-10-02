@@ -33,4 +33,8 @@ export class TTLCache<V> {
 	delete(key: string): void {
 		this.#map.delete(key);
 	}
+
+	clear(): void {
+		this.#map.clear();
+	}
 }

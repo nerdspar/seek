@@ -13,6 +13,7 @@
 	import { epLabel, formatAirDate } from '$lib/format';
 	import { notify } from '$lib/notices.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import { navigating } from '$app/state';
 	import { episodeState, downloadingEpisodes, type DlState } from '$lib/arrClient';
 	import type { ArrEpisode, ArrFile } from '$lib/server/arr';
 	import type { EpisodeRow, SeasonDetail } from '$lib/types';
@@ -28,6 +29,9 @@
 	   season-level search/monitor actions. Loaded only when management is on. */
 	let arrEpisodes = $state<Map<number, ArrEpisode>>(new Map());
 	let arrEpisodeIds = $state<number[]>([]);
+	/* The show:season the loaded episodes belong to; `arrReady` matches it against
+	   the current route so a stale season never shows its controls. */
+	let arrKey = $state<string | null>(null);
 	let downloading = $state<Map<number, number>>(new Map());
 	let arrSeasonMonitored = $state<boolean | null>(null);
 	let seasonBusy = $state(false);
@@ -56,6 +60,7 @@
 				arrEpisodes = m;
 				arrEpisodeIds = body.episodeIds ?? [];
 				arrSeasonMonitored = body.seasonMonitored ?? null;
+				arrKey = `${data.mediaId}:${data.seasonNumber}`;
 			}
 			if (qRes.ok) {
 				const q = (await qRes.json()) as { sonarr: Parameters<typeof downloadingEpisodes>[0] };
@@ -196,7 +201,11 @@
 	const episodesOf = (s: SeasonDetail) => s.episodes.map((e) => overrides[e.episodeNumber] ?? e);
 	const watchedIn = (eps: EpisodeRow[]) => eps.filter((e) => e.plays > 0).length;
 
-	const arrInLibrary = $derived(manageOn && arrEpisodes.size > 0);
+	/* Only treat the Sonarr data as current when it belongs to this exact show +
+	   season, so navigating never flashes the previous season's manage icon (the
+	   derived recomputes synchronously, before the reset effect runs). */
+	const arrReady = $derived(arrKey === `${data.mediaId}:${data.seasonNumber}`);
+	const arrInLibrary = $derived(manageOn && arrReady && arrEpisodes.size > 0);
 	const arrHaveCount = $derived([...arrEpisodes.values()].filter((e) => e.hasFile).length);
 	let manageOpen = $state(false);
 
@@ -312,7 +321,7 @@
 	<PageHeader
 		title={season.showTitle ?? season.title}
 		subtitle={season.seasonNumber === 0 ? 'Specials' : `Season ${season.seasonNumber}`}
-		action={arrInLibrary ? seasonActions : undefined}
+		action={arrInLibrary && !navigating.to ? seasonActions : undefined}
 		onback={() => history.back()}
 	/>
 
@@ -340,7 +349,7 @@
 						{/if}
 					</button>
 
-					{#if manageOn}
+					{#if manageOn && arrReady}
 						{@const arrEp = arrOf(ep.episodeNumber)}
 						<ArrEpisodeControl
 							state={stateOf(ep)}
@@ -380,7 +389,7 @@
 					sheetFor = null;
 					toggle(open.plays > 0 ? { ...open, plays: 0 } : open, season.showTitle ?? '');
 				}}
-				arrState={manageOn ? stateOf(open) : undefined}
+				arrState={manageOn && arrReady ? stateOf(open) : undefined}
 				arrFile={arrOf(open.episodeNumber)?.file ?? null}
 				onsearch={() => {
 					sheetFor = null;

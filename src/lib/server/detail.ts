@@ -123,24 +123,47 @@ export async function getMovie(source: string, mediaId: string): Promise<MovieDe
  */
 const seasonMaxCache = new TTLCache<number | null>(6 * 60 * 60 * 1000, 4000);
 
-async function seasonMax(
+type SeasonStats = { max: number | null; watched: number | null };
+
+/** Whether per-season progress should be derived from episode plays rather than
+ *  trusted from Floppy's season summaries. True only when the show's own watched
+ *  total exceeds what its seasons report — the signature of a grouped/absolute
+ *  show (Re:ZERO), where Floppy leaves the per-season progress null. A normal show
+ *  whose per-season counts already sum to its total returns false, so it never
+ *  pays for the extra per-season fetch. */
+export function shouldDeriveProgress(
+	showProgress: number,
+	perSeasonProgress: (number | null)[]
+): boolean {
+	let sum = 0;
+	for (const p of perSeasonProgress) sum += p ?? 0;
+	return showProgress > sum;
+}
+
+/**
+ * A season's episode total and watched count, from its own detail endpoint.
+ *
+ * `max` (episode count) is stable, so it is cached. `watched` is counted from the
+ * episodes' play counts and is *not* cached — it changes when you mark an episode,
+ * and the show memo is invalidated on a watch change, so it is re-read then. This
+ * is the only reliable source of per-season progress for grouped/absolute shows
+ * (Re:ZERO), where Floppy leaves the season-level progress field null.
+ */
+async function seasonStats(
 	source: string,
 	mediaId: string,
 	seasonNumber: number
-): Promise<number | null> {
+): Promise<SeasonStats> {
 	const key = `${source}:${mediaId}:${seasonNumber}`;
-	const hit = seasonMaxCache.get(key);
-	if (hit !== undefined) return hit;
-
 	try {
-		const d = await floppy<{ max_progress: number | null }>(
-			`${showPath(source, mediaId)}/${seasonNumber}/`
-		);
-		const max = typeof d?.max_progress === 'number' ? d.max_progress : null;
+		const d = rec(await floppy(`${showPath(source, mediaId)}/${seasonNumber}/`));
+		const max = num(d.max_progress);
 		seasonMaxCache.set(key, max);
-		return max;
+		const eps = arr(rec(d.related).episodes);
+		const watched = eps.length ? eps.filter((e) => (num(rec(e).progress) ?? 0) > 0).length : null;
+		return { max, watched };
 	} catch {
-		return null;
+		return { max: seasonMaxCache.get(key) ?? null, watched: null };
 	}
 }
 
@@ -200,15 +223,39 @@ export async function getShow(
 		.filter((s): s is SeasonSummary => s !== null)
 		.sort((a, b) => a.seasonNumber - b.seasonNumber);
 
-	/* Fill the missing episode counts. Anything the caller already knows costs
-	   nothing; only the remainder falls back to one request per season, which is
-	   what made this page slow before TMDB started supplying them. */
+	// The show's own consumption row carries total episodes watched — read here
+	// because the per-season progress derivation below compares against it.
+	const consumption = rec(arr(d.consumptions)[0]);
+	const showProgress = num(consumption.progress) ?? 0;
+
+	/* Floppy leaves per-season `progress` null for grouped/absolute shows (Re:ZERO),
+	   so those rows read "Not started" though their episodes are watched. Derive the
+	   count from episode plays — but only when the show clearly has watches the
+	   seasons don't account for, so normal shows (whose per-season sum already equals
+	   the show total) never pay for the extra per-season fetch. */
+	const deriveProgress = shouldDeriveProgress(
+		showProgress,
+		seasons.map((s) => s.progress)
+	);
+
+	/* Fill the missing episode counts (and, when deriving, the watched counts).
+	   Anything the caller already knows costs nothing; the rest falls back to one
+	   request per season, which is what made this page slow before TMDB supplied
+	   the counts — so a season is only fetched when it actually needs something. */
 	const withTotals = await Promise.all(
 		seasons.map(async (s) => {
-			if (s.maxProgress !== null) return s;
 			const known = knownSeasonEpisodes[s.seasonNumber];
-			if (typeof known === 'number') return { ...s, maxProgress: known };
-			return { ...s, maxProgress: await seasonMax(source, mediaId, s.seasonNumber) };
+			const needMax = s.maxProgress === null && typeof known !== 'number';
+			const needProg = deriveProgress && s.progress === null;
+			if (!needMax && !needProg) {
+				return { ...s, maxProgress: s.maxProgress ?? (typeof known === 'number' ? known : null) };
+			}
+			const stats = await seasonStats(source, mediaId, s.seasonNumber);
+			return {
+				...s,
+				maxProgress: s.maxProgress ?? (typeof known === 'number' ? known : stats.max),
+				progress: needProg ? (stats.watched ?? s.progress) : s.progress
+			};
 		})
 	);
 
@@ -227,9 +274,6 @@ export async function getShow(
 		...s,
 		airedMax: airedMaxFor(s.seasonNumber, s.maxProgress)
 	}));
-
-	// The show's own consumption row carries total episodes watched.
-	const consumption = rec(arr(d.consumptions)[0]);
 
 	// Seed the title cache so a season page opened from here costs no extra call.
 	const title = str(d.title) ?? 'Untitled';
