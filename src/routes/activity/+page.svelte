@@ -79,6 +79,19 @@
 		}
 	}
 
+	/** A quiet queue refresh (no loading flag) for the live poll. */
+	async function pollQueue() {
+		try {
+			const r = await fetch('/api/arr/queue');
+			if (r.ok) {
+				const b = (await r.json()) as { sonarr: ArrQueueItem[]; radarr: ArrQueueItem[] };
+				queue = [...b.sonarr, ...b.radarr];
+			}
+		} catch {
+			/* a dropped poll is harmless — the next tick retries */
+		}
+	}
+
 	onMount(async () => {
 		await loadArrStatus();
 		on = arrManageOn();
@@ -87,6 +100,17 @@
 		void loadHistory();
 		void loadWanted();
 		void loadHealth();
+	});
+
+	/* Live queue: while the Queue tab is open and the page is visible, poll every
+	   5s so download progress ticks without reopening. Stops on tab switch / leaving
+	   so it never polls in the background. */
+	$effect(() => {
+		if (!on || tab !== 'queue') return;
+		const id = setInterval(() => {
+			if (typeof document === 'undefined' || !document.hidden) void pollQueue();
+		}, 5000);
+		return () => clearInterval(id);
 	});
 
 	async function removeFromQueue(item: ArrQueueItem, blocklist: boolean) {

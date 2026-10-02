@@ -677,7 +677,18 @@ export async function getMovie(tmdbId: string): Promise<ArrMovie | null> {
 /** Episodes for one Sonarr season, joined to their files (so audio languages and
  *  quality are present on the ones you have). Keyed by episode number for the
  *  season page to merge onto Floppy's rows. */
+/* The whole-series episode+file list (seasonNumber omitted) is what the air-date
+   match needs, and it's the dominant cost of opening a season — so cache it briefly
+   so season→season navigation is instant. Cleared on any download mutation below so
+   file/monitor changes show up. */
+const episodesCache = new TTLCache<ArrEpisode[]>(45 * 1000, 200);
+
 export async function getSeasonEpisodes(seriesId: number, seasonNumber?: number): Promise<ArrEpisode[]> {
+	const cacheKey = seasonNumber === undefined ? `s${seriesId}` : null;
+	if (cacheKey) {
+		const hit = episodesCache.get(cacheKey);
+		if (hit) return hit;
+	}
 	const [eps, files] = await Promise.all([
 		arr<unknown[]>('sonarr', '/episode', { query: { seriesId, seasonNumber } }),
 		arr<unknown[]>('sonarr', '/episodefile', { query: { seriesId } }).catch(() => [] as unknown[])
@@ -687,7 +698,7 @@ export async function getSeasonEpisodes(seriesId: number, seasonNumber?: number)
 		const mapped = mapFile(f);
 		if (mapped) fileById.set(mapped.id, mapped);
 	}
-	return arrList(eps)
+	const mapped = arrList(eps)
 		.map((entry): ArrEpisode | null => {
 			const e = rec(entry);
 			const seasonNum = n(e.seasonNumber);
@@ -709,6 +720,14 @@ export async function getSeasonEpisodes(seriesId: number, seasonNumber?: number)
 		})
 		.filter((x): x is ArrEpisode => x !== null)
 		.sort((a, c) => a.episodeNumber - c.episodeNumber);
+	if (cacheKey) episodesCache.set(cacheKey, mapped);
+	return mapped;
+}
+
+/** Drop the cached whole-series episode list(s) after a mutation changes file or
+ *  monitor state, so the next season view reflects it. */
+function dropEpisodesCache(): void {
+	episodesCache.clear();
 }
 
 /* ── Edit settings ─────────────────────────────────────────────────────────── */
@@ -774,12 +793,14 @@ export async function setSeasonMonitored(tmdbId: string, seasonNumber: number, m
 	raw.seasons = seasons;
 	await arr('sonarr', `/series/${n(raw.id)}`, { method: 'PUT', body: raw, timeoutMs: 30_000 });
 	dropDetail('sonarr', tmdbId);
+	dropEpisodesCache();
 }
 
 /** Monitor / unmonitor specific episodes by Sonarr episode id. */
 export async function setEpisodesMonitored(episodeIds: number[], monitored: boolean): Promise<void> {
 	if (!episodeIds.length) return;
 	await arr('sonarr', '/episode/monitor', { method: 'PUT', body: { episodeIds, monitored } });
+	dropEpisodesCache();
 }
 
 /* ── Search (automatic) ────────────────────────────────────────────────────── */
@@ -1168,6 +1189,7 @@ export async function runManualImport(
 		body: { name: 'ManualImport', importMode, files: payload },
 		timeoutMs: 30_000
 	});
+	dropEpisodesCache();
 }
 
 /* ── Delete a downloaded file ──────────────────────────────────────────────── */
@@ -1175,6 +1197,7 @@ export async function runManualImport(
 export async function deleteFile(service: Service, fileId: number): Promise<void> {
 	const path = service === 'sonarr' ? `/episodefile/${fileId}` : `/moviefile/${fileId}`;
 	await arr(service, path, { method: 'DELETE' });
+	dropEpisodesCache();
 }
 
 /** Drop the detail cache for a title after a mutation the caller made elsewhere
