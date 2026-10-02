@@ -75,6 +75,16 @@
 		setTimeout(onclose, 190);
 	}
 
+	/* A tap that opens the sheet (e.g. the watchlist's episode pill fires on
+	   pointerup) is followed by the browser's synthesized click, which lands on the
+	   just-rendered scrim and would dismiss the sheet instantly. Ignore scrim taps
+	   for a moment after it mounts so the opening gesture can't close it. */
+	const openedAt = Date.now();
+	function scrimClose() {
+		if (Date.now() - openedAt < 400) return;
+		close();
+	}
+
 	/** Tap on the grab handle — close, unless the tap was really a drag. */
 	function gripTap() {
 		if (!moved) close();
@@ -216,7 +226,7 @@
 	role="button"
 	tabindex="-1"
 	aria-label="Close"
-	onclick={close}
+	onclick={scrimClose}
 	onkeydown={(e) => e.key === 'Enter' && close()}
 ></div>
 

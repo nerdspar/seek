@@ -306,19 +306,27 @@
 				     as being finished. Saying "Caught up" over an unwatched film is
 				     simply wrong, and hides the only action the row offers. -->
 				<div class="pill" data-episode-pill><span class="ep">Not watched</span></div>
+			{:else if row.mediaType === 'movie'}
+				<!-- A watched film is simply "Watched" — "Caught up" implies there
+				     could be more, and a film is one and done. -->
+				<div class="pill caught-up"><span class="ep">Watched</span></div>
 			{:else}
 				<div class="pill caught-up" data-episode-pill><span class="ep">Caught up</span></div>
 			{/if}
 
-			<div class="progress-line">
-				<div class="track" role="progressbar" aria-valuenow={row.progress} aria-valuemax={row.maxProgress ?? undefined}>
-					<div class="fill" style:width={`${pct}%`}></div>
+			<!-- A film is a single unit, so a progress bar, "1/1" and "0 left" are all
+			     noise — show it only for shows, which actually have a count. -->
+			{#if row.mediaType !== 'movie'}
+				<div class="progress-line">
+					<div class="track" role="progressbar" aria-valuenow={row.progress} aria-valuemax={row.maxProgress ?? undefined}>
+						<div class="fill" style:width={`${pct}%`}></div>
+					</div>
+					<span class="count tnum">{row.progress}{#if row.maxProgress}/{row.maxProgress}{/if}</span>
+					{#if row.left !== null}
+						<span class="left tnum">{row.left} left</span>
+					{/if}
 				</div>
-				<span class="count tnum">{row.progress}{#if row.maxProgress}/{row.maxProgress}{/if}</span>
-				{#if row.left !== null}
-					<span class="left tnum">{row.left} left</span>
-				{/if}
-			</div>
+			{/if}
 		</div>
 	</div>
 </div>
