@@ -20,11 +20,14 @@
 
 	let { data }: { data: PageData } = $props();
 
-	/* ── Sonarr download state, merged onto Floppy's episode rows by number ─────
-	   Floppy exposes no per-episode TVDB id, so the join is (season, episode)
-	   number — reliable for standard shows, and an episode with no Sonarr match
-	   simply shows no download control. Loaded only when management is on. */
+	/* ── Sonarr download state, merged onto Floppy's episode rows ───────────────
+	   Matched by air date server-side (see /api/arr/episodes), so shows that TMDB
+	   and TVDB number differently — absolute-numbered anime, re-split seasons like
+	   Bake Off — line up correctly. The map is keyed by the Floppy episode number
+	   the page renders by; `arrEpisodeIds` are the real Sonarr ids, for the
+	   season-level search/monitor actions. Loaded only when management is on. */
 	let arrEpisodes = $state<Map<number, ArrEpisode>>(new Map());
+	let arrEpisodeIds = $state<number[]>([]);
 	let downloading = $state<Map<number, number>>(new Map());
 	let arrSeasonMonitored = $state<boolean | null>(null);
 	let seasonBusy = $state(false);
@@ -38,18 +41,20 @@
 		if (!arrManageOn('tv')) return;
 		try {
 			const [epsRes, qRes] = await Promise.all([
-				fetch(`/api/arr/episodes?tmdbId=${encodeURIComponent(data.mediaId)}&season=${data.seasonNumber}`),
+				fetch(`/api/arr/episodes?tmdbId=${encodeURIComponent(data.mediaId)}&source=${encodeURIComponent(data.source)}&season=${data.seasonNumber}`),
 				fetch('/api/arr/queue')
 			]);
 			if (epsRes.ok) {
 				const body = (await epsRes.json()) as {
 					inLibrary: boolean;
 					seasonMonitored: boolean | null;
+					episodeIds?: number[];
 					episodes: ArrEpisode[];
 				};
 				const m = new Map<number, ArrEpisode>();
 				for (const e of body.episodes) m.set(e.episodeNumber, e);
 				arrEpisodes = m;
+				arrEpisodeIds = body.episodeIds ?? [];
 				arrSeasonMonitored = body.seasonMonitored ?? null;
 			}
 			if (qRes.ok) {
@@ -87,13 +92,15 @@
 	}
 
 	async function searchSeasonAuto() {
-		if (seasonBusy) return;
+		if (seasonBusy || !arrEpisodeIds.length) return;
 		seasonBusy = true;
 		try {
+			// Search exactly the episodes shown (by their real Sonarr ids), not a
+			// Sonarr season number — which wouldn't line up for a re-numbered show.
 			const res = await fetch('/api/arr/search', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ mediaType: 'tv', tmdbId: data.mediaId, kind: 'season', season: data.seasonNumber })
+				body: JSON.stringify({ mediaType: 'tv', kind: 'episodes', episodeIds: arrEpisodeIds })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			haptic();
@@ -107,7 +114,7 @@
 	}
 
 	async function toggleSeasonMonitor() {
-		if (seasonBusy) return;
+		if (seasonBusy || !arrEpisodeIds.length) return;
 		const next = !(arrSeasonMonitored ?? true);
 		seasonBusy = true;
 		arrSeasonMonitored = next;
@@ -115,7 +122,7 @@
 			const res = await fetch('/api/arr/monitor', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ tmdbId: data.mediaId, season: data.seasonNumber, monitored: next })
+				body: JSON.stringify({ episodeIds: arrEpisodeIds, monitored: next })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 		} catch (err) {
@@ -164,6 +171,7 @@
 		void season;
 		let cancelled = false;
 		arrEpisodes = new Map();
+		arrEpisodeIds = [];
 		downloading = new Map();
 		arrSeasonMonitored = null;
 		(async () => {

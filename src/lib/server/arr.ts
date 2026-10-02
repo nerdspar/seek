@@ -674,7 +674,7 @@ export async function getMovie(tmdbId: string): Promise<ArrMovie | null> {
 /** Episodes for one Sonarr season, joined to their files (so audio languages and
  *  quality are present on the ones you have). Keyed by episode number for the
  *  season page to merge onto Floppy's rows. */
-export async function getSeasonEpisodes(seriesId: number, seasonNumber: number): Promise<ArrEpisode[]> {
+export async function getSeasonEpisodes(seriesId: number, seasonNumber?: number): Promise<ArrEpisode[]> {
 	const [eps, files] = await Promise.all([
 		arr<unknown[]>('sonarr', '/episode', { query: { seriesId, seasonNumber } }),
 		arr<unknown[]>('sonarr', '/episodefile', { query: { seriesId } }).catch(() => [] as unknown[])
