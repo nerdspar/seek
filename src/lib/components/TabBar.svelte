@@ -74,12 +74,18 @@
 </svg>
 
 <style>
-	/* A flex child of the shell, not `position: fixed` — in an installed iOS PWA
-	   `fixed` anchors to the visual viewport and drifts. It carries its own bottom
-	   safe area so its surface fills the home-indicator strip.
+	/* Model B (window-scroll): the bar is pinned to the viewport bottom and the
+	   page scrolls behind it. Fixed is stable here because the window — not an
+	   inner container — scrolls and `body` has `overscroll-behavior-y: none`, so
+	   there's no visual-viewport rubber-band for it to drift against. It carries
+	   its own bottom safe area so its surface fills the home-indicator strip.
 	   (docs/pwa-chrome-spec.md) */
 	.tabbar {
-		flex: none;
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 30;
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		/* --tabbar-safe-b is the shared cushion (app.css): the reported inset, or the
@@ -92,9 +98,11 @@
 		border-top: 1px solid var(--surface);
 	}
 
-	/* Installed PWA: make the surface solid. Nothing scrolls behind this flex-child
-	   bar, so the blur bought nothing, and a solid fill matches the home-indicator
-	   strip so the bar reads as reaching the bottom edge, not floating above it. */
+	/* Installed PWA: make the surface solid. Each page pads its `main` bottom by
+	   the bar's footprint, so content rests above it rather than scrolling behind;
+	   a solid fill matches the home-indicator strip so the bar reads as reaching the
+	   bottom edge, not floating above it. (A browser tab keeps the translucent blur
+	   above, where the window's own overscroll can briefly show content behind.) */
 	@media (display-mode: standalone) {
 		.tabbar {
 			background: var(--bg);

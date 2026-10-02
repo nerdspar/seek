@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import { keepScroll } from '$lib/keepScroll';
 	import { tabReselect } from '$lib/tabReselect';
 	import StatsChart from '$lib/components/StatsChart.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
@@ -76,7 +75,7 @@
 		</div>
 	</header>
 
-	<main use:keepScroll={'profile'} use:tabReselect={{ tab: 'profile' }}>
+	<main use:tabReselect={{ tab: 'profile' }}>
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">
@@ -278,7 +277,7 @@
 	}
 	.chips button.on { background: var(--surface-raised); color: var(--text); }
 
-	main { padding: 10px var(--gutter) 32px; }
+	main { padding: 10px var(--gutter) calc(var(--tabbar-footprint) + 24px); }
 
 	.headline { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
 	.big {

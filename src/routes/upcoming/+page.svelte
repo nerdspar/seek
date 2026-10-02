@@ -1,7 +1,7 @@
 <script module lang="ts">
 	// The first open of Upcoming in a session lands anchored at Today (scroll up
-	// for the last 30 days); return navigations restore whatever keepScroll saved.
-	// Module-scoped so it survives the component's unmount/remount.
+	// for the last 30 days); return navigations restore the window scroll the
+	// framework saved. Module-scoped so it survives the component's unmount/remount.
 	let anchoredThisSession = false;
 </script>
 
@@ -9,7 +9,6 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import { keepScroll } from '$lib/keepScroll';
 	import { tabReselect } from '$lib/tabReselect';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { dayKey, dayLabel, epLabel, formatAirDate, relativeWhen } from '$lib/format';
@@ -22,22 +21,24 @@
 	const now = new Date();
 	const todayKey = dayKey(now.toISOString());
 
-	let mainEl: HTMLElement | undefined = $state();
 	let todayEl: HTMLElement | undefined = $state();
 
 	/* The first open of a session lands at Today — scroll up for the last 30 days;
-	   return navigations are keepScroll's job (hence the once-per-session guard).
-	   Driven off the Today row actually existing (markToday binds it once the
-	   streamed list renders), not a timer, so it can't miss a slow load. */
+	   return navigations are the framework's window scroll-restoration job (hence
+	   the once-per-session guard). Driven off the Today row actually existing
+	   (markToday binds it once the streamed list renders), not a timer, so it can't
+	   miss a slow load. */
 	$effect(() => {
-		const main = mainEl;
 		const el = todayEl;
-		if (!main || !el || anchoredThisSession) return;
+		if (!el || anchoredThisSession) return;
 		anchoredThisSession = true;
-		/* Direct, not via requestAnimationFrame: getBoundingClientRect forces
-		   layout, and the rows carry fixed poster dimensions so the offset is
-		   already final — and a backgrounded tab pauses rAF, which would strand it. */
-		main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top;
+		/* Window-scroll (Model B): land Today just below the sticky header. Direct,
+		   not via requestAnimationFrame: getBoundingClientRect forces layout, and the
+		   rows carry fixed poster dimensions so the offset is already final — and a
+		   backgrounded tab pauses rAF, which would strand it. */
+		const header = document.querySelector('.app > header') as HTMLElement | null;
+		const off = header?.getBoundingClientRect().height ?? 0;
+		window.scrollTo(0, window.scrollY + el.getBoundingClientRect().top - off);
 	});
 
 	/* Binds `todayEl` to the first non-past day's section. */
@@ -79,11 +80,7 @@
 <div class="app">
 	<header><h1>Upcoming</h1></header>
 
-	<main
-		use:keepScroll={'upcoming'}
-		use:tabReselect={{ tab: 'upcoming', target: () => todayEl }}
-		bind:this={mainEl}
-	>
+	<main use:tabReselect={{ tab: 'upcoming', target: () => todayEl }}>
 		{#await data.items}
 			<div class="skdays">
 				{#each Array(3) as _, g (g)}
@@ -169,7 +166,7 @@
 		letter-spacing: -0.02em;
 	}
 	main {
-		padding: 4px var(--gutter) 32px;
+		padding: 4px var(--gutter) calc(var(--tabbar-footprint) + 24px);
 	}
 
 	.skdays { display: flex; flex-direction: column; gap: 8px; }

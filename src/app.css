@@ -140,6 +140,11 @@
 	   (FAB, toasts, notices, scroll padding) offsets by it, so they never drift. */
 	--tabbar-safe-b: var(--safe-b);
 
+	/* The fixed tab bar's full height (content band + its safe-area cushion). In
+	   Model B (window-scroll) the bar overlays the page, so every scroll container
+	   pads its bottom by this so the last row rests above the bar, not under it. */
+	--tabbar-footprint: calc(var(--tabbar-h) + var(--tabbar-safe-b));
+
 	/* The small gap between the safe-area inset and the header's content — the
 	   title looks placed, not shoved against the status bar. It stays tight (no
 	   big standalone bump): the iOS "Liquid Glass" scroll-edge blur is handled
@@ -175,33 +180,38 @@
 	-webkit-tap-highlight-color: transparent;
 }
 
-/* ── PWA chrome shell (docs/pwa-chrome-spec.md) ─────────────────────────────
-   Every tab page's `.app` is the same frame: the safe area padded once here
-   (top + sides; the tab bar owns the bottom), header and tab bar as fixed
-   bookends, and a single `<main>` scroll region between them — never the window.
-   `100dvh`, the actual visible viewport: with an opaque (`default`) status bar
-   the web view sits *below* the status bar, so `100vh` overruns the bottom by
-   the status-bar height and clips the tab bar off the screen. */
+/* ── PWA chrome shell (docs/pwa-chrome-spec.md — Model B, window-scroll) ─────
+   Every tab page's `.app` is the same frame: a sticky opaque header at the top,
+   a fixed tab bar at the bottom, and the *window* scrolls the content between
+   them. Window-scroll (not an inner `<main>`) is what lets iOS's tap-the-status-
+   bar gesture scroll a page back to the top the way native apps do, and it hands
+   scroll restoration back to the framework — the matching detail pages (PageHeader
+   + bare `<main>`) already work this way.
+   `min-height: 100dvh` (not `100vh`): with an opaque (`default`) status bar the
+   web view sits *below* the status bar, so `100vh` overruns the bottom. */
 .app {
-	height: 100dvh;
+	min-height: 100dvh;
 	display: flex;
 	flex-direction: column;
-	padding: var(--safe-t) var(--safe-r) 0 var(--safe-l);
+	/* Sides only — the sticky header carries the top inset via `--header-top`. */
+	padding: 0 var(--safe-r) 0 var(--safe-l);
 }
 .app > header {
+	/* Sticks to the viewport top as the window scrolls, so it stays put like a
+	   native title bar. Opaque `--bg` from the very top (the `--header-top` padding
+	   is inside it): iOS samples this solid band as status-bar chrome and drops the
+	   "Liquid Glass" scroll-edge blur. Matches PageHeader on the detail pages. */
+	position: sticky;
+	top: 0;
+	z-index: 20;
 	flex: none;
-	/* The shell already cleared the physical inset; `--status-clearance` is the
-	   extra gap that keeps the title out of the iOS blur ramp above it. Opaque,
-	   not translucent: nothing scrolls under this bookend, and a solid band is
-	   what makes the ramp's blur invisible. */
-	padding: var(--status-clearance) var(--gutter) 8px;
+	padding: var(--header-top) var(--gutter) 8px;
 	background: var(--bg);
 }
 .app > main {
 	flex: 1 1 auto;
-	min-height: 0;
-	overflow-y: auto;
-	overscroll-behavior-y: contain;
+	/* The window scrolls now; each page pads its own `main` bottom by
+	   `--tabbar-footprint` so the fixed bar never covers the last row. */
 }
 
 /* Status-bar tint strip (element in app.html). Invisible everywhere except an
