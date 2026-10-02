@@ -34,8 +34,15 @@ describe('episodeState', () => {
 	it('is downloading when queued and no file yet', () => {
 		expect(episodeState(ep({ id: 7, hasFile: false }), new Set([7]))).toBe('downloading');
 	});
-	it('is missing when neither on disk nor queued', () => {
-		expect(episodeState(ep({ id: 7 }), new Set([9]))).toBe('missing');
+	it('is missing when aired, not on disk, not queued', () => {
+		expect(episodeState(ep({ id: 7 }), new Set([9]), true)).toBe('missing');
+	});
+	it('is unaired when not yet aired and not downloaded', () => {
+		expect(episodeState(ep({ id: 7 }), new Set(), false)).toBe('unaired');
+	});
+	it('prefers have/downloading over unaired', () => {
+		expect(episodeState(ep({ id: 7, hasFile: true }), new Set(), false)).toBe('have');
+		expect(episodeState(ep({ id: 7 }), new Set([7]), false)).toBe('downloading');
 	});
 });
 

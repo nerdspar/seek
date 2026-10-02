@@ -9,7 +9,7 @@
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
-	import DownloadsStrip from '$lib/components/DownloadsStrip.svelte';
+	import SeriesManageSheet from '$lib/components/SeriesManageSheet.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import type { ArrSeries } from '$lib/server/arr';
 	import { onMount } from 'svelte';
@@ -31,7 +31,7 @@
 	   counts), loaded only when the management layer is switched on. Refreshed
 	   after an edit/search so counts and the monitored summary stay current. */
 	let arrSeries = $state<ArrSeries | null>(null);
-	let seasonSearching = $state<Set<number>>(new Set());
+	let manageOpen = $state(false);
 
 	async function refreshArr() {
 		if (!arrManageOn('tv')) return;
@@ -40,30 +40,6 @@
 			if (r.ok) arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
 		} catch {
 			/* a down Sonarr just means no download controls — the page still works */
-		}
-	}
-	const arrSeasonOf = (n: number) => arrSeries?.seasons.find((s) => s.seasonNumber === n) ?? null;
-
-	async function searchSeason(seasonNumber: number, e: MouseEvent) {
-		e.preventDefault();
-		e.stopPropagation();
-		if (seasonSearching.has(seasonNumber)) return;
-		seasonSearching = new Set(seasonSearching).add(seasonNumber);
-		try {
-			const res = await fetch('/api/arr/search', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ mediaType: 'tv', tmdbId: data.mediaId, kind: 'season', season: seasonNumber })
-			});
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-			haptic();
-			void notify(`Searching ${seasonNumber === 0 ? 'Specials' : `Season ${seasonNumber}`} for missing episodes`);
-		} catch (err) {
-			note = `Couldn't search — ${err instanceof Error ? err.message : err}`;
-		} finally {
-			const next = new Set(seasonSearching);
-			next.delete(seasonNumber);
-			seasonSearching = next;
 		}
 	}
 
@@ -395,9 +371,15 @@
 	{@const tracked = trackedOf(data.source, data.mediaId, show.tracked)}
 	{#snippet headerActions()}
 		<div class="hactions">
-			<!-- Sonarr lives here rather than as its own row, to keep the vertical
-			     space for the synopsis and seasons. -->
-			<ArrButton mediaType="tv" tmdbId={data.mediaId} title={show.title} onadd={(i) => (arrRequest = i)} compact size={38} />
+			<!-- When the show is in Sonarr and management is on, this opens the
+			     download-settings sheet; otherwise it's the plain add button. -->
+			{#if arrSeries && arrManageOn('tv')}
+				<button class="manage" aria-label="Manage downloads" onclick={() => (manageOpen = true)}>
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
+				</button>
+			{:else}
+				<ArrButton mediaType="tv" tmdbId={data.mediaId} title={show.title} onadd={(i) => (arrRequest = i)} compact size={38} />
+			{/if}
 			{#if tracked}
 				<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
 					<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
@@ -513,10 +495,6 @@
 			{/if}
 		{/await}
 
-		{#if tracked && arrSeries}
-			<DownloadsStrip tmdbId={data.mediaId} title={show.title} series={arrSeries} onchange={refreshArr} />
-		{/if}
-
 		{#if show.synopsis}
 			<div class="synopsis">
 				<p bind:this={synopsisEl} class:clamped={!synopsisOpen}>{show.synopsis}</p>
@@ -532,8 +510,6 @@
 			<h2>Seasons</h2>
 			<ul class="seasons">
 				{#each seasonsOf(show) as s (s.seasonNumber)}
-					{@const arrS = arrSeasonOf(s.seasonNumber)}
-					{@const missing = arrS ? Math.max(0, arrS.episodeCount - arrS.episodeFileCount) : 0}
 					<li>
 						<!-- Outside the <a> so tapping it toggles rather than navigates. -->
 						<button
@@ -570,17 +546,6 @@
 								<path d="m9 18 6-6-6-6" />
 							</svg>
 						</a>
-
-						{#if arrS}
-							<div class="s-arr">
-								<span class="s-files tnum">{arrS.episodeFileCount}/{arrS.episodeCount || arrS.totalEpisodeCount}</span>
-								{#if missing > 0}
-									<button class="s-search" disabled={seasonSearching.has(s.seasonNumber)} aria-label={`Search ${s.title} for ${missing} missing episode${missing === 1 ? '' : 's'}`} onclick={(e) => searchSeason(s.seasonNumber, e)}>
-										<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-									</button>
-								{/if}
-							</div>
-						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -649,6 +614,16 @@
 	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
 {/if}
 
+{#if manageOpen && arrSeries}
+	<SeriesManageSheet
+		tmdbId={data.mediaId}
+		title={arrSeries.title}
+		series={arrSeries}
+		onchange={refreshArr}
+		onclose={() => (manageOpen = false)}
+	/>
+{/if}
+
 <style>
 	main { padding: 0 var(--gutter) calc(var(--safe-b) + 32px); }
 
@@ -674,11 +649,12 @@
 	.fill { height: 100%; border-radius: 3px; background: var(--signal); }
 
 
-	.menu {
+	.menu, .manage {
 		display: grid; place-items: center;
 		width: var(--tap); height: var(--tap);
 		border-radius: 50%; color: var(--text-dim);
 	}
+	.manage { color: var(--text); }
 
 	/* The one action worth taking on a show you do not have, so it takes the
 	   full width and the accent. */
@@ -716,18 +692,9 @@
 
 	.seasons { display: flex; flex-direction: column; gap: 6px; margin: 0 0 24px; padding: 0; list-style: none; }
 	.seasons li {
-		display: grid; grid-template-columns: var(--tap) 1fr auto;
+		display: grid; grid-template-columns: var(--tap) 1fr;
 		align-items: center; border-radius: var(--radius); background: var(--surface);
 	}
-	.s-files { font-size: 11px; color: var(--text-dim); }
-	.s-arr { display: flex; align-items: center; gap: 6px; padding-right: 10px; }
-	.s-search {
-		display: grid; place-items: center; flex: none;
-		width: 34px; height: 34px; border-radius: 50%;
-		background: var(--surface-raised); color: var(--text-dim);
-	}
-	.s-search:disabled { opacity: 0.5; }
-	.s-search:active { transform: scale(0.92); }
 	.seasons a {
 		display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
 		min-height: 62px; padding: 10px 14px 10px 0; min-width: 0;

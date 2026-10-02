@@ -6,6 +6,7 @@
 	import ArrEpisodeControl from '$lib/components/ArrEpisodeControl.svelte';
 	import InteractiveSearchSheet from '$lib/components/InteractiveSearchSheet.svelte';
 	import FileActionsSheet from '$lib/components/FileActionsSheet.svelte';
+	import SeasonManageSheet from '$lib/components/SeasonManageSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import { touchWatchlist } from '$lib/dirty';
 	import { queuedWrite } from '$lib/queue.svelte';
@@ -63,8 +64,9 @@
 
 	const arrOf = (episodeNumber: number) => arrEpisodes.get(episodeNumber);
 	const downloadingIds = $derived(new Set(downloading.keys()));
-	function stateOf(episodeNumber: number): DlState {
-		return episodeState(arrOf(episodeNumber), downloadingIds);
+	const aired = (ep: EpisodeRow) => (ep.airDate ? Date.parse(ep.airDate) <= Date.now() : true);
+	function stateOf(ep: EpisodeRow): DlState {
+		return episodeState(arrOf(ep.episodeNumber), downloadingIds, aired(ep));
 	}
 
 	async function autoSearch(episodeNumber: number) {
@@ -172,6 +174,7 @@
 
 	const arrInLibrary = $derived(manageOn && arrEpisodes.size > 0);
 	const arrHaveCount = $derived([...arrEpisodes.values()].filter((e) => e.hasFile).length);
+	let manageOpen = $state(false);
 
 	function setFlight(n: number, on: boolean) {
 		const next = new Set(inFlight);
@@ -271,9 +274,16 @@
 	{@const watchedCount = watchedIn(episodes)}
 	{@const allWatched = episodes.length > 0 && watchedCount === episodes.length}
 
+	{#snippet seasonActions()}
+		<button class="manage" aria-label="Manage downloads" onclick={() => (manageOpen = true)}>
+			<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
+		</button>
+	{/snippet}
+
 	<PageHeader
 		title={season.showTitle ?? season.title}
 		subtitle={season.seasonNumber === 0 ? 'Specials' : `Season ${season.seasonNumber}`}
+		action={arrInLibrary ? seasonActions : undefined}
 		onback={() => history.back()}
 	/>
 
@@ -287,23 +297,6 @@
 			</div>
 
 		</div>
-
-		{#if arrInLibrary}
-			<div class="arr-head">
-				<svg class="srv" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></svg>
-				<span class="files tnum">{arrHaveCount}/{arrEpisodes.size} files</span>
-				<button class="mon" role="switch" aria-checked={arrSeasonMonitored ?? true} aria-label="Monitor this season" onclick={toggleSeasonMonitor}>
-					<span class="mlabel">Monitored</span>
-					<span class="toggle" class:on={arrSeasonMonitored ?? true}><span class="knob"></span></span>
-				</button>
-				<button class="hicon" disabled={seasonBusy} aria-label="Search the season" onclick={searchSeasonAuto}>
-					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-				</button>
-				<button class="hicon" aria-label="Interactive search for the season" onclick={() => (interactive = {})}>
-					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.4" /><path d="M4.5 19a5.5 5.5 0 0 1 9.7-3.2" /><circle cx="17.5" cy="16.5" r="2.6" /><path d="m21 20-1.7-1.7" /></svg>
-				</button>
-			</div>
-		{/if}
 
 		<ul class="episodes">
 			{#each episodes as ep (ep.episodeNumber)}
@@ -322,12 +315,9 @@
 					{#if manageOn}
 						{@const arrEp = arrOf(ep.episodeNumber)}
 						<ArrEpisodeControl
-							state={stateOf(ep.episodeNumber)}
+							state={stateOf(ep)}
 							percent={arrEp ? (downloading.get(arrEp.id) ?? 0) : 0}
 							label={epLabel(ep.seasonNumber, ep.episodeNumber)}
-							onauto={() => autoSearch(ep.episodeNumber)}
-							oninteractive={() => (interactive = { episodeId: arrEp?.id })}
-							onfile={() => openFile(ep)}
 						/>
 					{/if}
 
@@ -362,6 +352,21 @@
 					sheetFor = null;
 					toggle(open.plays > 0 ? { ...open, plays: 0 } : open, season.showTitle ?? '');
 				}}
+				arrState={manageOn ? stateOf(open) : undefined}
+				onsearch={() => {
+					sheetFor = null;
+					autoSearch(open.episodeNumber);
+				}}
+				oninteractive={() => {
+					const id = arrOf(open.episodeNumber)?.id;
+					sheetFor = null;
+					interactive = { episodeId: id };
+				}}
+				onfile={() => {
+					const ep = open;
+					sheetFor = null;
+					openFile(ep);
+				}}
 				onclose={() => (sheetFor = null)}
 			/>
 		{/if}
@@ -387,6 +392,27 @@
 			onclose={() => (fileSheet = null)}
 			ondelete={() => deleteFile(false)}
 			onreplace={() => deleteFile(true)}
+		/>
+	{/if}
+
+	{#if manageOpen}
+		<SeasonManageSheet
+			title={season.showTitle ?? season.title}
+			seasonLabel={season.seasonNumber === 0 ? 'Specials' : `Season ${season.seasonNumber}`}
+			haveCount={arrHaveCount}
+			total={arrEpisodes.size}
+			monitored={arrSeasonMonitored ?? true}
+			busy={seasonBusy}
+			onmonitor={toggleSeasonMonitor}
+			onsearch={() => {
+				manageOpen = false;
+				searchSeasonAuto();
+			}}
+			oninteractive={() => {
+				manageOpen = false;
+				interactive = {};
+			}}
+			onclose={() => (manageOpen = false)}
 		/>
 	{/if}
 
@@ -439,26 +465,11 @@
 		border-radius: 5px; padding: 1px 5px;
 	}
 
-	.arr-head {
-		display: flex; align-items: center; gap: 10px;
-		margin: 0 0 12px; padding: 9px 12px;
-		border-radius: var(--radius); background: var(--surface);
+	.manage {
+		display: grid; place-items: center;
+		width: var(--tap); height: var(--tap);
+		border-radius: 50%; color: var(--text);
 	}
-	.arr-head .srv { color: var(--text-dim); flex: none; }
-	.arr-head .files { font-size: 12.5px; color: var(--text-dim); }
-	.mon { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-	.mlabel { font-size: 12px; color: var(--text); }
-	.mon .toggle { position: relative; width: 40px; height: 23px; border-radius: 999px; background: var(--surface-raised); flex: none; transition: background 160ms ease; }
-	.mon .toggle.on { background: var(--signal); }
-	.mon .knob { position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: transform 160ms ease; }
-	.mon .toggle.on .knob { transform: translateX(17px); }
-	.hicon {
-		display: grid; place-items: center; flex: none;
-		width: 36px; height: 36px; border-radius: 50%;
-		background: var(--surface-raised); color: var(--text-dim);
-	}
-	.hicon:disabled { opacity: 0.5; }
-	.hicon:active { transform: scale(0.92); }
 
 	.body {
 		display: flex; flex-direction: column; justify-content: center; gap: 3px;

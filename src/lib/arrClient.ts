@@ -7,14 +7,21 @@
  */
 import type { ArrEpisode, ArrFile, ArrQueueItem, ArrRelease } from '$lib/server/arr';
 
-export type DlState = 'have' | 'downloading' | 'missing' | 'unknown';
+export type DlState = 'have' | 'downloading' | 'unaired' | 'missing' | 'unknown';
 
 /** The download state of one episode, given the set of episode ids currently in a
- *  download queue. `unknown` is "not in Sonarr" — the row shows no affordance. */
-export function episodeState(ep: ArrEpisode | undefined, downloading: Set<number>): DlState {
+ *  download queue and whether the episode has aired yet. `unknown` is "not in
+ *  Sonarr" — the row shows no indicator. Priority: have > downloading > unaired >
+ *  missing, so a future episode reads as pending rather than a gap to fill. */
+export function episodeState(
+	ep: ArrEpisode | undefined,
+	downloading: Set<number>,
+	aired = true
+): DlState {
 	if (!ep) return 'unknown';
 	if (ep.hasFile) return 'have';
 	if (downloading.has(ep.id)) return 'downloading';
+	if (!aired) return 'unaired';
 	return 'missing';
 }
 

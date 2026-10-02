@@ -2,40 +2,36 @@
 	import type { DlState } from '$lib/arrClient';
 
 	/**
-	 * The download affordance for one episode row — the piece that sits beside the
-	 * watched circle. Purely presentational: the page owns the data and the
-	 * actions. States: have it (teal check, tap for file actions), downloading
-	 * (spinner + %), missing (magnifier = automatic search, person = interactive),
-	 * or nothing when the episode isn't in Sonarr.
+	 * The download *status* for one episode row — a quiet indicator beside the
+	 * watched circle, not an action. Tapping the row opens the episode overlay,
+	 * which is where searching / file actions now live. States: have it (teal
+	 * check), downloading (spinner + %), unaired (clock), missing (hollow
+	 * download), or nothing when the episode isn't in Sonarr.
 	 */
-	type Props = {
-		state: DlState;
-		percent?: number;
-		label: string;
-		onauto: () => void;
-		oninteractive: () => void;
-		onfile: () => void;
-	};
-	let { state, percent = 0, label, onauto, oninteractive, onfile }: Props = $props();
+	type Props = { state: DlState; percent?: number; label: string };
+	let { state, percent = 0, label }: Props = $props();
+
+	const title = $derived<Record<DlState, string>>({
+		have: 'Downloaded',
+		downloading: `Downloading ${percent}%`,
+		unaired: 'Not aired yet',
+		missing: 'Missing',
+		unknown: ''
+	});
 </script>
 
-{#if state === 'have'}
-	<button class="glyph have" aria-label={`Downloaded — manage file for ${label}`} onclick={onfile}>
-		<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>
-	</button>
-{:else if state === 'downloading'}
-	<span class="glyph dl" aria-label={`Downloading ${label} — ${percent}%`}>
-		<svg class="spin" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
-		<span class="pct tnum">{percent}%</span>
-	</span>
-{:else if state === 'missing'}
-	<span class="actions">
-		<button class="icon" aria-label={`Search for ${label}`} onclick={onauto}>
-			<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-		</button>
-		<button class="icon" aria-label={`Interactive search for ${label}`} onclick={oninteractive}>
-			<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.4" /><path d="M4.5 19a5.5 5.5 0 0 1 9.7-3.2" /><circle cx="17.5" cy="16.5" r="2.6" /><path d="m21 20-1.7-1.7" /></svg>
-		</button>
+{#if state !== 'unknown'}
+	<span class="glyph {state}" aria-label={`${title[state]} — ${label}`} title={title[state]}>
+		{#if state === 'have'}
+			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>
+		{:else if state === 'downloading'}
+			<svg class="spin" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+			<span class="pct tnum">{percent}%</span>
+		{:else if state === 'unaired'}
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>
+		{:else if state === 'missing'}
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" stroke-dasharray="2.6 2.8" /><path d="M12 8.5v5m0 0 2-2m-2 2-2-2" /></svg>
+		{/if}
 	</span>
 {/if}
 
@@ -45,16 +41,10 @@
 		width: 34px; height: 34px; justify-self: center;
 	}
 	.glyph.have { color: #4fd6b8; }
-	.glyph.dl { color: #ffb545; position: relative; flex-direction: column; }
+	.glyph.downloading { color: #ffb545; grid-auto-flow: row; }
+	.glyph.unaired { color: var(--text-dim); opacity: 0.8; }
+	.glyph.missing { color: var(--text-dim); }
 	.pct { font-size: 9px; font-weight: 700; margin-top: -2px; }
 	.spin { animation: spin 0.9s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }
-
-	.actions { display: inline-flex; align-items: center; gap: 4px; }
-	.icon {
-		display: grid; place-items: center;
-		width: 34px; height: 34px; border-radius: 50%;
-		background: var(--surface-raised); color: var(--text-dim);
-	}
-	.icon:active { transform: scale(0.92); }
 </style>
