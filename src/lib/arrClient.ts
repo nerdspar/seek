@@ -80,6 +80,60 @@ export function isUsenet(r: Pick<ArrRelease, 'protocol'>): boolean {
 	return r.protocol === 'usenet';
 }
 
+export type ReleaseSort = 'weight' | 'age' | 'quality' | 'size' | 'score';
+
+export const RELEASE_SORTS: { key: ReleaseSort; label: string }[] = [
+	{ key: 'weight', label: 'Best match' },
+	{ key: 'quality', label: 'Quality' },
+	{ key: 'size', label: 'File size' },
+	{ key: 'age', label: 'Age' },
+	{ key: 'score', label: 'Custom score' }
+];
+
+export type ReleaseArrange = {
+	sort: ReleaseSort;
+	dir: 'asc' | 'desc';
+	onlyApproved: boolean;
+	quality: string | null;
+	indexer: string | null;
+};
+
+/** Filter then sort interactive-search releases, client-side. `weight` preserves
+ *  the server's own ranking (best first) via the original index, so "Best match"
+ *  really is Sonarr/Radarr's order. Pure, for the unit test. */
+export function arrangeReleases(releases: ArrRelease[], o: ReleaseArrange): ArrRelease[] {
+	const withIdx = releases.map((r, i) => ({ r, i }));
+	const filtered = withIdx.filter(
+		({ r }) =>
+			(!o.onlyApproved || !r.rejected) &&
+			(!o.quality || r.quality === o.quality) &&
+			(!o.indexer || r.indexer === o.indexer)
+	);
+	const key = ({ r, i }: { r: ArrRelease; i: number }): number => {
+		switch (o.sort) {
+			case 'age':
+				return r.age;
+			case 'quality':
+				return r.resolution ?? 0;
+			case 'size':
+				return r.size;
+			case 'score':
+				return r.customFormatScore ?? 0;
+			default:
+				return i;
+		}
+	};
+	filtered.sort((a, b) => key(a) - key(b) || a.i - b.i);
+	if (o.dir === 'desc') filtered.reverse();
+	return filtered.map(({ r }) => r);
+}
+
+export const distinctQualities = (releases: ArrRelease[]): string[] =>
+	[...new Set(releases.map((r) => r.quality).filter((q): q is string => !!q))];
+
+export const distinctIndexers = (releases: ArrRelease[]): string[] =>
+	[...new Set(releases.map((r) => r.indexer).filter((i): i is string => !!i))];
+
 export type HistoryTone = 'ok' | 'warn' | 'bad' | 'neutral';
 
 /** Map a Sonarr/Radarr history eventType to a short label + a tone for colour.

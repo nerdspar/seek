@@ -429,6 +429,7 @@ export type ArrRelease = {
 	leechers: number | null;
 	grabs: number | null;
 	quality: string | null;
+	resolution: number | null;
 	languages: string[];
 	customFormatScore: number | null;
 	flags: string[];
@@ -592,6 +593,7 @@ function mapRelease(o: Record<string, unknown>): ArrRelease | null {
 		leechers: n(o.leechers),
 		grabs: n(o.grabs),
 		quality: s(quality.name),
+		resolution: n(quality.resolution),
 		languages: arrList(o.languages)
 			.map((l) => s(rec(l).name))
 			.filter((x): x is string => x !== null),

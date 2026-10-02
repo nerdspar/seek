@@ -7,9 +7,12 @@ import {
 	formatSize,
 	isUsenet,
 	historyEvent,
-	timeAgo
+	timeAgo,
+	arrangeReleases,
+	distinctQualities,
+	distinctIndexers
 } from './arrClient';
-import type { ArrEpisode, ArrFile, ArrQueueItem } from '$lib/server/arr';
+import type { ArrEpisode, ArrFile, ArrQueueItem, ArrRelease } from '$lib/server/arr';
 
 const ep = (over: Partial<ArrEpisode>): ArrEpisode => ({
 	id: 1,
@@ -107,6 +110,62 @@ describe('historyEvent', () => {
 	});
 	it('humanises an unknown camelCase event rather than blanking', () => {
 		expect(historyEvent('seriesScanSkipped')).toEqual({ label: 'Series Scan Skipped', tone: 'neutral' });
+	});
+});
+
+const rel = (over: Partial<ArrRelease>): ArrRelease => ({
+	guid: Math.random().toString(),
+	indexerId: 1,
+	indexer: 'NZBgeek',
+	title: 't',
+	size: 1e9,
+	age: 5,
+	protocol: 'usenet',
+	seeders: null,
+	leechers: null,
+	grabs: null,
+	quality: 'WEBDL-1080p',
+	resolution: 1080,
+	languages: [],
+	customFormatScore: 0,
+	flags: [],
+	rejections: [],
+	rejected: false,
+	approved: true,
+	fullSeason: false,
+	seasonNumber: null,
+	...over
+});
+
+describe('arrangeReleases', () => {
+	const base = { sort: 'weight', dir: 'asc', onlyApproved: false, quality: null, indexer: null } as const;
+	it('weight preserves the server order (best first)', () => {
+		const list = [rel({ guid: 'a' }), rel({ guid: 'b' }), rel({ guid: 'c' })];
+		expect(arrangeReleases(list, base).map((r) => r.guid)).toEqual(['a', 'b', 'c']);
+	});
+	it('onlyApproved hides rejected releases', () => {
+		const list = [rel({ guid: 'ok' }), rel({ guid: 'bad', rejected: true })];
+		expect(arrangeReleases(list, { ...base, onlyApproved: true }).map((r) => r.guid)).toEqual(['ok']);
+	});
+	it('sorts by size, honouring direction', () => {
+		const list = [rel({ guid: 'sm', size: 1e9 }), rel({ guid: 'lg', size: 6e9 })];
+		expect(arrangeReleases(list, { ...base, sort: 'size', dir: 'desc' }).map((r) => r.guid)).toEqual(['lg', 'sm']);
+	});
+	it('filters by quality and indexer', () => {
+		const list = [
+			rel({ guid: '2160', quality: 'WEBDL-2160p', indexer: 'DrunkenSlug' }),
+			rel({ guid: '1080', quality: 'WEBDL-1080p', indexer: 'NZBgeek' })
+		];
+		expect(arrangeReleases(list, { ...base, quality: 'WEBDL-1080p' }).map((r) => r.guid)).toEqual(['1080']);
+		expect(arrangeReleases(list, { ...base, indexer: 'DrunkenSlug' }).map((r) => r.guid)).toEqual(['2160']);
+	});
+});
+
+describe('distinct lists', () => {
+	it('collects unique qualities and indexers', () => {
+		const list = [rel({ quality: 'WEBDL-1080p', indexer: 'A' }), rel({ quality: 'WEBDL-1080p', indexer: 'B' })];
+		expect(distinctQualities(list)).toEqual(['WEBDL-1080p']);
+		expect(distinctIndexers(list)).toEqual(['A', 'B']);
 	});
 });
 

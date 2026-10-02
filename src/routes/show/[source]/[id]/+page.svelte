@@ -12,7 +12,6 @@
 	import SeriesManageSheet from '$lib/components/SeriesManageSheet.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import type { ArrSeries } from '$lib/server/arr';
-	import { onMount } from 'svelte';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	import { formatRuntime } from '$lib/format';
@@ -43,9 +42,28 @@
 		}
 	}
 
-	onMount(async () => {
-		await loadArrStatus();
-		await refreshArr();
+	/* Re-fetch whenever the show changes. SvelteKit reuses this component across
+	   show→show navigation, so an onMount-only load would leave the previous
+	   show's download state on screen (a stale monitored icon) and never refresh.
+	   Resetting to null first means the header never shows the wrong show's state. */
+	$effect(() => {
+		const id = data.mediaId;
+		void data.source;
+		let cancelled = false;
+		arrSeries = null;
+		(async () => {
+			await loadArrStatus();
+			if (cancelled || !arrManageOn('tv')) return;
+			try {
+				const r = await fetch(`/api/arr/title?mediaType=tv&tmdbId=${encodeURIComponent(id)}`);
+				if (!cancelled && r.ok) arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+			} catch {
+				/* down Sonarr → no controls */
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	/* The synopsis is clamped so a long one doesn't push the seasons off-screen.
@@ -374,7 +392,12 @@
 			<!-- When the show is in Sonarr and management is on, this opens the
 			     download-settings sheet; otherwise it's the plain add button. -->
 			{#if arrSeries && arrManageOn('tv')}
-				<button class="manage" aria-label="Manage downloads" onclick={() => (manageOpen = true)}>
+				<button
+					class="manage"
+					class:monitored={arrSeries.monitored}
+					aria-label={arrSeries.monitored ? 'Monitored in Sonarr — manage downloads' : 'Not monitored — manage downloads'}
+					onclick={() => (manageOpen = true)}
+				>
 					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
 				</button>
 			{:else}
@@ -654,7 +677,10 @@
 		width: var(--tap); height: var(--tap);
 		border-radius: 50%; color: var(--text-dim);
 	}
-	.manage { color: var(--text); }
+	/* Dim = not monitored, accent = monitored, so the show's monitored state reads
+	   at a glance from the one header glyph. */
+	.manage { color: var(--text-dim); }
+	.manage.monitored { color: var(--signal-solid); }
 
 	/* The one action worth taking on a show you do not have, so it takes the
 	   full width and the accent. */

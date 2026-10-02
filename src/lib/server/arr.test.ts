@@ -28,6 +28,7 @@ const rel = (over: Partial<ArrRelease>): ArrRelease => ({
 	leechers: null,
 	grabs: null,
 	quality: null,
+	resolution: null,
 	languages: [],
 	customFormatScore: 0,
 	flags: [],

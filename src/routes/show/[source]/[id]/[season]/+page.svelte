@@ -15,7 +15,6 @@
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import { episodeState, downloadingEpisodes, audioBadges, type DlState } from '$lib/arrClient';
 	import type { ArrEpisode, ArrFile } from '$lib/server/arr';
-	import { onMount } from 'svelte';
 	import type { EpisodeRow, SeasonDetail } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -156,9 +155,26 @@
 		}
 	}
 
-	onMount(async () => {
-		await loadArrStatus();
-		await refreshArr();
+	/* Re-fetch whenever the show or season changes (this component is reused across
+	   season→season and show→show navigation). Resetting first avoids showing the
+	   previous season's download state. */
+	$effect(() => {
+		const id = data.mediaId;
+		const season = data.seasonNumber;
+		void season;
+		let cancelled = false;
+		arrEpisodes = new Map();
+		downloading = new Map();
+		arrSeasonMonitored = null;
+		(async () => {
+			await loadArrStatus();
+			if (cancelled || !arrManageOn('tv')) return;
+			void id;
+			await refreshArr();
+		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	/** Local edits layered over whatever the streamed season resolves to. */
@@ -275,7 +291,12 @@
 	{@const allWatched = episodes.length > 0 && watchedCount === episodes.length}
 
 	{#snippet seasonActions()}
-		<button class="manage" aria-label="Manage downloads" onclick={() => (manageOpen = true)}>
+		<button
+			class="manage"
+			class:monitored={arrSeasonMonitored}
+			aria-label={arrSeasonMonitored ? 'Season monitored — manage downloads' : 'Manage downloads'}
+			onclick={() => (manageOpen = true)}
+		>
 			<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
 		</button>
 	{/snippet}
@@ -353,6 +374,7 @@
 					toggle(open.plays > 0 ? { ...open, plays: 0 } : open, season.showTitle ?? '');
 				}}
 				arrState={manageOn ? stateOf(open) : undefined}
+				arrFile={arrOf(open.episodeNumber)?.file ?? null}
 				onsearch={() => {
 					sheetFor = null;
 					autoSearch(open.episodeNumber);
@@ -468,8 +490,9 @@
 	.manage {
 		display: grid; place-items: center;
 		width: var(--tap); height: var(--tap);
-		border-radius: 50%; color: var(--text);
+		border-radius: 50%; color: var(--text-dim);
 	}
+	.manage.monitored { color: var(--signal-solid); }
 
 	.body {
 		display: flex; flex-direction: column; justify-content: center; gap: 3px;
@@ -484,6 +507,10 @@
 	.check {
 		position: relative; display: grid; place-items: center;
 		width: 52px; height: 60px; justify-self: center;
+		/* Always the rightmost column, so a row whose episode has no download glyph
+		   (unmatched / not in Sonarr) keeps the check flush right instead of letting
+		   it fall into the empty middle column. */
+		grid-column: 3;
 	}
 	.check::before {
 		content: ''; position: absolute; width: 24px; height: 24px;

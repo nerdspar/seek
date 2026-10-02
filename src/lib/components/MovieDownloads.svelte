@@ -6,7 +6,6 @@
 	import InteractiveSearchSheet from './InteractiveSearchSheet.svelte';
 	import FileActionsSheet from './FileActionsSheet.svelte';
 	import type { ArrMovie, ArrQueueItem } from '$lib/server/arr';
-	import { onMount } from 'svelte';
 
 	/**
 	 * Radarr management for the movie page. A film is one unit, so there's no
@@ -73,10 +72,25 @@
 	const tagLabels = $derived([...new Set([...opts.tags.map((t) => t.label), ...tags])]);
 	const qualityName = $derived(movie ? (opts.profiles.find((p) => p.id === movie!.qualityProfileId)?.name ?? null) : null);
 
-	onMount(async () => {
-		await loadArrStatus();
-		if (arrManageOn('movie')) void loadArrOptions();
-		await refresh();
+	/* Re-fetch when the movie changes — the movie page component is reused across
+	   movie→movie navigation, so an onMount-only load would show the previous
+	   film's download state. Reset first so nothing stale lingers. */
+	$effect(() => {
+		const id = tmdbId;
+		let cancelled = false;
+		movie = null;
+		percent = null;
+		seeded = false;
+		(async () => {
+			await loadArrStatus();
+			if (cancelled || !arrManageOn('movie')) return;
+			void loadArrOptions();
+			void id;
+			await refresh();
+		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	function toggleTag(label: string) {
