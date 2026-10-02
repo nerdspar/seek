@@ -6,7 +6,6 @@
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import { keepScroll } from '$lib/keepScroll';
 	import { tabReselect } from '$lib/tabReselect';
 	import { pullToRefresh, PULL_THRESHOLD } from '$lib/pullToRefresh';
 	import SortSheet from '$lib/components/SortSheet.svelte';
@@ -25,7 +24,6 @@
 	/* Pull-to-refresh. The gesture (pullToRefresh) reports the pull offset; the
 	   view translates the list by it and shows a spinner, and a release past the
 	   threshold re-fetches the page via invalidateAll. */
-	let mainEl = $state<HTMLElement>();
 	let pullY = $state(0);
 	let pullSettling = $state(false);
 	let refreshing = $state(false);
@@ -463,10 +461,10 @@
 	</header>
 
 	<main
-		use:keepScroll={'watchlist'}
 		use:tabReselect={{ tab: 'watchlist' }}
 		use:pullToRefresh={{
-			armed: () => (mainEl?.scrollTop ?? 0) <= 0 && !refreshing,
+			/* Window-scroll (Model B): arm only when the page is at the very top. */
+			armed: () => (document.scrollingElement?.scrollTop ?? 0) <= 0 && !refreshing,
 			onpull: (y, settling) => {
 				pullY = y;
 				pullSettling = settling;
@@ -480,7 +478,6 @@
 				}
 			}
 		}}
-		bind:this={mainEl}
 	>
 		<div
 			class="ptr"
@@ -655,11 +652,12 @@
 		color: var(--text);
 	}
 
-	/* No tab-bar clearance: the bar is a sibling now. 88px keeps the last row
-	   clear of the floating add button. */
+	/* The fixed tab bar and the floating add button both overlay the bottom now
+	   (Model B), so the last row must clear the bar's footprint plus the FAB that
+	   floats above it. */
 	main {
 		position: relative;
-		padding: 4px var(--gutter) 88px;
+		padding: 4px var(--gutter) calc(var(--tabbar-footprint) + 80px);
 	}
 
 	/* Pull-to-refresh: the spinner rides above the list, the body translates down

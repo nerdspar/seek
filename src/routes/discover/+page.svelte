@@ -3,7 +3,6 @@
 	import { onMount } from 'svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import { keepScroll } from '$lib/keepScroll';
 	import { tabReselect } from '$lib/tabReselect';
 	import AddButton from '$lib/components/AddButton.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
@@ -303,7 +302,7 @@
 	{/each}
 {/snippet}
 
-	<main use:keepScroll={'discover'} use:tabReselect={{ tab: 'discover' }}>
+	<main use:tabReselect={{ tab: 'discover' }}>
 		{#if data.moodAvailable}
 			<section class="mood">
 				<form onsubmit={submitFreeText}>
@@ -483,7 +482,7 @@
 	}
 	.segments button.on { background: var(--surface-raised); color: var(--text); }
 
-	main { padding: 6px 0 32px; }
+	main { padding: 6px 0 calc(var(--tabbar-footprint) + 24px); }
 
 	.platforms { margin-bottom: 14px; }
 	.platform {
