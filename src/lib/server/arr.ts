@@ -461,6 +461,7 @@ export type ArrQueueItem = {
 	indexer?: string | null;
 	protocol?: string | null;
 	warning?: string | null;
+	downloadId?: string | null;
 };
 
 export type ArrHistoryItem = {
@@ -907,7 +908,8 @@ export async function getQueue(service: Service): Promise<ArrQueueItem[]> {
 				name: name || (s(o.title) ?? ''),
 				indexer: s(o.indexer),
 				protocol: s(o.protocol),
-				warning: queueWarning(o)
+				warning: queueWarning(o),
+				downloadId: s(o.downloadId)
 			};
 		})
 		.filter((x): x is ArrQueueItem => x !== null);
@@ -1032,6 +1034,140 @@ export async function getWanted(
 export async function searchAllMissing(service: Service): Promise<void> {
 	const name = service === 'sonarr' ? 'MissingEpisodeSearch' : 'MissingMoviesSearch';
 	await arr(service, '/command', { method: 'POST', body: { name } });
+}
+
+/* ── Health (system status warnings) ──────────────────────────────────────── */
+
+export type ArrHealth = { service: Service; type: string; source: string; message: string };
+
+export async function getHealth(service: Service): Promise<ArrHealth[]> {
+	const rows = await arr<unknown[]>(service, '/health');
+	return arrList(rows)
+		.map((r) => {
+			const o = rec(r);
+			return {
+				service,
+				type: s(o.type) ?? 'warning',
+				source: s(o.source) ?? '',
+				message: s(o.message) ?? ''
+			};
+		})
+		.filter((h) => h.message);
+}
+
+/* ── Manual import (resolve an import-blocked download) ────────────────────── */
+
+export type ArrImportCandidate = {
+	id: number;
+	name: string;
+	title: string;
+	quality: string | null;
+	languages: string[];
+	rejections: string[];
+	/** Sonarr found a series + episodes (or Radarr a movie), so it can be imported. */
+	mappable: boolean;
+};
+
+/** Build the display title and mappability of a manual-import candidate from the
+ *  raw Sonarr/Radarr file object. Exported for the unit test. */
+export function importLabel(service: Service, o: Record<string, unknown>): { title: string; mappable: boolean } {
+	if (service === 'sonarr') {
+		const series = rec(o.series);
+		const eps = arrList(o.episodes)
+			.map((e) => n(rec(e).episodeNumber))
+			.filter((x): x is number => x !== null);
+		const seasonNumber = n(o.seasonNumber);
+		const label = eps.length
+			? [s(series.title), sxe(seasonNumber, eps[0]) + (eps.length > 1 ? `–${eps.length}` : '')].filter(Boolean).join(' · ')
+			: (s(series.title) ?? s(o.relativePath) ?? '');
+		return { title: label, mappable: n(series.id) !== null && eps.length > 0 };
+	}
+	const movie = rec(o.movie);
+	return { title: s(movie.title) ?? s(o.relativePath) ?? '', mappable: n(movie.id) !== null };
+}
+
+function rejectionStrings(o: Record<string, unknown>): string[] {
+	return arrList(o.rejections)
+		.map((r) => s(rec(r).reason) ?? s(r))
+		.filter((x): x is string => x !== null);
+}
+
+async function rawManualImport(service: Service, downloadId: string): Promise<Record<string, unknown>[]> {
+	const rows = await arr<unknown[]>(service, '/manualimport', {
+		query: { downloadId, filterExistingFiles: false },
+		timeoutMs: 60_000
+	});
+	return arrList(rows).map(rec);
+}
+
+/** Candidate files for an import-blocked download, with Sonarr/Radarr's suggested
+ *  mapping and why it stalled. */
+export async function getManualImport(service: Service, downloadId: string): Promise<ArrImportCandidate[]> {
+	const files = await rawManualImport(service, downloadId);
+	return files.map((o) => {
+		const quality = rec(rec(o.quality).quality);
+		const { title, mappable } = importLabel(service, o);
+		return {
+			id: n(o.id) ?? 0,
+			name: s(o.relativePath) ?? s(o.name) ?? '',
+			title,
+			quality: s(quality.name),
+			languages: arrList(o.languages)
+				.map((l) => s(rec(l).name))
+				.filter((x): x is string => x !== null),
+			rejections: rejectionStrings(o),
+			mappable
+		};
+	});
+}
+
+/** Import the chosen candidate files (by id). Re-reads the candidates so the exact
+ *  payload comes from the service's own data, not the client. */
+export async function runManualImport(
+	service: Service,
+	downloadId: string,
+	fileIds: number[],
+	importMode = 'move'
+): Promise<void> {
+	const files = await rawManualImport(service, downloadId);
+	const chosen = files.filter((f) => {
+		const id = n(f.id);
+		return id !== null && fileIds.includes(id);
+	});
+	const payload = chosen
+		.map((f) => {
+			const base = {
+				path: s(f.path),
+				folderName: s(f.folderName),
+				quality: f.quality,
+				languages: f.languages,
+				releaseGroup: s(f.releaseGroup),
+				indexerFlags: f.indexerFlags,
+				downloadId: s(f.downloadId) ?? downloadId
+			};
+			if (service === 'sonarr') {
+				return {
+					...base,
+					seriesId: n(rec(f.series).id),
+					episodeIds: arrList(f.episodes)
+						.map((e) => n(rec(e).id))
+						.filter((x): x is number => x !== null)
+				};
+			}
+			return { ...base, movieId: n(rec(f.movie).id) };
+		})
+		.filter((f) =>
+			service === 'sonarr'
+				? (f as { seriesId: number | null }).seriesId !== null &&
+					((f as { episodeIds: number[] }).episodeIds?.length ?? 0) > 0
+				: (f as { movieId: number | null }).movieId !== null
+		);
+	if (!payload.length) throw new ArrError(service, 400, 'Nothing could be mapped to import.');
+	await arr(service, '/command', {
+		method: 'POST',
+		body: { name: 'ManualImport', importMode, files: payload },
+		timeoutMs: 30_000
+	});
 }
 
 /* ── Delete a downloaded file ──────────────────────────────────────────────── */

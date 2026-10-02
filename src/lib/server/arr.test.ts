@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLangList, sortReleases, type ArrRelease } from './arr';
+import { parseLangList, sortReleases, importLabel, type ArrRelease } from './arr';
 
 describe('parseLangList', () => {
 	it('splits a slash list and dedupes', () => {
@@ -38,6 +38,30 @@ const rel = (over: Partial<ArrRelease>): ArrRelease => ({
 	fullSeason: false,
 	seasonNumber: null,
 	...over
+});
+
+describe('importLabel', () => {
+	it('is mappable with a series + episode, and labels it', () => {
+		const file = {
+			series: { id: 170, title: 'Ranking of Kings' },
+			seasonNumber: 1,
+			episodes: [{ id: 22087, episodeNumber: 4 }]
+		};
+		expect(importLabel('sonarr', file)).toEqual({ title: 'Ranking of Kings · S01E04', mappable: true });
+	});
+	it('is not mappable when Sonarr found no episodes', () => {
+		const file = { series: { id: 170, title: 'Ranking of Kings' }, seasonNumber: 1, episodes: [], relativePath: 'x.mkv' };
+		expect(importLabel('sonarr', file).mappable).toBe(false);
+	});
+	it('maps a Radarr movie by its movie id', () => {
+		expect(importLabel('radarr', { movie: { id: 20, title: 'Jurassic Park' } })).toEqual({
+			title: 'Jurassic Park',
+			mappable: true
+		});
+	});
+	it('is not mappable when Radarr could not match a movie', () => {
+		expect(importLabel('radarr', { movie: {}, relativePath: 'y.mkv' }).mappable).toBe(false);
+	});
 });
 
 describe('sortReleases', () => {
