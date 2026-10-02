@@ -13,7 +13,7 @@
 	import { epLabel, formatAirDate } from '$lib/format';
 	import { notify } from '$lib/notices.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
-	import { episodeState, downloadingEpisodes, audioBadges, type DlState } from '$lib/arrClient';
+	import { episodeState, downloadingEpisodes, type DlState } from '$lib/arrClient';
 	import type { ArrEpisode, ArrFile } from '$lib/server/arr';
 	import type { EpisodeRow, SeasonDetail } from '$lib/types';
 	import type { PageData } from './$types';
@@ -335,10 +335,9 @@
 							<span class="num tnum">{epLabel(ep.seasonNumber, ep.episodeNumber)}</span>
 							<span class="title">{ep.title}</span>
 						</span>
-						<span class="meta2">
-							{#if ep.airDate}<span class="air tnum">{formatAirDate(ep.airDate)}</span>{/if}
-							{#each audioBadges(arrOf(ep.episodeNumber)?.file) as a (a)}<span class="audio">{a}</span>{/each}
-						</span>
+						{#if ep.airDate}
+							<span class="air tnum">{formatAirDate(ep.airDate)}</span>
+						{/if}
 					</button>
 
 					{#if manageOn}
@@ -487,12 +486,6 @@
 		display: grid; grid-template-columns: 1fr auto 52px;
 		align-items: center; min-height: 60px;
 		border-radius: var(--radius); background: var(--surface);
-	}
-	.meta2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-	.audio {
-		font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
-		color: var(--text-dim); background: var(--surface-raised);
-		border-radius: 5px; padding: 1px 5px;
 	}
 
 	.manage {

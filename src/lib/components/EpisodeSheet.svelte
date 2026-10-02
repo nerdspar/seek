@@ -2,7 +2,7 @@
 	import Sheet from './Sheet.svelte';
 	import type { EpisodeDetail } from '$lib/types';
 	import type { ArrFile } from '$lib/server/arr';
-	import { type DlState, audioBadges, formatSize } from '$lib/arrClient';
+	import { type DlState, formatSize } from '$lib/arrClient';
 	import { formatAirDate, formatRuntime, epLabel } from '$lib/format';
 
 	type Props = {
@@ -117,8 +117,7 @@
 							<div class="file-info">
 								<span class="file-q">{arrFile?.quality ?? 'Downloaded'}</span>
 								<span class="file-sub">
-									{#if arrFile}{formatSize(arrFile.size)}{/if}
-									{#each audioBadges(arrFile) as a (a)}<span class="file-badge">{a}</span>{/each}
+									{#if arrFile}{formatSize(arrFile.size)}{#if arrFile.dateAdded} · Added {formatAirDate(arrFile.dateAdded)}{/if}{/if}
 								</span>
 							</div>
 							<button class="file-manage" onclick={() => onfile?.()}>Manage</button>
@@ -231,7 +230,6 @@
 	.file-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 	.file-q { font-size: 14px; font-weight: 600; }
 	.file-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
-	.file-badge { font-size: 10px; font-weight: 700; color: var(--text-dim); background: var(--surface); border-radius: 5px; padding: 1px 5px; }
 	.file-manage { flex: none; min-height: 34px; padding: 0 14px; border-radius: 9px; background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; }
 	.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--surface-raised); border-top-color: #ffb545; animation: spin 0.8s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }
