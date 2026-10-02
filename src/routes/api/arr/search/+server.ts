@@ -9,6 +9,8 @@ type Body = {
 	kind?: 'series' | 'season' | 'episodes' | 'movie';
 	season?: number;
 	episodeIds?: number[];
+	/** Radarr movie id directly (history retry / wanted), instead of a tmdb lookup. */
+	movieId?: number;
 };
 
 /** Fire an automatic search. Series/season/movie resolve the Sonarr/Radarr id
@@ -27,10 +29,14 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ ok: true });
 		}
 		if (body.kind === 'movie') {
-			if (!tmdbId) error(400, 'tmdbId required');
-			const movie = await getMovie(tmdbId);
-			if (!movie) error(404, 'Not in Radarr');
-			await runSearch({ kind: 'movie', movieId: movie.id });
+			let movieId = body.movieId;
+			if (movieId == null) {
+				if (!tmdbId) error(400, 'tmdbId or movieId required');
+				const movie = await getMovie(tmdbId);
+				if (!movie) error(404, 'Not in Radarr');
+				movieId = movie.id;
+			}
+			await runSearch({ kind: 'movie', movieId });
 			return json({ ok: true });
 		}
 		// series or season

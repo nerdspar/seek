@@ -452,6 +452,37 @@ export type ArrQueueItem = {
 	movieId: number | null;
 	seasonNumber: number | null;
 	episodeId: number | null;
+	/* Enriched for the Activity queue view (left optional so the lightweight
+	   per-episode % correlation on the detail pages doesn't need them). */
+	service?: Service;
+	name?: string;
+	indexer?: string | null;
+	protocol?: string | null;
+	warning?: string | null;
+};
+
+export type ArrHistoryItem = {
+	id: number;
+	service: Service;
+	eventType: string;
+	date: string | null;
+	name: string;
+	sourceTitle: string;
+	quality: string | null;
+	seriesId: number | null;
+	episodeId: number | null;
+	movieId: number | null;
+};
+
+export type ArrWantedItem = {
+	service: Service;
+	name: string;
+	airDate: string | null;
+	episodeId: number | null;
+	movieId: number | null;
+	tmdbId: number | null;
+	seasonNumber: number | null;
+	episodeNumber: number | null;
 };
 
 function mapMediaInfo(v: unknown): ArrMediaInfo | null {
@@ -809,12 +840,35 @@ export async function grabRelease(service: Service, guid: string, indexerId: num
 
 /* ── Queue (what's downloading now) ────────────────────────────────────────── */
 
+/** A padded two-digit SxxEyy label, for queue/history names. */
+const sxe = (season: number | null, episode: number | null): string => {
+	if (season === null || episode === null) return '';
+	const pad = (x: number) => String(x).padStart(2, '0');
+	return `S${pad(season)}E${pad(episode)}`;
+};
+
+/** First human warning on a queue item (import blocked, no files, etc.). */
+function queueWarning(o: Record<string, unknown>): string | null {
+	const err = s(o.errorMessage);
+	if (err) return err;
+	for (const m of arrList(o.statusMessages)) {
+		const msgs = arrList(rec(m).messages)
+			.map((x) => s(x))
+			.filter((x): x is string => x !== null);
+		if (msgs.length) return msgs[0];
+		const title = s(rec(m).title);
+		if (title) return title;
+	}
+	return null;
+}
+
 export async function getQueue(service: Service): Promise<ArrQueueItem[]> {
 	const res = rec(
 		await arr(service, '/queue', {
 			query: {
-				pageSize: 50,
+				pageSize: 100,
 				includeEpisode: service === 'sonarr',
+				includeSeries: service === 'sonarr',
 				includeMovie: service === 'radarr'
 			}
 		})
@@ -824,6 +878,14 @@ export async function getQueue(service: Service): Promise<ArrQueueItem[]> {
 			const o = rec(entry);
 			const id = n(o.id);
 			if (id === null) return null;
+			const seasonNumber = n(o.seasonNumber);
+			const episodeNumber = n(rec(o.episode).episodeNumber);
+			const name =
+				service === 'sonarr'
+					? [s(rec(o.series).title), sxe(seasonNumber, episodeNumber), s(rec(o.episode).title)]
+							.filter(Boolean)
+							.join(' · ')
+					: (s(rec(o.movie).title) ?? s(o.title) ?? '');
 			return {
 				id,
 				title: s(o.title) ?? '',
@@ -835,11 +897,137 @@ export async function getQueue(service: Service): Promise<ArrQueueItem[]> {
 				errorMessage: s(o.errorMessage),
 				seriesId: n(o.seriesId),
 				movieId: n(o.movieId),
-				seasonNumber: n(o.seasonNumber),
-				episodeId: n(o.episodeId)
+				seasonNumber,
+				episodeId: n(o.episodeId),
+				service,
+				name: name || (s(o.title) ?? ''),
+				indexer: s(o.indexer),
+				protocol: s(o.protocol),
+				warning: queueWarning(o)
 			};
 		})
 		.filter((x): x is ArrQueueItem => x !== null);
+}
+
+/** Remove a queue item. `removeFromClient` also deletes the download in the
+ *  client; `blocklist` bans the release so a re-search won't pick it again. */
+export async function removeQueueItem(
+	service: Service,
+	id: number,
+	opts: { removeFromClient?: boolean; blocklist?: boolean } = {}
+): Promise<void> {
+	await arr(service, `/queue/${id}`, {
+		method: 'DELETE',
+		query: {
+			removeFromClient: opts.removeFromClient ?? true,
+			blocklist: opts.blocklist ?? false
+		}
+	});
+}
+
+/** Recent history, newest first — grabs, imports, failures, deletions. */
+export async function getHistory(service: Service, page = 1, pageSize = 40): Promise<ArrHistoryItem[]> {
+	const res = rec(
+		await arr(service, '/history', {
+			query: {
+				page,
+				pageSize,
+				sortKey: 'date',
+				sortDirection: 'descending',
+				includeEpisode: service === 'sonarr',
+				includeSeries: service === 'sonarr',
+				includeMovie: service === 'radarr'
+			}
+		})
+	);
+	return arrList(res.records)
+		.map((entry): ArrHistoryItem | null => {
+			const o = rec(entry);
+			const id = n(o.id);
+			if (id === null) return null;
+			const episodeNumber = n(rec(o.episode).episodeNumber);
+			const seasonNumber = n(rec(o.episode).seasonNumber);
+			const name =
+				service === 'sonarr'
+					? [s(rec(o.series).title), sxe(seasonNumber, episodeNumber)].filter(Boolean).join(' · ')
+					: (s(rec(o.movie).title) ?? s(o.sourceTitle) ?? '');
+			return {
+				id,
+				service,
+				eventType: s(o.eventType) ?? 'unknown',
+				date: s(o.date),
+				name: name || (s(o.sourceTitle) ?? ''),
+				sourceTitle: s(o.sourceTitle) ?? '',
+				quality: s(rec(rec(o.quality).quality).name),
+				seriesId: n(o.seriesId),
+				episodeId: n(o.episodeId),
+				movieId: n(o.movieId)
+			};
+		})
+		.filter((x): x is ArrHistoryItem => x !== null);
+}
+
+/** Monitored-but-missing items (or cutoff-unmet). Sonarr returns episodes,
+ *  Radarr returns movies; both map to a unified row with search targeting. */
+export async function getWanted(
+	service: Service,
+	kind: 'missing' | 'cutoff' = 'missing',
+	page = 1,
+	pageSize = 40
+): Promise<ArrWantedItem[]> {
+	const res = rec(
+		await arr(service, `/wanted/${kind}`, {
+			query: {
+				page,
+				pageSize,
+				sortKey: service === 'sonarr' ? 'episodes.airDateUtc' : 'movieMetadata.sortTitle',
+				sortDirection: service === 'sonarr' ? 'descending' : 'ascending',
+				includeSeries: service === 'sonarr'
+			}
+		})
+	);
+	return arrList(res.records)
+		.map((entry): ArrWantedItem | null => {
+			const o = rec(entry);
+			if (service === 'sonarr') {
+				const episodeId = n(o.id);
+				if (episodeId === null) return null;
+				const seasonNumber = n(o.seasonNumber);
+				const episodeNumber = n(o.episodeNumber);
+				return {
+					service,
+					name: [s(rec(o.series).title), sxe(seasonNumber, episodeNumber), s(o.title)]
+						.filter(Boolean)
+						.join(' · '),
+					airDate: s(o.airDateUtc),
+					episodeId,
+					movieId: null,
+					tmdbId: null,
+					seasonNumber,
+					episodeNumber
+				};
+			}
+			const movieId = n(o.id);
+			if (movieId === null) return null;
+			const year = n(o.year);
+			return {
+				service,
+				name: [s(o.title), year ? `(${year})` : null].filter(Boolean).join(' '),
+				airDate: s(o.digitalRelease) ?? s(o.physicalRelease),
+				episodeId: null,
+				movieId,
+				tmdbId: n(o.tmdbId),
+				seasonNumber: null,
+				episodeNumber: null
+			};
+		})
+		.filter((x): x is ArrWantedItem => x !== null);
+}
+
+/** Search every monitored-missing item on a service (the "search all" button). */
+export async function searchAllMissing(service: Service): Promise<void> {
+	const name = service === 'sonarr' ? 'MissingEpisodeSearch' : 'MissingMoviesSearch';
+	await arr(service, '/command', { method: 'POST', body: { name } });
 }
 
 /* ── Delete a downloaded file ──────────────────────────────────────────────── */

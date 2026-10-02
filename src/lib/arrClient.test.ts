@@ -5,7 +5,9 @@ import {
 	downloadingEpisodes,
 	audioBadges,
 	formatSize,
-	isUsenet
+	isUsenet,
+	historyEvent,
+	timeAgo
 } from './arrClient';
 import type { ArrEpisode, ArrFile, ArrQueueItem } from '$lib/server/arr';
 
@@ -86,5 +88,33 @@ describe('isUsenet', () => {
 	it('is true only for the usenet protocol', () => {
 		expect(isUsenet({ protocol: 'usenet' })).toBe(true);
 		expect(isUsenet({ protocol: 'torrent' })).toBe(false);
+	});
+});
+
+describe('historyEvent', () => {
+	it('labels and tones the common events', () => {
+		expect(historyEvent('grabbed')).toEqual({ label: 'Grabbed', tone: 'neutral' });
+		expect(historyEvent('downloadFolderImported')).toEqual({ label: 'Imported', tone: 'ok' });
+		expect(historyEvent('downloadFailed')).toEqual({ label: 'Failed', tone: 'bad' });
+		expect(historyEvent('episodeFileDeleted')).toEqual({ label: 'File deleted', tone: 'warn' });
+	});
+	it('humanises an unknown camelCase event rather than blanking', () => {
+		expect(historyEvent('seriesScanSkipped')).toEqual({ label: 'Series Scan Skipped', tone: 'neutral' });
+	});
+});
+
+describe('timeAgo', () => {
+	const now = Date.parse('2026-10-01T12:00:00Z');
+	it('uses compact buckets up to weeks', () => {
+		expect(timeAgo('2026-10-01T11:59:30Z', now)).toBe('now');
+		expect(timeAgo('2026-10-01T11:30:00Z', now)).toBe('30m');
+		expect(timeAgo('2026-10-01T09:00:00Z', now)).toBe('3h');
+		expect(timeAgo('2026-09-29T12:00:00Z', now)).toBe('2d');
+		expect(timeAgo('2026-09-10T12:00:00Z', now)).toBe('3w');
+	});
+	it('reads a future date as soon, and a bad/empty one as blank', () => {
+		expect(timeAgo('2026-10-01T12:05:00Z', now)).toBe('soon');
+		expect(timeAgo(null, now)).toBe('');
+		expect(timeAgo('not-a-date', now)).toBe('');
 	});
 });

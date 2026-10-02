@@ -72,3 +72,53 @@ export function formatSize(bytes: number): string {
 export function isUsenet(r: Pick<ArrRelease, 'protocol'>): boolean {
 	return r.protocol === 'usenet';
 }
+
+export type HistoryTone = 'ok' | 'warn' | 'bad' | 'neutral';
+
+/** Map a Sonarr/Radarr history eventType to a short label + a tone for colour.
+ *  Unknown events fall back to a humanised camelCase split rather than a blank. */
+export function historyEvent(eventType: string): { label: string; tone: HistoryTone } {
+	switch (eventType) {
+		case 'grabbed':
+			return { label: 'Grabbed', tone: 'neutral' };
+		case 'downloadFolderImported':
+		case 'movieFileImported':
+		case 'seriesFolderImported':
+			return { label: 'Imported', tone: 'ok' };
+		case 'downloadFailed':
+			return { label: 'Failed', tone: 'bad' };
+		case 'downloadIgnored':
+			return { label: 'Ignored', tone: 'warn' };
+		case 'episodeFileDeleted':
+		case 'movieFileDeleted':
+			return { label: 'File deleted', tone: 'warn' };
+		case 'episodeFileRenamed':
+		case 'movieFileRenamed':
+			return { label: 'Renamed', tone: 'neutral' };
+		default:
+			return {
+				label: eventType.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim(),
+				tone: 'neutral'
+			};
+	}
+}
+
+/** Compact "time ago" for a history/air date: "now", "5m", "3h", "2d", "4w",
+ *  then a short date. `now` is injectable for the test. */
+export function timeAgo(iso: string | null, now: number = Date.now()): string {
+	if (!iso) return '';
+	const then = Date.parse(iso);
+	if (Number.isNaN(then)) return '';
+	const sec = Math.round((now - then) / 1000);
+	if (sec < 0) return 'soon';
+	if (sec < 60) return 'now';
+	const min = Math.floor(sec / 60);
+	if (min < 60) return `${min}m`;
+	const hr = Math.floor(min / 60);
+	if (hr < 24) return `${hr}h`;
+	const day = Math.floor(hr / 24);
+	if (day < 7) return `${day}d`;
+	const wk = Math.floor(day / 7);
+	if (wk < 5) return `${wk}w`;
+	return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
