@@ -3,14 +3,187 @@
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
+	import ArrEpisodeControl from '$lib/components/ArrEpisodeControl.svelte';
+	import InteractiveSearchSheet from '$lib/components/InteractiveSearchSheet.svelte';
+	import FileActionsSheet from '$lib/components/FileActionsSheet.svelte';
+	import SeasonManageSheet from '$lib/components/SeasonManageSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import { touchWatchlist } from '$lib/dirty';
 	import { queuedWrite } from '$lib/queue.svelte';
 	import { epLabel, formatAirDate } from '$lib/format';
+	import { notify } from '$lib/notices.svelte';
+	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import { episodeState, downloadingEpisodes, audioBadges, type DlState } from '$lib/arrClient';
+	import type { ArrEpisode, ArrFile } from '$lib/server/arr';
 	import type { EpisodeRow, SeasonDetail } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	/* ── Sonarr download state, merged onto Floppy's episode rows ───────────────
+	   Matched by air date server-side (see /api/arr/episodes), so shows that TMDB
+	   and TVDB number differently — absolute-numbered anime, re-split seasons like
+	   Bake Off — line up correctly. The map is keyed by the Floppy episode number
+	   the page renders by; `arrEpisodeIds` are the real Sonarr ids, for the
+	   season-level search/monitor actions. Loaded only when management is on. */
+	let arrEpisodes = $state<Map<number, ArrEpisode>>(new Map());
+	let arrEpisodeIds = $state<number[]>([]);
+	let downloading = $state<Map<number, number>>(new Map());
+	let arrSeasonMonitored = $state<boolean | null>(null);
+	let seasonBusy = $state(false);
+	let interactive = $state<{ episodeId?: number } | null>(null);
+	let fileSheet = $state<{ ep: EpisodeRow; file: ArrFile; id: number } | null>(null);
+	let fileBusy = $state(false);
+
+	const manageOn = $derived(arrManageOn('tv'));
+
+	async function refreshArr() {
+		if (!arrManageOn('tv')) return;
+		try {
+			const [epsRes, qRes] = await Promise.all([
+				fetch(`/api/arr/episodes?tmdbId=${encodeURIComponent(data.mediaId)}&source=${encodeURIComponent(data.source)}&season=${data.seasonNumber}`),
+				fetch('/api/arr/queue')
+			]);
+			if (epsRes.ok) {
+				const body = (await epsRes.json()) as {
+					inLibrary: boolean;
+					seasonMonitored: boolean | null;
+					episodeIds?: number[];
+					episodes: ArrEpisode[];
+				};
+				const m = new Map<number, ArrEpisode>();
+				for (const e of body.episodes) m.set(e.episodeNumber, e);
+				arrEpisodes = m;
+				arrEpisodeIds = body.episodeIds ?? [];
+				arrSeasonMonitored = body.seasonMonitored ?? null;
+			}
+			if (qRes.ok) {
+				const q = (await qRes.json()) as { sonarr: Parameters<typeof downloadingEpisodes>[0] };
+				downloading = downloadingEpisodes(q.sonarr ?? []);
+			}
+		} catch {
+			/* a down Sonarr just means no download controls */
+		}
+	}
+
+	const arrOf = (episodeNumber: number) => arrEpisodes.get(episodeNumber);
+	const downloadingIds = $derived(new Set(downloading.keys()));
+	const aired = (ep: EpisodeRow) => (ep.airDate ? Date.parse(ep.airDate) <= Date.now() : true);
+	function stateOf(ep: EpisodeRow): DlState {
+		return episodeState(arrOf(ep.episodeNumber), downloadingIds, aired(ep));
+	}
+
+	async function autoSearch(episodeNumber: number) {
+		const arrEp = arrOf(episodeNumber);
+		if (!arrEp) return;
+		try {
+			const res = await fetch('/api/arr/search', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaType: 'tv', kind: 'episodes', episodeIds: [arrEp.id] })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			void notify(`Searching ${epLabel(data.seasonNumber, episodeNumber)}`);
+			setTimeout(refreshArr, 1500);
+		} catch (err) {
+			note = `Couldn't search — ${err instanceof Error ? err.message : err}`;
+		}
+	}
+
+	async function searchSeasonAuto() {
+		if (seasonBusy || !arrEpisodeIds.length) return;
+		seasonBusy = true;
+		try {
+			// Search exactly the episodes shown (by their real Sonarr ids), not a
+			// Sonarr season number — which wouldn't line up for a re-numbered show.
+			const res = await fetch('/api/arr/search', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaType: 'tv', kind: 'episodes', episodeIds: arrEpisodeIds })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			void notify('Searching the season for missing episodes');
+			setTimeout(refreshArr, 1500);
+		} catch (err) {
+			note = `Couldn't search — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			seasonBusy = false;
+		}
+	}
+
+	async function toggleSeasonMonitor() {
+		if (seasonBusy || !arrEpisodeIds.length) return;
+		const next = !(arrSeasonMonitored ?? true);
+		seasonBusy = true;
+		arrSeasonMonitored = next;
+		try {
+			const res = await fetch('/api/arr/monitor', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ episodeIds: arrEpisodeIds, monitored: next })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		} catch (err) {
+			arrSeasonMonitored = !next;
+			note = `Couldn't update monitoring — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			seasonBusy = false;
+		}
+	}
+
+	function openFile(ep: EpisodeRow) {
+		const arrEp = arrOf(ep.episodeNumber);
+		if (arrEp?.file) fileSheet = { ep, file: arrEp.file, id: arrEp.file.id };
+	}
+
+	async function deleteFile(thenReplace = false) {
+		if (!fileSheet || fileBusy) return;
+		const { ep, id } = fileSheet;
+		if (!thenReplace && !confirm(`Delete the downloaded file for ${epLabel(ep.seasonNumber, ep.episodeNumber)}?`)) return;
+		fileBusy = true;
+		try {
+			const res = await fetch('/api/arr/file', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaType: 'tv', fileId: id, tmdbId: data.mediaId })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			const arrEp = arrOf(ep.episodeNumber);
+			fileSheet = null;
+			await refreshArr();
+			if (thenReplace && arrEp) interactive = { episodeId: arrEp.id };
+		} catch (err) {
+			note = `Couldn't delete the file — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			fileBusy = false;
+		}
+	}
+
+	/* Re-fetch whenever the show or season changes (this component is reused across
+	   season→season and show→show navigation). Resetting first avoids showing the
+	   previous season's download state. */
+	$effect(() => {
+		const id = data.mediaId;
+		const season = data.seasonNumber;
+		void season;
+		let cancelled = false;
+		arrEpisodes = new Map();
+		arrEpisodeIds = [];
+		downloading = new Map();
+		arrSeasonMonitored = null;
+		(async () => {
+			await loadArrStatus();
+			if (cancelled || !arrManageOn('tv')) return;
+			void id;
+			await refreshArr();
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	/** Local edits layered over whatever the streamed season resolves to. */
 	let overrides = $state<Record<number, EpisodeRow>>({});
@@ -22,6 +195,10 @@
 
 	const episodesOf = (s: SeasonDetail) => s.episodes.map((e) => overrides[e.episodeNumber] ?? e);
 	const watchedIn = (eps: EpisodeRow[]) => eps.filter((e) => e.plays > 0).length;
+
+	const arrInLibrary = $derived(manageOn && arrEpisodes.size > 0);
+	const arrHaveCount = $derived([...arrEpisodes.values()].filter((e) => e.hasFile).length);
+	let manageOpen = $state(false);
 
 	function setFlight(n: number, on: boolean) {
 		const next = new Set(inFlight);
@@ -121,9 +298,21 @@
 	{@const watchedCount = watchedIn(episodes)}
 	{@const allWatched = episodes.length > 0 && watchedCount === episodes.length}
 
+	{#snippet seasonActions()}
+		<button
+			class="manage"
+			class:monitored={arrSeasonMonitored}
+			aria-label={arrSeasonMonitored ? 'Season monitored — manage downloads' : 'Manage downloads'}
+			onclick={() => (manageOpen = true)}
+		>
+			<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
+		</button>
+	{/snippet}
+
 	<PageHeader
 		title={season.showTitle ?? season.title}
 		subtitle={season.seasonNumber === 0 ? 'Specials' : `Season ${season.seasonNumber}`}
+		action={arrInLibrary ? seasonActions : undefined}
 		onback={() => history.back()}
 	/>
 
@@ -146,10 +335,20 @@
 							<span class="num tnum">{epLabel(ep.seasonNumber, ep.episodeNumber)}</span>
 							<span class="title">{ep.title}</span>
 						</span>
-						{#if ep.airDate}
-							<span class="air tnum">{formatAirDate(ep.airDate)}</span>
-						{/if}
+						<span class="meta2">
+							{#if ep.airDate}<span class="air tnum">{formatAirDate(ep.airDate)}</span>{/if}
+							{#each audioBadges(arrOf(ep.episodeNumber)?.file) as a (a)}<span class="audio">{a}</span>{/each}
+						</span>
 					</button>
+
+					{#if manageOn}
+						{@const arrEp = arrOf(ep.episodeNumber)}
+						<ArrEpisodeControl
+							state={stateOf(ep)}
+							percent={arrEp ? (downloading.get(arrEp.id) ?? 0) : 0}
+							label={epLabel(ep.seasonNumber, ep.episodeNumber)}
+						/>
+					{/if}
 
 					<button
 						class="check"
@@ -182,9 +381,69 @@
 					sheetFor = null;
 					toggle(open.plays > 0 ? { ...open, plays: 0 } : open, season.showTitle ?? '');
 				}}
+				arrState={manageOn ? stateOf(open) : undefined}
+				arrFile={arrOf(open.episodeNumber)?.file ?? null}
+				onsearch={() => {
+					sheetFor = null;
+					autoSearch(open.episodeNumber);
+				}}
+				oninteractive={() => {
+					const id = arrOf(open.episodeNumber)?.id;
+					sheetFor = null;
+					interactive = { episodeId: id };
+				}}
+				onfile={() => {
+					const ep = open;
+					sheetFor = null;
+					openFile(ep);
+				}}
 				onclose={() => (sheetFor = null)}
 			/>
 		{/if}
+	{/if}
+
+	{#if interactive}
+		<InteractiveSearchSheet
+			mediaType="tv"
+			tmdbId={data.mediaId}
+			title={season.showTitle ?? season.title}
+			episodeId={interactive.episodeId}
+			season={data.seasonNumber}
+			onclose={() => (interactive = null)}
+			ongrabbed={refreshArr}
+		/>
+	{/if}
+
+	{#if fileSheet}
+		<FileActionsSheet
+			title={`${season.showTitle ?? season.title} · ${epLabel(fileSheet.ep.seasonNumber, fileSheet.ep.episodeNumber)}`}
+			file={fileSheet.file}
+			busy={fileBusy}
+			onclose={() => (fileSheet = null)}
+			ondelete={() => deleteFile(false)}
+			onreplace={() => deleteFile(true)}
+		/>
+	{/if}
+
+	{#if manageOpen}
+		<SeasonManageSheet
+			title={season.showTitle ?? season.title}
+			seasonLabel={season.seasonNumber === 0 ? 'Specials' : `Season ${season.seasonNumber}`}
+			haveCount={arrHaveCount}
+			total={arrEpisodes.size}
+			monitored={arrSeasonMonitored ?? true}
+			busy={seasonBusy}
+			onmonitor={toggleSeasonMonitor}
+			onsearch={() => {
+				manageOpen = false;
+				searchSeasonAuto();
+			}}
+			oninteractive={() => {
+				manageOpen = false;
+				interactive = {};
+			}}
+			onclose={() => (manageOpen = false)}
+		/>
 	{/if}
 
 	{#if toast}
@@ -225,10 +484,23 @@
 
 	.episodes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 	.episodes li {
-		display: grid; grid-template-columns: 1fr 52px;
+		display: grid; grid-template-columns: 1fr auto 52px;
 		align-items: center; min-height: 60px;
 		border-radius: var(--radius); background: var(--surface);
 	}
+	.meta2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+	.audio {
+		font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+		color: var(--text-dim); background: var(--surface-raised);
+		border-radius: 5px; padding: 1px 5px;
+	}
+
+	.manage {
+		display: grid; place-items: center;
+		width: var(--tap); height: var(--tap);
+		border-radius: 50%; color: var(--text-dim);
+	}
+	.manage.monitored { color: var(--signal-solid); }
 
 	.body {
 		display: flex; flex-direction: column; justify-content: center; gap: 3px;
@@ -243,6 +515,10 @@
 	.check {
 		position: relative; display: grid; place-items: center;
 		width: 52px; height: 60px; justify-self: center;
+		/* Always the rightmost column, so a row whose episode has no download glyph
+		   (unmatched / not in Sonarr) keeps the check flush right instead of letting
+		   it fall into the empty middle column. */
+		grid-column: 3;
 	}
 	.check::before {
 		content: ''; position: absolute; width: 24px; height: 24px;

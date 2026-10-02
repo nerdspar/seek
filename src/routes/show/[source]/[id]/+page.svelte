@@ -9,8 +9,9 @@
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
-	import { loadArrStatus } from '$lib/arr.svelte';
-	import { onMount } from 'svelte';
+	import SeriesManageSheet from '$lib/components/SeriesManageSheet.svelte';
+	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import type { ArrSeries } from '$lib/server/arr';
 	import { statusLabel, type Tracking } from '$lib/tracking';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	import { formatRuntime } from '$lib/format';
@@ -24,7 +25,46 @@
 	let { data }: { data: PageData } = $props();
 
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
-	onMount(() => void loadArrStatus());
+
+	/* Sonarr download state for this show (series settings + per-season file
+	   counts), loaded only when the management layer is switched on. Refreshed
+	   after an edit/search so counts and the monitored summary stay current. */
+	let arrSeries = $state<ArrSeries | null>(null);
+	let manageOpen = $state(false);
+
+	async function refreshArr() {
+		if (!arrManageOn('tv')) return;
+		try {
+			const r = await fetch(`/api/arr/title?mediaType=tv&tmdbId=${encodeURIComponent(data.mediaId)}`);
+			if (r.ok) arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+		} catch {
+			/* a down Sonarr just means no download controls — the page still works */
+		}
+	}
+
+	/* Re-fetch whenever the show changes. SvelteKit reuses this component across
+	   show→show navigation, so an onMount-only load would leave the previous
+	   show's download state on screen (a stale monitored icon) and never refresh.
+	   Resetting to null first means the header never shows the wrong show's state. */
+	$effect(() => {
+		const id = data.mediaId;
+		void data.source;
+		let cancelled = false;
+		arrSeries = null;
+		(async () => {
+			await loadArrStatus();
+			if (cancelled || !arrManageOn('tv')) return;
+			try {
+				const r = await fetch(`/api/arr/title?mediaType=tv&tmdbId=${encodeURIComponent(id)}`);
+				if (!cancelled && r.ok) arrSeries = ((await r.json()) as { series: ArrSeries | null }).series ?? null;
+			} catch {
+				/* down Sonarr → no controls */
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	/* The synopsis is clamped so a long one doesn't push the seasons off-screen.
 	   The "more" link only appears when the text actually overflows the clamp —
@@ -349,9 +389,20 @@
 	{@const tracked = trackedOf(data.source, data.mediaId, show.tracked)}
 	{#snippet headerActions()}
 		<div class="hactions">
-			<!-- Sonarr lives here rather than as its own row, to keep the vertical
-			     space for the synopsis and seasons. -->
-			<ArrButton mediaType="tv" tmdbId={data.mediaId} title={show.title} onadd={(i) => (arrRequest = i)} compact size={38} />
+			<!-- When the show is in Sonarr and management is on, this opens the
+			     download-settings sheet; otherwise it's the plain add button. -->
+			{#if arrSeries && arrManageOn('tv')}
+				<button
+					class="manage"
+					class:monitored={arrSeries.monitored}
+					aria-label={arrSeries.monitored ? 'Monitored in Sonarr — manage downloads' : 'Not monitored — manage downloads'}
+					onclick={() => (manageOpen = true)}
+				>
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="6" rx="1.6" /><rect x="3" y="13.5" width="18" height="6" rx="1.6" /><path d="M6.5 7.5h.01M6.5 16.5h.01" /></svg>
+				</button>
+			{:else}
+				<ArrButton mediaType="tv" tmdbId={data.mediaId} title={show.title} onadd={(i) => (arrRequest = i)} compact size={38} />
+			{/if}
 			{#if tracked}
 				<button class="menu" aria-label="More" onclick={() => (menuOpen = true)}>
 					<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
@@ -586,6 +637,16 @@
 	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
 {/if}
 
+{#if manageOpen && arrSeries}
+	<SeriesManageSheet
+		tmdbId={data.mediaId}
+		title={arrSeries.title}
+		series={arrSeries}
+		onchange={refreshArr}
+		onclose={() => (manageOpen = false)}
+	/>
+{/if}
+
 <style>
 	main { padding: 0 var(--gutter) calc(var(--safe-b) + 32px); }
 
@@ -611,11 +672,15 @@
 	.fill { height: 100%; border-radius: 3px; background: var(--signal); }
 
 
-	.menu {
+	.menu, .manage {
 		display: grid; place-items: center;
 		width: var(--tap); height: var(--tap);
 		border-radius: 50%; color: var(--text-dim);
 	}
+	/* Dim = not monitored, accent = monitored, so the show's monitored state reads
+	   at a glance from the one header glyph. */
+	.manage { color: var(--text-dim); }
+	.manage.monitored { color: var(--signal-solid); }
 
 	/* The one action worth taking on a show you do not have, so it takes the
 	   full width and the accent. */

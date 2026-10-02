@@ -9,6 +9,7 @@
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
+	import MovieDownloads from '$lib/components/MovieDownloads.svelte';
 	import { loadArrStatus } from '$lib/arr.svelte';
 	import { onMount } from 'svelte';
 	import { formatRuntime } from '$lib/format';
@@ -273,6 +274,9 @@
 			<div class="arr-request">
 				<ArrButton mediaType="movie" tmdbId={data.mediaId} title={movie.title} onadd={(i) => (arrRequest = i)} />
 			</div>
+
+			<MovieDownloads tmdbId={data.mediaId} title={movie.title} />
+
 
 			{#if statusOpen && tracked}
 				<StatusSheet

@@ -5,7 +5,11 @@
 	import { keepScroll } from '$lib/keepScroll';
 	import { tabReselect } from '$lib/tabReselect';
 	import StatsChart from '$lib/components/StatsChart.svelte';
+	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
+	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
+
+	onMount(() => void loadArrStatus());
 
 	let { data }: { data: PageData } = $props();
 
@@ -43,6 +47,11 @@
 		<div class="titlerow">
 			<h1>Profile</h1>
 			<div class="actions">
+				{#if arrManageOn()}
+				<button class="gear" onclick={() => goto('/activity')} aria-label="Download activity">
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
+				</button>
+				{/if}
 			<button class="gear" onclick={() => goto('/profile/diary')} aria-label="Diary">
 				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v18H5.5A1.5 1.5 0 0 1 4 19.5z" />

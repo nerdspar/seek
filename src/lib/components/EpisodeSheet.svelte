@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Sheet from './Sheet.svelte';
 	import type { EpisodeDetail } from '$lib/types';
+	import type { ArrFile } from '$lib/server/arr';
+	import { type DlState, audioBadges, formatSize } from '$lib/arrClient';
 	import { formatAirDate, formatRuntime, epLabel } from '$lib/format';
 
 	type Props = {
@@ -13,9 +15,29 @@
 		onmark: () => void;
 		onclose: () => void;
 		marking?: boolean;
+		/** Download state + actions, when the show is managed in Sonarr. Omitted on
+		 *  surfaces (e.g. the watchlist) that don't manage downloads. */
+		arrState?: DlState;
+		arrFile?: ArrFile | null;
+		onsearch?: () => void;
+		oninteractive?: () => void;
+		onfile?: () => void;
 	};
-	let { showTitle, source, mediaId, season, episode, onmark, onclose, marking = false }: Props =
-		$props();
+	let {
+		showTitle,
+		source,
+		mediaId,
+		season,
+		episode,
+		onmark,
+		onclose,
+		marking = false,
+		arrState,
+		arrFile,
+		onsearch,
+		oninteractive,
+		onfile
+	}: Props = $props();
 
 	let data = $state<EpisodeDetail | null>(null);
 	let failed = $state<string | null>(null);
@@ -86,6 +108,39 @@
 					{data.plays > 0 ? 'Mark watched again' : 'Mark as Watched'}
 				{/if}
 			</button>
+
+			{#if arrState && arrState !== 'unknown'}
+				<div class="arr">
+					{#if arrState === 'have'}
+						<div class="file">
+							<svg class="file-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>
+							<div class="file-info">
+								<span class="file-q">{arrFile?.quality ?? 'Downloaded'}</span>
+								<span class="file-sub">
+									{#if arrFile}{formatSize(arrFile.size)}{/if}
+									{#each audioBadges(arrFile) as a (a)}<span class="file-badge">{a}</span>{/each}
+								</span>
+							</div>
+							<button class="file-manage" onclick={() => onfile?.()}>Manage</button>
+						</div>
+					{:else if arrState === 'downloading'}
+						<p class="arr-note"><span class="spin" aria-hidden="true"></span> Downloading…</p>
+					{:else if arrState === 'unaired'}
+						<p class="arr-note">Not aired yet — Sonarr will grab it when it airs.</p>
+					{:else}
+						<div class="arr-row">
+							<button class="arr-btn" onclick={() => onsearch?.()}>
+								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+								Search
+							</button>
+							<button class="arr-btn" onclick={() => oninteractive?.()}>
+								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.4" /><path d="M4.5 19a5.5 5.5 0 0 1 9.7-3.2" /><circle cx="17.5" cy="16.5" r="2.6" /><path d="m21 20-1.7-1.7" /></svg>
+								Interactive
+							</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </Sheet>
@@ -153,6 +208,33 @@
 	.mark:disabled {
 		opacity: 0.6;
 	}
+
+	.arr { margin-top: 10px; }
+	.arr-row { display: flex; gap: 8px; }
+	.arr-btn {
+		flex: 1;
+		display: flex; align-items: center; justify-content: center; gap: 8px;
+		min-height: 46px; border-radius: var(--radius);
+		background: var(--surface-raised); color: var(--text);
+		font-size: 14px; font-weight: 600;
+	}
+	.arr-note { display: flex; align-items: center; gap: 8px; margin: 2px 0; font-size: 13px; color: var(--text-dim); }
+
+	/* Downloaded: a quiet info row, not a shouty full-width button. The teal check
+	   mirrors the episode-list glyph; "Manage" is the only tap target. */
+	.file {
+		display: flex; align-items: center; gap: 11px;
+		padding: 11px 12px; border-radius: var(--radius);
+		background: var(--surface-raised);
+	}
+	.file-check { color: #4fd6b8; flex: none; }
+	.file-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+	.file-q { font-size: 14px; font-weight: 600; }
+	.file-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+	.file-badge { font-size: 10px; font-weight: 700; color: var(--text-dim); background: var(--surface); border-radius: 5px; padding: 1px 5px; }
+	.file-manage { flex: none; min-height: 34px; padding: 0 14px; border-radius: 9px; background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600; }
+	.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--surface-raised); border-top-color: #ffb545; animation: spin 0.8s linear infinite; }
+	@keyframes spin { to { transform: rotate(360deg); } }
 
 	.dim {
 		color: var(--text-dim);

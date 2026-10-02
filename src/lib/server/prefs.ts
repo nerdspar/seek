@@ -73,6 +73,12 @@ export type Prefs = {
 	 *  until picked in Settings; the connection itself lives in env. */
 	sonarr: ArrPref | null;
 	radarr: ArrPref | null;
+	/** Show the download-management layer (edit settings, per-episode/season
+	 *  search, interactive grabs, file delete/replace) on top of the basic add
+	 *  button. On by default when a service is configured; off hides all of it so
+	 *  a household member who only tracks watches never sees it. Seek-wide for now;
+	 *  becomes per-user with the household work. */
+	arrManage: boolean;
 };
 
 /** Default add settings for one *arr. These pre-fill the add sheet, where any of
@@ -102,7 +108,8 @@ export const DEFAULTS: Prefs = {
 	digestHour: 8,
 	notifyAtTime: false,
 	sonarr: null,
-	radarr: null
+	radarr: null,
+	arrManage: true
 };
 
 /** Maps Seek's labels to Floppy's closed sort enum. */
