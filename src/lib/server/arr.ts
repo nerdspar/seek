@@ -364,6 +364,7 @@ export type ArrFile = {
 	languages: string[];
 	customFormatScore: number | null;
 	relativePath: string | null;
+	dateAdded: string | null;
 	mediaInfo: ArrMediaInfo | null;
 };
 
@@ -515,6 +516,7 @@ function mapFile(v: unknown): ArrFile | null {
 			.filter((x): x is string => x !== null),
 		customFormatScore: n(o.customFormatScore),
 		relativePath: s(o.relativePath),
+		dateAdded: s(o.dateAdded),
 		mediaInfo: mapMediaInfo(o.mediaInfo)
 	};
 }
