@@ -54,19 +54,27 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		const episodes: ArrEpisode[] = [];
 		const episodeIds: number[] = [];
+		const sonarrSeasonSet = new Set<number>();
 		for (const fe of floppyEps) {
 			const se = matchEpisode(fe, sonarrAll);
 			if (!se) continue;
+			sonarrSeasonSet.add(se.seasonNumber);
 			// Re-key to the Floppy episode number the client lists by; keep the real
 			// Sonarr id/hasFile/monitored/file for status and per-episode actions.
 			episodes.push({ ...se, seasonNumber: fe.seasonNumber, episodeNumber: fe.episodeNumber });
 			episodeIds.push(se.id);
 		}
 
-		const seasonMonitored =
-			episodes.length > 0 ? episodes.every((e) => e.monitored) : null;
+		// Monitored reflects the Sonarr *season* flag(s) of the season(s) these
+		// episodes actually live in (a renumbered show maps a Floppy season to a
+		// different Sonarr season) — not "every episode monitored", since a season
+		// can be monitored while its downloaded episodes are individually not.
+		const sonarrSeasons = [...sonarrSeasonSet];
+		const seasonMonitored = sonarrSeasons.length
+			? sonarrSeasons.every((sn) => series.seasons.find((s) => s.seasonNumber === sn)?.monitored ?? false)
+			: null;
 
-		return json({ inLibrary: true, seriesId: series.id, seasonMonitored, episodeIds, episodes });
+		return json({ inLibrary: true, seriesId: series.id, seasonMonitored, sonarrSeasons, episodeIds, episodes });
 	} catch (err) {
 		arrFail(err, 'sonarr');
 	}

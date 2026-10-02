@@ -29,6 +29,9 @@
 	   season-level search/monitor actions. Loaded only when management is on. */
 	let arrEpisodes = $state<Map<number, ArrEpisode>>(new Map());
 	let arrEpisodeIds = $state<number[]>([]);
+	/* The real Sonarr season number(s) this Floppy season maps to (a renumbered
+	   show maps to a different Sonarr season), for the season monitor toggle. */
+	let arrSonarrSeasons = $state<number[]>([]);
 	/* The show:season the loaded episodes belong to; `arrReady` matches it against
 	   the current route so a stale season never shows its controls. */
 	let arrKey = $state<string | null>(null);
@@ -52,6 +55,7 @@
 				const body = (await epsRes.json()) as {
 					inLibrary: boolean;
 					seasonMonitored: boolean | null;
+					sonarrSeasons?: number[];
 					episodeIds?: number[];
 					episodes: ArrEpisode[];
 				};
@@ -59,6 +63,7 @@
 				for (const e of body.episodes) m.set(e.episodeNumber, e);
 				arrEpisodes = m;
 				arrEpisodeIds = body.episodeIds ?? [];
+				arrSonarrSeasons = body.sonarrSeasons ?? [];
 				arrSeasonMonitored = body.seasonMonitored ?? null;
 				arrKey = `${data.mediaId}:${data.seasonNumber}`;
 			}
@@ -124,10 +129,12 @@
 		seasonBusy = true;
 		arrSeasonMonitored = next;
 		try {
+			// Flip the Sonarr season flag(s) and the matched episodes together, so the
+			// season reads as monitored and its episodes are actually searched.
 			const res = await fetch('/api/arr/monitor', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ episodeIds: arrEpisodeIds, monitored: next })
+				body: JSON.stringify({ tmdbId: data.mediaId, seasons: arrSonarrSeasons, episodeIds: arrEpisodeIds, monitored: next })
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 		} catch (err) {
@@ -177,6 +184,7 @@
 		let cancelled = false;
 		arrEpisodes = new Map();
 		arrEpisodeIds = [];
+		arrSonarrSeasons = [];
 		downloading = new Map();
 		arrSeasonMonitored = null;
 		(async () => {
