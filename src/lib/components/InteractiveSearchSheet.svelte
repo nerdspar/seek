@@ -47,7 +47,9 @@
 	let onlyApproved = $state(false);
 	let qualityFilter = $state<string | null>(null);
 	let indexerFilter = $state<string | null>(null);
-	let showFilters = $state(false);
+	let panel = $state<'none' | 'sort' | 'filter'>('none');
+	const toggle = (p: 'sort' | 'filter') => (panel = panel === p ? 'none' : p);
+	const anyFilter = $derived(onlyApproved || !!qualityFilter || !!indexerFilter);
 
 	const qualities = $derived(distinctQualities(releases));
 	const indexers = $derived(distinctIndexers(releases));
@@ -114,27 +116,33 @@
 
 	{#if !loading && !error && releases.length}
 		<div class="controls">
-			<label class="sortsel">
-				<span class="ctl-label">Sort</span>
-				<select bind:value={sortKey}>
-					{#each RELEASE_SORTS as s (s.key)}<option value={s.key}>{s.label}</option>{/each}
-				</select>
-			</label>
-			<button class="dir" aria-label={sortDir === 'asc' ? 'Ascending' : 'Descending'} onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
-				{#if sortDir === 'asc'}
-					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-6 6m6-6 6 6" /></svg>
-				{:else}
-					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0 6-6m-6 6-6-6" /></svg>
-				{/if}
+			<button class="ctl" class:on={panel === 'sort'} aria-label="Sort" onclick={() => toggle('sort')}>
+				<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v12m0 0 3-3m-3 3-3-3M16 18V6m0 0 3 3m-3-3-3 3" /></svg>
+				Sort
 			</button>
-			<button class="filter" class:on={showFilters || onlyApproved || qualityFilter || indexerFilter} onclick={() => (showFilters = !showFilters)}>
+			<button class="ctl" class:on={panel === 'filter' || anyFilter} aria-label="Filter" onclick={() => toggle('filter')}>
 				<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4" /></svg>
-				Filter
+				Filter{#if anyFilter}<span class="dot"></span>{/if}
 			</button>
 		</div>
 
-		{#if showFilters}
-			<div class="filters">
+		{#if panel === 'sort'}
+			<div class="menu">
+				{#each RELEASE_SORTS as s (s.key)}
+					<button class="opt" class:sel={sortKey === s.key} onclick={() => (sortKey = s.key)}>
+						<span class="tick">{#if sortKey === s.key}✓{/if}</span>{s.label}
+					</button>
+				{/each}
+				<div class="sep"></div>
+				<button class="opt" class:sel={sortDir === 'asc'} onclick={() => (sortDir = 'asc')}>
+					<span class="tick">{#if sortDir === 'asc'}✓{/if}</span>Ascending
+				</button>
+				<button class="opt" class:sel={sortDir === 'desc'} onclick={() => (sortDir = 'desc')}>
+					<span class="tick">{#if sortDir === 'desc'}✓{/if}</span>Descending
+				</button>
+			</div>
+		{:else if panel === 'filter'}
+			<div class="menu">
 				<button type="button" class="row" role="switch" aria-checked={onlyApproved} onclick={() => (onlyApproved = !onlyApproved)}>
 					<span class="f-label">Approved only{#if rejectedCount} · {rejectedCount} rejected{/if}</span>
 					<span class="toggle" class:on={onlyApproved}><span class="knob"></span></span>
@@ -223,19 +231,21 @@
 	h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
 	.sub { margin: 2px 0 0; font-size: 13px; color: var(--text-dim); }
 
-	.controls { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; }
-	.sortsel { flex: 1; display: flex; align-items: center; gap: 8px; background: var(--surface-raised); border-radius: 10px; padding: 0 10px; min-height: 38px; }
-	.ctl-label { font-size: 12px; color: var(--text-dim); flex: none; }
-	.sortsel select { flex: 1; background: none; color: var(--text); font-size: 14px; min-height: 36px; }
-	.dir, .filter { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; border-radius: 10px; background: var(--surface-raised); color: var(--text); font-size: 13px; font-weight: 600; }
-	.dir { padding: 0 10px; color: var(--text-dim); }
-	.filter.on { background: var(--signal); color: #fff; }
+	.controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 12px 10px; }
+	.ctl { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px; border-radius: 10px; background: var(--surface-raised); color: var(--text); font-size: 13px; font-weight: 600; }
+	.ctl.on { background: var(--signal); color: #fff; }
+	.ctl .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
-	.filters { display: flex; flex-direction: column; gap: 10px; padding: 0 12px 12px; }
-	.f-field { display: flex; flex-direction: column; gap: 5px; }
+	.menu { display: flex; flex-direction: column; gap: 2px; margin: 0 12px 12px; padding: 6px; border-radius: 12px; background: var(--surface-raised); }
+	.opt { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 8px; border-radius: 8px; text-align: left; font-size: 14px; color: var(--text); }
+	.opt.sel { color: var(--signal-solid); font-weight: 600; }
+	.opt .tick { width: 16px; flex: none; text-align: center; font-size: 13px; }
+	.sep { height: 1px; margin: 5px 6px; background: color-mix(in srgb, var(--text) 10%, transparent); }
+
+	.f-field { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; }
 	.f-label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
-	.filters select { width: 100%; min-height: 40px; padding: 0 12px; border-radius: 10px; background: var(--surface-raised); color: var(--text); font-size: 14px; }
-	.row { display: flex; align-items: center; justify-content: space-between; min-height: 40px; }
+	.menu select { width: 100%; min-height: 40px; padding: 0 12px; border-radius: 10px; background: var(--surface); color: var(--text); font-size: 14px; }
+	.row { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: 0 8px; }
 	.toggle { position: relative; width: 44px; height: 26px; border-radius: 999px; background: var(--surface-raised); flex: none; transition: background 160ms ease; }
 	.toggle.on { background: var(--signal); }
 	.knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform 160ms ease; }
