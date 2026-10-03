@@ -115,6 +115,40 @@ describe('bookorbit client', () => {
 	});
 });
 
+describe('setReadStatus', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	it('PATCHes your status and refreshes your cached list', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json({ items: [book(1, 'unread')], total: 1 })) // list, cached
+			.mockResolvedValueOnce(json({ status: 'want_to_read', source: 'manual' })) // the write
+			.mockResolvedValueOnce(json({ items: [book(1, 'want_to_read')], total: 1 })); // refetch
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+
+		expect((await bo.getAllBooks())[0].status).toBe('unread');
+		expect(await bo.setReadStatus(1, 'want_to_read')).toBe('want_to_read');
+		const [url, init] = fetchMock.mock.calls[2];
+		expect(url).toBe('https://bo.test/api/v1/books/1/status');
+		expect(init.method).toBe('PATCH');
+		expect(JSON.parse(init.body)).toEqual({ status: 'want_to_read' });
+		// The cache was dropped, so the list reflects the change.
+		expect((await bo.getAllBooks())[0].status).toBe('want_to_read');
+	});
+});
+
 describe('reading snapshot mappers', () => {
 	it('maps the streak and challenge widgets', async () => {
 		const bo = await load();

@@ -10,11 +10,12 @@
  * token, re-login when it expires (stateless — simpler and sturdier than storing
  * a rotating refresh token). Tokens never leave the server.
  *
- * Read-only by design for now: any mutation (status change, grab, upload) gets
- * its own deliberate function — this module never touches a library on its own.
+ * Writes are deliberate, one function each: so far only setReadStatus, which
+ * changes the signed-in person's own reading state — never a book or the library.
  */
 import { BOOKORBIT_URL } from '$lib/server/env';
 import { TTLCache } from '$lib/server/cache';
+import { invalidate } from '$lib/server/memo';
 import { bookorbitLogin, scopeId, scopeKey, NotLinkedError, type BookOrbitLogin } from '$lib/server/userctx';
 import { mapReadingBook, type ReadingBook, type BookReadStatus } from '$lib/books';
 
@@ -132,6 +133,21 @@ export async function getReadingList(statuses?: BookReadStatus[]): Promise<Readi
 	if (!statuses?.length) return all;
 	const want = new Set(statuses);
 	return all.filter((b) => want.has(b.status));
+}
+
+/**
+ * Set *your* reading status on a book you own (want to read, reading, read, …).
+ * Per-user in BookOrbit — it changes your state, never the book or anyone
+ * else's. Drops your cached list and Profile snapshot so both reflect it.
+ */
+export async function setReadStatus(bookId: number, status: BookReadStatus): Promise<BookReadStatus> {
+	const res = await bo<{ status?: string }>(`/books/${bookId}/status`, {
+		method: 'PATCH',
+		body: { status }
+	});
+	dropBooksCache();
+	invalidate('books:snapshot');
+	return (res.status as BookReadStatus) ?? status;
 }
 
 /** Drop the current user's cached list (after a status change) and, with

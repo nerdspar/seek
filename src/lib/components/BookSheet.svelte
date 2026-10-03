@@ -14,8 +14,10 @@
 		library?: ReadingBook | null;
 		card?: (BookCard & { owned?: Owned | null }) | null;
 		onclose: () => void;
+		/** Called after your status on this book changed, so the list can refresh. */
+		onchange?: () => void;
 	};
-	let { hardcoverId, library = null, card = null, onclose }: Props = $props();
+	let { hardcoverId, library = null, card = null, onclose, onchange }: Props = $props();
 
 	let detail = $state<(BookDetail & { owned: Owned | null }) | null>(null);
 	let loading = $state(false);
@@ -85,6 +87,46 @@
 
 	let expanded = $state(false);
 	const pct = (p: number) => `${Math.round(p * 100)}%`;
+
+	/* ── Your status on a book you own (BookOrbit, per person) ─────────────── */
+	const ownedId = $derived(library?.id ?? detail?.owned?.bookId ?? card?.owned?.bookId ?? null);
+	let picked = $state<ReadingBook['status'] | null>(null);
+	const status = $derived(picked ?? mine?.status ?? null);
+	let saving = $state(false);
+	let saveError = $state<string | null>(null);
+
+	const PRIMARY: { id: ReadingBook['status']; label: string }[] = [
+		{ id: 'want_to_read', label: 'Want to read' },
+		{ id: 'reading', label: 'Reading' },
+		{ id: 'read', label: 'Read' }
+	];
+	const SECONDARY: { id: ReadingBook['status']; label: string }[] = [
+		{ id: 'on_hold', label: 'On hold' },
+		{ id: 'abandoned', label: "Didn't finish" },
+		{ id: 'unread', label: 'Clear' }
+	];
+
+	async function setStatus(next: ReadingBook['status']) {
+		if (!ownedId || saving || next === status) return;
+		const before = picked;
+		picked = next; // optimistic
+		saving = true;
+		saveError = null;
+		try {
+			const res = await fetch('/api/books/status', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ bookId: ownedId, status: next })
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			onchange?.();
+		} catch (e) {
+			picked = before;
+			saveError = `Couldn't save — ${(e as Error).message}`;
+		} finally {
+			saving = false;
+		}
+	}
 </script>
 
 <Sheet label={title || 'Book'} {onclose} scrollable>
@@ -105,14 +147,33 @@
 			</div>
 		</div>
 
-		{#if mine}
-			<div class="mine">
-				<span class="status">{statusLabel(mine.status)}</span>
-				{#if mine.progress !== null && mine.progress > 0}
+		{#if mine && ownedId}
+			<div class="picker" role="radiogroup" aria-label="Your status">
+				{#each PRIMARY as opt (opt.id)}
+					<button
+						role="radio"
+						aria-checked={status === opt.id || (opt.id === 'reading' && status === 'rereading')}
+						class:on={status === opt.id || (opt.id === 'reading' && status === 'rereading')}
+						disabled={saving}
+						onclick={() => setStatus(opt.id)}>{opt.label}</button
+					>
+				{/each}
+			</div>
+			<div class="picker2">
+				{#each SECONDARY as opt (opt.id)}
+					<button class:on={status === opt.id} disabled={saving} onclick={() => setStatus(opt.id)}
+						>{opt.label}</button
+					>
+				{/each}
+			</div>
+			{#if mine.progress !== null && mine.progress > 0}
+				<div class="mine">
+					<span class="status">{status ? statusLabel(status) : ''}</span>
 					<span class="track"><span class="fill" style:width={pct(mine.progress)}></span></span>
 					<span class="pct tnum">{pct(mine.progress)}</span>
-				{/if}
-			</div>
+				</div>
+			{/if}
+			{#if saveError}<p class="err">{saveError}</p>{/if}
 		{:else if hardcoverId}
 			<p class="notowned">Not in your library yet.</p>
 		{/if}
@@ -164,6 +225,24 @@
 	.fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
 	.pct { flex: none; font-size: 12.5px; color: var(--text-dim); }
 	.notowned { margin: 14px 0 0; font-size: 13px; color: var(--text-dim); }
+
+	.picker {
+		display: flex; gap: 3px; margin-top: 16px; padding: 3px;
+		border-radius: 11px; background: var(--surface-raised);
+	}
+	.picker button {
+		flex: 1; min-height: 40px; border-radius: 9px;
+		font-size: 13.5px; font-weight: 600; color: var(--text-dim);
+	}
+	.picker button.on { background: var(--signal); color: #fff; }
+	.picker2 { display: flex; gap: 6px; margin-top: 8px; }
+	.picker2 button {
+		min-height: 32px; padding: 0 12px; border-radius: 9px;
+		background: var(--surface-raised); font-size: 12.5px; font-weight: 600; color: var(--text-dim);
+	}
+	.picker2 button.on { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--signal-solid); }
+	.picker button:disabled, .picker2 button:disabled { opacity: 0.7; }
+	.err { margin: 8px 0 0; font-size: 13px; color: #ff8a8a; }
 
 	.sk { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; }
 	.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }

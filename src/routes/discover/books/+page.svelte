@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import Poster from '$lib/components/Poster.svelte';
@@ -121,7 +121,12 @@
 </div>
 
 {#if open}
-	<BookSheet hardcoverId={open.hardcoverId} card={open} onclose={() => (open = null)} />
+	<BookSheet
+		hardcoverId={open.hardcoverId}
+		card={open}
+		onclose={() => (open = null)}
+		onchange={() => invalidateAll()}
+	/>
 {/if}
 
 <style>
