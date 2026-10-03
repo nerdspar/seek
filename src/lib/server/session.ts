@@ -1,4 +1,5 @@
-/** Single-household session (§2): one shared passphrase, one signed cookie.
+/** Account sessions: a signed cookie naming the signed-in user (accounts live in
+ *  users.ts). The old shared passphrase now only unlocks first-run setup.
  *
  *  §2 assumed LAN-only. Exposing Seek through a tunnel changes the threat model
  *  — the login endpoint becomes reachable by anyone who resolves the hostname,
@@ -18,37 +19,46 @@ export const SESSION_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 
 function secret(): string {
 	const s = env.SEEK_SESSION_SECRET;
-	if (!s) throw new Error('SEEK_SESSION_SECRET is required when SEEK_PASSPHRASE is set.');
+	if (!s) throw new Error('SEEK_SESSION_SECRET is required — it signs the session cookie.');
 	return s;
 }
 
-/** Empty passphrase disables the gate — the default for LAN-only use. */
-export const gateEnabled = () => Boolean(env.SEEK_PASSPHRASE);
+/** True when the bootstrap setup page must be unlocked with SEEK_PASSPHRASE.
+ *  Since accounts replaced the shared passphrase, that is its only remaining job:
+ *  proving the person creating the owner account is whoever deployed Seek. */
+export const setupTokenRequired = () => Boolean(env.SEEK_PASSPHRASE);
 
-export function issue(): string {
-	const issued = String(Date.now());
-	const mac = createHmac('sha256', secret()).update(issued).digest('hex');
-	return `${issued}.${mac}`;
+/* A session names a user and that user's session version. Bumping the version
+   in the database (password change, sign out everywhere) kills every cookie
+   carrying the old one, without a server-side session table. */
+export type SessionClaims = { userId: number; version: number };
+
+const sign = (payload: string) => createHmac('sha256', secret()).update(payload).digest('hex');
+
+export function issue(userId: number, version: number): string {
+	const payload = `v2.${userId}.${version}.${Date.now()}`;
+	return `${payload}.${sign(payload)}`;
 }
 
-export function verify(token: string | undefined): boolean {
-	if (!token) return false;
-	const [issued, mac] = token.split('.');
-	if (!issued || !mac) return false;
+export function verify(token: string | undefined): SessionClaims | null {
+	if (!token) return null;
+	const parts = token.split('.');
+	// v2.<user>.<version>.<issued>.<mac> — anything else (including the
+	// pre-accounts passphrase cookie) is simply not a session.
+	if (parts.length !== 5 || parts[0] !== 'v2') return null;
+	const payload = parts.slice(0, 4).join('.');
+	const a = Buffer.from(parts[4], 'hex');
+	const b = Buffer.from(sign(payload), 'hex');
+	if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
-	const expected = createHmac('sha256', secret()).update(issued).digest('hex');
-	const a = Buffer.from(mac, 'hex');
-	const b = Buffer.from(expected, 'hex');
-	if (a.length !== b.length) return false;
-	if (!timingSafeEqual(a, b)) return false;
-
-	/* Only after the MAC proves the timestamp is ours is it worth reading — an
-	   attacker could otherwise pick any issue date they liked. */
-	const at = Number(issued);
-	if (!Number.isFinite(at)) return false;
-	const age = Date.now() - at;
+	/* Only after the MAC proves the claims are ours are they worth reading — an
+	   attacker could otherwise pick any user or issue date they liked. */
+	const [userId, version, issued] = parts.slice(1, 4).map(Number);
+	if (![userId, version, issued].every(Number.isFinite)) return null;
+	const age = Date.now() - issued;
 	// A token stamped in the future is a clock change or a forgery attempt.
-	return age >= 0 && age < SESSION_MAX_AGE_MS;
+	if (age < 0 || age >= SESSION_MAX_AGE_MS) return null;
+	return { userId, version };
 }
 
 export function passphraseMatches(input: string): boolean {

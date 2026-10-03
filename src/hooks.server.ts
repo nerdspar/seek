@@ -1,168 +1,107 @@
-import { redirect, type Handle } from '@sveltejs/kit';
-import { COOKIE, gateEnabled, verify } from '$lib/server/session';
-import { warmCaches } from '$lib/server/upcoming';
-import { getWatchlist, knownServices } from '$lib/server/watchlist';
-import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
-import { COUNTS_KEY, COUNTS_TTL, getCollectionCounts, getStats } from '$lib/server/stats';
-import { getDiscoverRows } from '$lib/server/discover';
-import { memo } from '$lib/server/memo';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { COOKIE, verify } from '$lib/server/session';
+import { getPrefs } from '$lib/server/prefs';
 import { startScheduler } from '$lib/server/scheduler';
+import { warmEveryone } from '$lib/server/warmup';
+import { getUser, userCount } from '$lib/server/users';
+import { runAs, NotLinkedError } from '$lib/server/userctx';
 
 /* The daily-digest timer. No-ops unless VAPID keys are set, so it costs nothing
    on an instance that has not turned notifications on. */
 startScheduler();
 
-/* Fire the expensive lookups once at startup rather than making whoever opens a
-   tab first wait for them. Floppy needs ~13s to page a full library and ~9s for
-   an all-time statistics overview; neither should land on a tap.
+/* Fire the expensive lookups once at startup, for every account, so nobody's
+   first tap after a restart pays the cold cost. See warmup.ts. */
+void warmEveryone().catch((err) => console.warn('[seek] warmup failed:', err));
 
-   Sequential on purpose. Firing them together makes Floppy serve three heavy
-   queries at once, which slowed each of them enough to blow the request timeout
-   — the warmup was defeating itself. The watchlist goes first because it is the
-   launch screen. */
-void (async () => {
-	const step = (label: string, run: () => Promise<unknown>) =>
-		run().catch((err) => console.warn(`[seek] warmup ${label} failed:`, err));
+/* Reachable without signing in. Everything else needs an account.
+   - /api/health: the container HEALTHCHECK can't hold a session; gating it made
+     the container permanently "unhealthy" in TrueNAS. It answers an
+     unauthenticated caller with nothing but ok/not-ok.
+   - the account pages: signing in, first-run setup, redeeming an emailed link. */
+const PUBLIC_EXACT = new Set(['/login', '/setup', '/forgot', '/api/health']);
+const PUBLIC_PREFIX = ['/invite/', '/reset/', '/verify/'];
+const isPublic = (path: string) => PUBLIC_EXACT.has(path) || PUBLIC_PREFIX.some((p) => path.startsWith(p));
 
-	const prefs = await getPrefs().catch(() => null);
-	const sortKey = prefs ? sortFor(prefs, 'tv') : 'recently_watched';
-	const { sort, direction } = SORTS[sortKey];
-
-	// The launch screen first, then the other tabs, then the collection views.
-	// Sequential so the warmup never competes with itself — doing these together
-	// made Floppy slow enough to blow the request timeout.
-	await step('watchlist', () =>
-		memo(`watchlist:tv:${sortKey}:in_progress:all:`, 60 * 1000, () =>
-			getWatchlist('tv', { sort, direction })
-		)
-	);
-	/* The movie tab opens on every status rather than the in-progress backlog —
-	   see the note in +page.server.ts — so this is the key it actually asks for. */
-	const movieSortKey = prefs ? sortFor(prefs, 'movie') : 'recently_watched';
-	const movieSort = SORTS[movieSortKey];
-	await step('watchlist:movie', () =>
-		memo(`watchlist:movie:${movieSortKey}:all:all:`, 60 * 1000, () =>
-			getWatchlist('movie', {
-				sort: movieSort.sort,
-				direction: movieSort.direction,
-				statuses: ['all']
-			})
-		)
-	);
-
-	/* All four ranges, not just the default. Each is a separate ~5-9s query on
-	   Floppy, so the first tap on a range used to pay full price — and there are
-	   only four, so there is nothing to be gained by being selective. Warmed in
-	   the order the tabs sit in, default first. memo serves stale entries while
-	   refreshing behind them, so once these land, switching stays instant. */
-	for (const range of ['all_time', 'this_year', 'last_year', 'this_month'] as const) {
-		await step(`stats:${range}`, () =>
-			memo(`stats:${range}`, 30 * 60 * 1000, () => getStats(range))
-		);
-	}
-
-	/* Two more round trips that the Profile shell waits on regardless of range —
-	   measured at ~4.8s cold, which read as "switching ranges is slow" because it
-	   landed on whichever range was opened first. */
-	await step('collection:counts', () => memo(COUNTS_KEY, COUNTS_TTL, getCollectionCounts));
-	await step('upcoming', () => warmCaches());
-	await step('discover', () =>
-		memo('discover:tv', 30 * 60 * 1000, () => getDiscoverRows('tv'))
-	);
-	await step('services', () => memo('services:all', 6 * 60 * 60 * 1000, knownServices));
-
-	/* Each filter is its own cache key, and Floppy needs ~4.5s to return 200
-	   completed rows — so a first tap on a status chip was paying full price.
-	   These are the combinations reachable in a single tap from the default view. */
-	for (const status of ['planning', 'completed', 'paused', 'dropped', 'all']) {
-		await step(`filter:${status}`, () =>
-			memo(`watchlist:tv:${sortKey}:${status}:all:`, 60 * 1000, () =>
-				getWatchlist('tv', {
-					sort,
-					direction,
-					statuses: status === 'all' ? ['all'] : [status]
-				})
-			)
-		);
-	}
-	for (const company of ['joint', 'solo']) {
-		await step(`filter:${company}`, () =>
-			memo(`watchlist:tv:${sortKey}:in_progress:${company}:`, 60 * 1000, () =>
-				getWatchlist('tv', { sort, direction, company: company as 'joint' | 'solo' })
-			)
-		);
-	}
-	// Collection views are the slowest cold path — two 200-row pages each.
-	for (const mediaType of ['tv', 'movie'] as const) {
-		await step(`library:${mediaType}`, () =>
-			memo(`library:${mediaType}:all`, 60 * 1000, () =>
-				getWatchlist(mediaType, {
-					statuses: ['all'],
-					sort: 'title',
-					direction: 'asc',
-					all: true,
-					enrich: false
-				})
-			)
-		);
-	}
-})();
-
-/* The container's HEALTHCHECK cannot hold a session, so gating this path makes
-   the container permanently unhealthy — which reads as "stuck deploying" in
-   TrueNAS even though the app is serving fine. It stays reachable, and answers
-   an unauthenticated caller with nothing but ok/not-ok. */
-const UNGATED = new Set(['/login', '/api/health']);
+/* Once anyone has an account it never goes back to zero (the owner can't be
+   removed), so remember that rather than counting on every request. */
+let setUp = false;
+const hasAccounts = () => setUp || (setUp = userCount() > 0);
 
 /** Page background per appearance — must track --bg in app.css. */
 const BG_DARK = '#08080C';
 const BG_LIGHT = '#EEF0F6';
 
 export const handle: Handle = async ({ event, resolve }) => {
-	event.locals.authed = !gateEnabled() || verify(event.cookies.get(COOKIE));
+	const path = event.url.pathname;
 
-	if (!event.locals.authed && !UNGATED.has(event.url.pathname)) {
-		// API routes get a status, not a redirect to an HTML page.
-		if (event.url.pathname.startsWith('/api/')) {
-			return new Response('Unauthorized', { status: 401 });
+	/* Who is this? The cookie names a user and their session version; a version
+	   bump (password change, sign out everywhere) or a removed account makes an
+	   otherwise valid cookie worthless. */
+	const claims = verify(event.cookies.get(COOKIE));
+	const user = claims ? getUser(claims.userId) : null;
+	event.locals.user = user && claims && user.sessionVersion === claims.version ? user : null;
+	event.locals.authed = Boolean(event.locals.user);
+
+	if (!hasAccounts()) {
+		// First run: nobody exists yet, so the only thing to do is create the owner.
+		if (path !== '/setup' && path !== '/api/health') {
+			if (path.startsWith('/api/')) return new Response('Seek is not set up yet', { status: 503 });
+			redirect(303, '/setup');
 		}
-		redirect(303, '/login');
+	} else if (!event.locals.user && !isPublic(path)) {
+		// API routes get a status, not a redirect to an HTML page.
+		if (path.startsWith('/api/')) return new Response('Unauthorized', { status: 401 });
+		const next = path === '/' ? '' : `?next=${encodeURIComponent(path + event.url.search)}`;
+		redirect(303, `/login${next}`);
 	}
 
-	/* Appearance is stamped into the HTML server-side rather than applied on
-	   hydrate. Doing it in script means the first paint uses whatever was hard
-	   coded and then snaps — a white flash on a dark theme is exactly the thing
-	   people notice on a phone at night. */
-	const prefs = await getPrefs().catch(() => null);
-	const appearance = prefs?.appearance ?? 'system';
-	const accent = prefs?.accent ?? 'violet';
+	const render = async () => {
+		/* Appearance is stamped into the HTML server-side rather than applied on
+		   hydrate. Doing it in script means the first paint uses whatever was hard
+		   coded and then snaps — a white flash on a dark theme is exactly the thing
+		   people notice on a phone at night. Per person: this runs as them. */
+		const prefs = await getPrefs().catch(() => null);
+		const appearance = prefs?.appearance ?? 'system';
+		const accent = prefs?.accent ?? 'violet';
 
-	/* `system` leaves both theme-color entries in place and lets their media
-	   queries decide; a fixed choice pins both to the same value so the browser
-	   chrome cannot disagree with the page. */
-	const dark = appearance !== 'light';
-	const light = appearance !== 'dark';
+		/* `system` leaves both theme-color entries in place and lets their media
+		   queries decide; a fixed choice pins both to the same value so the browser
+		   chrome cannot disagree with the page. */
+		const dark = appearance !== 'light';
+		const light = appearance !== 'dark';
 
-	return resolve(event, {
-		transformPageChunk: ({ html }) =>
-			html
-				.replace('%seek.appearance%', appearance)
-				.replace('%seek.accent%', accent)
-				.replace('%seek.themeColorDark%', dark ? BG_DARK : BG_LIGHT)
-				.replace('%seek.themeColorLight%', light ? BG_LIGHT : BG_DARK)
-				.replace(
-					'%seek.colorScheme%',
-					appearance === 'system' ? 'light dark' : appearance
-				)
-				/* Always `default`, never `black-translucent`. iOS 26+/27 draws an
-				   uncloseable "Liquid Glass" blur over the top edge of a standalone
-				   PWA *only* when it uses black-translucent (confirmed root cause;
-				   no meta or CSS disables the blur otherwise). `default` gives an
-				   opaque status bar coloured by the body background — and since the
-				   chrome shell already keeps content out of that strip, we lose
-				   nothing but the blur. The status-bar meta is frozen at install, so
-				   this only takes effect after the app is re-added to the Home
-				   Screen. */
-				.replace('%seek.statusBar%', 'default')
-	});
+		return resolve(event, {
+			transformPageChunk: ({ html }) =>
+				html
+					.replace('%seek.appearance%', appearance)
+					.replace('%seek.accent%', accent)
+					.replace('%seek.themeColorDark%', dark ? BG_DARK : BG_LIGHT)
+					.replace('%seek.themeColorLight%', light ? BG_LIGHT : BG_DARK)
+					.replace('%seek.colorScheme%', appearance === 'system' ? 'light dark' : appearance)
+					/* Always `default`, never `black-translucent`. iOS 26+/27 draws an
+					   uncloseable "Liquid Glass" blur over the top edge of a standalone
+					   PWA *only* when it uses black-translucent (confirmed root cause;
+					   no meta or CSS disables the blur otherwise). `default` gives an
+					   opaque status bar coloured by the body background — and since the
+					   chrome shell already keeps content out of that strip, we lose
+					   nothing but the blur. The status-bar meta is frozen at install, so
+					   this only takes effect after the app is re-added to the Home
+					   Screen. */
+					.replace('%seek.statusBar%', 'default')
+		});
+	};
+
+	// Everything this request does — Floppy calls, caches, prefs — is for them.
+	return event.locals.user ? runAs(event.locals.user, render) : render();
+};
+
+/* Unexpected errors reach the browser as a bare "Internal Error" (their messages
+   can carry internals). "You haven't linked X" is the exception: it's written to
+   be shown, and it's a normal state for a new household member, so it's passed
+   through with the service — pages turn it into a link-your-account prompt. This
+   covers streamed promises too, which are how most tabs load. */
+export const handleError: HandleServerError = ({ error }) => {
+	if (error instanceof NotLinkedError) return { message: error.message, notLinked: error.service };
+	return { message: 'Internal Error' };
 };
