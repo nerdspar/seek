@@ -54,7 +54,8 @@ the persisted volume. Simple hand-rolled migrations run at boot.
 
 - **households**(id, name, created_at)
 - **users**(id, household_id, email unique, password_hash, name, role
-  [`owner`|`member`], floppy_token_enc, email_verified_at, created_at)
+  [`owner`|`member`], floppy_token_enc, bookorbit_username,
+  bookorbit_password_enc, bookorbit_library_id, email_verified_at, created_at)
 - **email_tokens**(id, user_id, kind [`verify`|`reset`], token_hash, expires_at,
   used_at) — for verification + password reset
 - **shared_shows**(household_id, source, media_id, added_by, created_at) — the
@@ -120,9 +121,11 @@ request. `FLOPPY_TOKEN` stays as the fallback / your own token.
   session carries user id; `locals.user`; login/logout; signup gated to the two
   of you. (No email yet — verify can be a no-op/admin-approve to start.)
 - **B — Email (Resend):** verification + password reset emails.
-- **C — Per-user Floppy token:** store each user's token (encrypted); thread it
-  through `floppy()`; background jobs use the owner's token. Each person now sees
-  their own library.
+- **C — Per-user backend credentials:** store each user's Floppy token **and
+  BookOrbit login + `bookorbitLibraryId`** (encrypted with `SEEK_TOKEN_KEY`);
+  thread them through `floppy()` and the BookOrbit client (per-user session +
+  cache); background jobs use the owner's credentials. Each person now sees their
+  own TV library and their own reading. (Books: see `docs/books-plan.md`.)
 - **D — Shared-show registry + UI:** the toggle + storage; the watchlist/show
   pages read it.
 - **E — Fan-out + reconciler:** mirror Seek marks; the change-feed poller; idempotency via `mirror_log`.
@@ -135,8 +138,10 @@ Phases A–B need nothing from you. C needs your wife's token. B/C need Resend.
 ## Risks / decisions to confirm
 
 - **`better-sqlite3` native build** on Alpine (adds build tools to the image), or
-  fall back to Node's experimental `node:sqlite` (no native build, but
-  experimental and needs a flag). Recommending `better-sqlite3`.
+  Node's built-in `node:sqlite` (no native build). Re-checked 2026-10-03: on the
+  image's Node 22 `node:sqlite` now runs without a flag but still warns as
+  experimental. **Decided: `better-sqlite3`** — stable API matters more than a few
+  Dockerfile lines.
 - **Reconciler cadence:** polling every few minutes is fine for a household; it's
   not instant. Acceptable for "we watched it, credit us both."
 - **Echo prevention** relies on `external_id` + `mirror_log`; designed so a
