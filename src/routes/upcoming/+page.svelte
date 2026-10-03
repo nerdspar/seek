@@ -8,6 +8,10 @@
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { dayKey, dayLabel, epLabel, formatAirDate, relativeWhen } from '$lib/format';
 	import type { UpcomingItem } from '$lib/types';
+	import { tick } from 'svelte';
+	import BookSheet from '$lib/components/BookSheet.svelte';
+	import { coverThumb } from '$lib/books';
+	import { ALL_KINDS, kindOf, kindsFiltered, mergeUpcoming, type UpcomingKind, type UpcomingKinds } from '$lib/upcoming';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -43,6 +47,62 @@
 		const off = header?.getBoundingClientRect().height ?? 0;
 		window.scrollTo(0, window.scrollY + el.getBoundingClientRect().top - off);
 	});
+
+	/* ── Films and books, streamed in after the calendar ─────────────────────
+	   When they land, rows can appear above Today (things just out); keep Today
+	   exactly where it was on screen so nothing jumps under your thumb. */
+	let extras = $state<UpcomingItem[]>([]);
+	$effect(() => {
+		let live = true;
+		data.extras.then(async (rows) => {
+			if (!live || !rows.length) return;
+			const before = todayEl?.getBoundingClientRect().top;
+			extras = rows;
+			await tick();
+			const after = todayEl?.getBoundingClientRect().top;
+			if (before !== undefined && after !== undefined && after !== before) window.scrollBy(0, after - before);
+		});
+		return () => {
+			live = false;
+		};
+	});
+
+	/* ── What to show: TV / Movies / Books (kept on this device) ───────────── */
+	const KINDS_KEY = 'seek:upcoming:kinds';
+	let kinds = $state<UpcomingKinds>({ ...ALL_KINDS });
+	try {
+		const saved = JSON.parse(localStorage.getItem(KINDS_KEY) ?? 'null');
+		if (saved) kinds = { ...ALL_KINDS, ...saved };
+	} catch {
+		/* nothing saved */
+	}
+	let filterOpen = $state(false);
+	const KIND_LABELS: { id: UpcomingKind; label: string }[] = [
+		{ id: 'tv', label: 'TV' },
+		{ id: 'movie', label: 'Movies' },
+		{ id: 'book', label: 'Books' }
+	];
+	const offeredKinds = $derived(KIND_LABELS.filter((k) => k.id !== 'book' || data.books));
+	function toggleKind(k: UpcomingKind) {
+		const next = { ...kinds, [k]: !kinds[k] };
+		// Never filter everything away.
+		if (!next.tv && !next.movie && !next.book) return;
+		kinds = next;
+		try {
+			localStorage.setItem(KINDS_KEY, JSON.stringify(kinds));
+		} catch {
+			/* not essential */
+		}
+	}
+
+	let openBook = $state<UpcomingItem | null>(null);
+	function openItem(item: UpcomingItem) {
+		if (kindOf(item) === 'book') {
+			if (item.hardcoverId) openBook = item;
+			return;
+		}
+		if (item.mediaId) goto(`/${item.mediaType === 'movie' ? 'movie' : 'show'}/${item.source}/${item.mediaId}`);
+	}
 
 	/* Binds `todayEl` to the first non-past day's section. */
 	function markToday(node: HTMLElement, isAnchor: boolean) {
@@ -81,7 +141,21 @@
 </script>
 
 <div class="app">
-	<header><h1>Upcoming</h1></header>
+	<header>
+		<div class="titlerow">
+			<h1>Upcoming</h1>
+			<button class="filter" class:on={kindsFiltered(kinds)} aria-expanded={filterOpen} aria-label="Show TV, movies or books" onclick={() => (filterOpen = !filterOpen)}>
+				<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+			</button>
+		</div>
+		{#if filterOpen}
+			<div class="kinds" role="group" aria-label="Show">
+				{#each offeredKinds as k (k.id)}
+					<button class:on={kinds[k.id]} aria-pressed={kinds[k.id]} onclick={() => toggleKind(k.id)}>{k.label}</button>
+				{/each}
+			</div>
+		{/if}
+	</header>
 
 	<main use:tabReselect={{ tab: 'upcoming', target: () => todayEl }}>
 		{#await data.items}
@@ -93,14 +167,15 @@
 					{/each}
 				{/each}
 			</div>
-		{:then items}
+		{:then calendar}
+			{@const items = mergeUpcoming(calendar, extras, kinds)}
 			{@const groups = groupBy(items)}
 			{@const anchorKey = groups.find((g) => !g.past)?.key}
 			{@const upcomingCount = groups.reduce((n, g) => n + (g.past ? 0 : g.items.length), 0)}
 			{#if !items.length}
 				<div class="empty">
 					<h2>Nothing scheduled</h2>
-					<p>No upcoming episodes for anything you're tracking.</p>
+					<p>{kindsFiltered(kinds) ? 'Nothing for what you’re showing — the filter is up top.' : 'No upcoming episodes, films or books for anything you’re tracking.'}</p>
 				</div>
 			{:else}
 			{#each groups as group (group.key)}
@@ -121,14 +196,16 @@
 
 								<button
 									class="row"
-									disabled={!item.mediaId}
-									onclick={() => item.mediaId && goto(`/${item.mediaType === 'movie' ? 'movie' : 'show'}/${item.source}/${item.mediaId}`)}
+									disabled={!(item.mediaId || item.hardcoverId)}
+									onclick={() => openItem(item)}
 								>
-									<Poster src={item.poster} width={54} height={81} />
+									<Poster src={kindOf(item) === 'book' ? coverThumb(item.poster, 54) : item.poster} width={54} height={81} />
 									<span class="meta">
 										<span class="title">{item.title}</span>
 										{#if item.season !== null && item.episode !== null}
 											<span class="ep tnum">{epLabel(item.season, item.episode)}</span>
+										{:else if item.note}
+											<span class="ep">{item.note}</span>
 										{/if}
 										<!-- Absolute datetime, which Hobi omits (§5.2) — but only
 										     when Floppy actually knows the time. -->
@@ -161,7 +238,28 @@
 	<TabBar current="upcoming" />
 </div>
 
+{#if openBook?.hardcoverId}
+	<BookSheet
+		card={{ hardcoverId: openBook.hardcoverId, title: openBook.title, author: openBook.author ?? null, coverUrl: openBook.poster, year: null, rating: null }}
+		onclose={() => (openBook = null)}
+	/>
+{/if}
+
 <style>
+	.titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+	/* The filter stays out of the way: one quiet icon, a row of three chips only
+	   when asked for. The accent marks that something is hidden. */
+	.filter {
+		flex: none; display: grid; place-items: center; width: 38px; height: 38px;
+		margin: -6px -8px -6px 0; border-radius: 11px; color: var(--text-dim);
+	}
+	.filter.on { color: var(--signal-solid); }
+	.kinds { display: flex; gap: 6px; margin-top: 10px; }
+	.kinds button {
+		min-height: 32px; padding: 0 14px; border-radius: 9px;
+		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
+	}
+	.kinds button.on { background: var(--surface-raised); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--signal-solid); }
 	/* Frame from the global `.app` shell (app.css). */
 	/* Already-aired days sit above Today; muted so the eye lands on what's next. */
 	section.past {

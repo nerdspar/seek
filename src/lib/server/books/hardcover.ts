@@ -255,3 +255,31 @@ export async function seriesAfter(hardcoverId: number): Promise<BookCard[]> {
 	seriesCache.set(key, out);
 	return out;
 }
+
+const UPCOMING_QUERY = `query Upcoming($ids: [Int!]!, $authors: [String!]!, $from: date!, $to: date!) {
+  listed: books(where: {id: {_in: $ids}, release_date: {_gte: $from, _lte: $to}}, limit: 100) { ${BOOK_FIELDS} }
+  byAuthors: books(where: {contributions: {author: {name: {_in: $authors}}}, release_date: {_gte: $from, _lte: $to}, users_count: {_gte: 3}}, order_by: {release_date: asc}, limit: 60) { ${BOOK_FIELDS} }
+}`;
+
+export type UpcomingBook = BookCard & { releaseDate: string };
+
+/** Books coming out (or just out) between two dates: from a list of Hardcover
+ *  ids, and new ones by the given authors. One request. */
+export async function upcomingBooks(ids: number[], authors: string[], from: Date, to: Date): Promise<UpcomingBook[]> {
+	const data = await hc<{ listed: Record<string, unknown>[]; byAuthors: Record<string, unknown>[] }>(UPCOMING_QUERY, {
+		ids,
+		authors,
+		from: ymd(from),
+		to: ymd(to)
+	});
+	const seen = new Set<number>();
+	const out: UpcomingBook[] = [];
+	for (const raw of [...data.listed, ...data.byAuthors]) {
+		const card = mapHardcoverBook(raw);
+		const date = typeof raw.release_date === 'string' ? raw.release_date : null;
+		if (!date || !card.hardcoverId || seen.has(card.hardcoverId)) continue;
+		seen.add(card.hardcoverId);
+		out.push({ ...card, releaseDate: date });
+	}
+	return out;
+}

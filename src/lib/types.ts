@@ -254,6 +254,14 @@ export type UpcomingItem = {
 	source: string | null;
 	/** Films and shows have different detail routes. */
 	mediaType: 'tv' | 'movie';
+	/** What it is, for the filter: an episode, a film, or a book. Absent on
+	 *  calendar rows = episode (or film, per mediaType). */
+	kind?: 'episode' | 'movie' | 'book';
+	/** A short line under the title: "In theaters", "On your list"… */
+	note?: string | null;
+	/** Books: open their sheet. */
+	hardcoverId?: number | null;
+	author?: string | null;
 };
 
 /* ── Mood search (§6.2) ────────────────────────────────────────────────── */
