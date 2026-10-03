@@ -145,6 +145,73 @@
 		}
 	}
 
+	/* ── Shelves: your BookOrbit collections, for a book you own ───────────── */
+	type ShelfMark = { id: number; name: string; count: number; has: boolean };
+	let shelves = $state<ShelfMark[] | null>(null);
+	let shelfBusy = $state(false);
+	let naming = $state(false);
+	let newName = $state('');
+
+	$effect(() => {
+		const id = ownedId;
+		if (!id) return;
+		let cancelled = false;
+		fetch(`/api/books/shelves?bookId=${id}`)
+			.then((r) => (r.ok ? r.json() : { shelves: [] }))
+			.then((b) => !cancelled && (shelves = b.shelves))
+			.catch(() => !cancelled && (shelves = []));
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	async function toggleShelf(sh: ShelfMark) {
+		if (!ownedId || shelfBusy) return;
+		shelfBusy = true;
+		saveError = null;
+		const on = !sh.has;
+		sh.has = on; // optimistic
+		try {
+			const res = await fetch(`/api/books/shelves/${sh.id}/books`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ bookId: ownedId, on })
+			});
+			if (!res.ok) throw new Error(await failure(res));
+		} catch (e) {
+			sh.has = !on;
+			saveError = `Couldn't change the shelf — ${(e as Error).message}`;
+		} finally {
+			shelfBusy = false;
+		}
+	}
+
+	async function newShelf() {
+		const name = newName.trim();
+		if (!name || !ownedId || shelfBusy) return;
+		shelfBusy = true;
+		saveError = null;
+		try {
+			const res = await fetch('/api/books/shelves', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name })
+			});
+			if (!res.ok) throw new Error(await failure(res));
+			const { shelf } = (await res.json()) as { shelf: ShelfMark };
+			const mark = { ...shelf, has: false };
+			shelves = [...(shelves ?? []), mark];
+			naming = false;
+			newName = '';
+			shelfBusy = false;
+			await toggleShelf(shelves[shelves.length - 1]);
+		} catch (e) {
+			saveError = `Couldn't make the shelf — ${(e as Error).message}`;
+		} finally {
+			shelfBusy = false;
+		}
+	}
+
 	/* ── Wishlist: wanting a book you don't own (Seek's own, per person) ──── */
 	let wishPicked = $state<boolean | null>(null);
 	const wished = $derived(wishPicked ?? detail?.wished ?? card?.wished ?? false);
@@ -284,6 +351,27 @@
 					<span class="pct tnum">{pct(mine.progress)}</span>
 				</div>
 			{/if}
+			{#if shelves}
+				<div class="shelves">
+					<span class="shelfhead">Shelves</span>
+					<div class="chips">
+						{#each shelves as sh (sh.id)}
+							<button class="chip" class:on={sh.has} aria-pressed={sh.has} disabled={shelfBusy} onclick={() => toggleShelf(sh)}>
+								{sh.has ? '✓ ' : ''}{sh.name}
+							</button>
+						{/each}
+						{#if naming}
+							<form class="newshelf" onsubmit={(e) => { e.preventDefault(); void newShelf(); }}>
+								<!-- svelte-ignore a11y_autofocus -->
+								<input bind:value={newName} placeholder="Shelf name" maxlength="255" autofocus enterkeyhint="done" />
+								<button type="submit" class="chip on" disabled={shelfBusy || !newName.trim()}>Add</button>
+							</form>
+						{:else}
+							<button class="chip add" onclick={() => (naming = true)}>+ New shelf</button>
+						{/if}
+					</div>
+				</div>
+			{/if}
 			{#if saveError}<p class="err">{saveError}</p>{/if}
 		{:else if resolvedId && !library}
 			<button class="wish" class:on={wished} aria-pressed={wished} disabled={saving} onclick={toggleWish}>
@@ -375,6 +463,21 @@
 	.wish.on { background: var(--surface-raised); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--signal-solid); }
 	.wish:disabled { opacity: 0.7; }
 	.wish + .notowned { margin-top: 8px; text-align: center; }
+	.shelves { margin-top: 14px; }
+	.shelfhead { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 650; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+	.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+	.chip {
+		min-height: 32px; padding: 0 12px; border-radius: 999px;
+		background: var(--surface-raised); font-size: 13px; font-weight: 600; color: var(--text-dim);
+	}
+	.chip.on { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--signal-solid); }
+	.chip.add { color: var(--signal-solid); }
+	.chip:disabled { opacity: 0.7; }
+	.newshelf { display: flex; gap: 6px; flex: 1 1 100%; }
+	.newshelf input {
+		flex: 1; min-width: 0; height: 32px; padding: 0 12px; border: none; border-radius: 999px;
+		background: var(--surface-raised); color: var(--text); font: inherit; font-size: 16px; outline: none;
+	}
 	.get { justify-content: center; }
 	.get button { flex: 1; color: var(--text); }
 	.req {

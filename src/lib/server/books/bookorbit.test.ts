@@ -502,3 +502,97 @@ describe('uploads', () => {
 		).rejects.toMatchObject({ status: 400, code: 'UPLOAD_FORMAT_NOT_ALLOWED', message: 'This library does not accept pdf files' });
 	});
 });
+
+describe('shelves', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	const coll = (id: number, over: Record<string, unknown> = {}) => ({
+		id,
+		name: `S${id}`,
+		mediaType: 'books',
+		isOwner: true,
+		bookCount: id,
+		displayOrder: id,
+		...over
+	});
+
+	it('lists only your own book shelves, in your order', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockResolvedValueOnce(json(LOGIN))
+				.mockResolvedValueOnce(
+					json([coll(2, { displayOrder: 5 }), coll(1), coll(3, { isOwner: false }), coll(4, { mediaType: 'podcasts' })])
+				)
+		);
+		const bo = await load();
+		expect(await bo.listShelves()).toEqual([
+			{ id: 1, name: 'S1', count: 1 },
+			{ id: 2, name: 'S2', count: 2 }
+		]);
+	});
+
+	it("marks which shelves a book is on, and shelves/unshelves it", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json([coll(1, { memberCount: 1 }), coll(2, { memberCount: 0 })]))
+			.mockResolvedValueOnce(json({ added: 1 }))
+			.mockResolvedValueOnce(json({ removed: 1 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect((await bo.shelvesFor(41)).map((s) => [s.id, s.has])).toEqual([
+			[1, true],
+			[2, false]
+		]);
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ bookIds: [41] });
+		await bo.shelveBook(2, 41, true);
+		await bo.shelveBook(1, 41, false);
+		expect(fetchMock.mock.calls.slice(2).map((c) => [c[0], c[1].method, c[1].body])).toEqual([
+			['https://bo.test/api/v1/collections/2/books', 'POST', '{"bookIds":[41]}'],
+			['https://bo.test/api/v1/collections/1/books', 'DELETE', '{"bookIds":[41]}']
+		]);
+	});
+
+	it('creates with an icon BookOrbit requires, and deletes (empty reply)', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json(coll(9, { name: 'Beach reads', bookCount: 0 })))
+			.mockResolvedValueOnce({ ok: true, status: 204, json: async () => { throw new Error('no body'); } } as unknown as Response);
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect(await bo.createShelf('Beach reads')).toEqual({ id: 9, name: 'Beach reads', count: 0 });
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ name: 'Beach reads', icon: 'BookMarked' });
+		await expect(bo.deleteShelf(9)).resolves.toBeUndefined();
+	});
+
+	it("pages through a shelf's books", async () => {
+		const page = (ids: number[], total: number) =>
+			json({ items: ids.map((id) => ({ id, title: `B${id}`, readStatus: { status: 'read' } })), total });
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(page([1, 2], 3))
+			.mockResolvedValueOnce(page([3], 3));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect((await bo.shelfBooks(5)).map((b) => [b.id, b.status])).toEqual([
+			[1, 'read'],
+			[2, 'read'],
+			[3, 'read']
+		]);
+		expect(fetchMock.mock.calls[2][0]).toBe('https://bo.test/api/v1/collections/5/books?page=1&size=100');
+	});
+});

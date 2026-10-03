@@ -464,6 +464,74 @@ export async function cancelUpload(id: string): Promise<void> {
 	await bo<unknown>(`/uploads/${id}`, { method: 'DELETE' });
 }
 
+/* ── Shelves (BookOrbit collections) ──────────────────────────────────────────
+   Your own named shelves of library books — "Beach reads", "Book club". They're
+   per person in BookOrbit (and can sync to a Kobo); Seek manages yours. */
+
+export type Shelf = { id: number; name: string; count: number };
+/** A shelf, and whether a given book is on it. */
+export type ShelfMembership = Shelf & { has: boolean };
+
+/** BookOrbit wants an icon name (its UI uses lucide icons); this one is a shelf. */
+const SHELF_ICON = 'BookMarked';
+
+export function toShelf(raw: unknown): Shelf {
+	const r = (raw ?? {}) as RawObj;
+	return { id: n(r.id), name: s(r.name) || 'Shelf', count: n(r.bookCount) };
+}
+
+/** Book collections you own, in your order. Shared ones others made are left
+ *  out — you can't change those. */
+export async function listShelves(): Promise<Shelf[]> {
+	const raw = await bo<RawObj[]>('/collections');
+	return raw
+		.filter((c) => (c.mediaType ?? 'books') === 'books' && c.isOwner !== false)
+		.sort((a, b) => n(a.displayOrder) - n(b.displayOrder))
+		.map(toShelf);
+}
+
+/** Your shelves, each marked with whether this book is on it. */
+export async function shelvesFor(bookId: number): Promise<ShelfMembership[]> {
+	const raw = await bo<RawObj[]>('/collections/membership', { method: 'POST', body: { bookIds: [bookId] } });
+	return raw
+		.filter((c) => (c.mediaType ?? 'books') === 'books')
+		.sort((a, b) => n(a.displayOrder) - n(b.displayOrder))
+		.map((c) => ({ ...toShelf(c), has: n(c.memberCount) > 0 }));
+}
+
+export async function createShelf(name: string): Promise<Shelf> {
+	return toShelf(await bo<unknown>('/collections', { method: 'POST', body: { name, icon: SHELF_ICON } }));
+}
+
+export async function renameShelf(id: number, name: string): Promise<Shelf> {
+	return toShelf(await bo<unknown>(`/collections/${id}`, { method: 'PATCH', body: { name } }));
+}
+
+/** Delete a shelf. The books stay in the library; only the shelf goes. */
+export async function deleteShelf(id: number): Promise<void> {
+	await bo<unknown>(`/collections/${id}`, { method: 'DELETE' });
+}
+
+/** Put a book on a shelf, or take it off. */
+export async function shelveBook(shelfId: number, bookId: number, on: boolean): Promise<void> {
+	await bo<unknown>(`/collections/${shelfId}/books`, { method: on ? 'POST' : 'DELETE', body: { bookIds: [bookId] } });
+}
+
+/** The books on a shelf, as reading-list rows (with your status). */
+export async function shelfBooks(id: number): Promise<ReadingBook[]> {
+	// Pages of at most 100 (BookOrbit's cap), 0-based.
+	const items: unknown[] = [];
+	let total = Infinity;
+	for (let page = 0; items.length < total && page < 20; page++) {
+		const res = await bo<{ items?: unknown[]; total?: number }>(`/collections/${id}/books?page=${page}&size=100`);
+		total = res.total ?? 0;
+		if (!res.items?.length) break;
+		items.push(...res.items);
+	}
+	const seen = new Set<number>();
+	return items.map(mapReadingBook).filter((b) => !seen.has(b.id) && seen.add(b.id));
+}
+
 /** Raw cover bytes for a book, proxied to the browser (covers are auth-gated).
  *  Returns the upstream Response so the route can stream it with its headers. */
 export async function fetchCover(id: number): Promise<Response> {

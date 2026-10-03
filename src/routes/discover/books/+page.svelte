@@ -6,6 +6,7 @@
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import UploadSheet from '$lib/components/UploadSheet.svelte';
+	import ShelvesSheet from '$lib/components/ShelvesSheet.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import { coverThumb, cardBadge, type BookCard, type ReadingBook } from '$lib/books';
 	import type { PageData } from './$types';
@@ -17,6 +18,7 @@
 
 	let open = $state<Card | null>(null);
 	let uploading = $state(false);
+	let shelving = $state(false);
 
 	/* ── Search the whole catalog. Debounced; a newer query cancels the older. ── */
 	let query = $state('');
@@ -59,7 +61,10 @@
 		<div class="titlerow">
 			<h1>Discover</h1>
 			{#if data.canUpload}
-				<button class="upload" onclick={() => (uploading = true)}>Upload</button>
+				<span class="tools">
+					<button class="upload" onclick={() => (shelving = true)}>Shelves</button>
+					<button class="upload" onclick={() => (uploading = true)}>Upload</button>
+				</span>
 			{/if}
 		</div>
 		<div class="segments" role="tablist">
@@ -143,11 +148,15 @@
 {#if uploading}
 	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
 {/if}
+{#if shelving}
+	<ShelvesSheet onclose={() => (shelving = false)} />
+{/if}
 
 <style>
 	/* Identical to Discover's header so Books reads as its third segment. */
 	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
 	.titlerow { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+	.tools { display: flex; gap: 6px; }
 	.upload {
 		min-height: 32px; padding: 0 14px; border-radius: 999px;
 		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--signal-solid);
