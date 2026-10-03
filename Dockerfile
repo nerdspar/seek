@@ -2,16 +2,22 @@
 
 FROM node:22-alpine AS build
 WORKDIR /app
+# better-sqlite3 is a native module; if no prebuilt binary matches this
+# platform, npm compiles it, which needs a toolchain.
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-# Runtime dependencies only. adapter-node bundles most of the app but leaves a
-# few packages external (web-push, whose transitive deps do not bundle cleanly),
-# so the runtime image needs their node_modules — not just the build output.
+# Runtime dependencies only. adapter-node bundles most of the app but leaves
+# package.json `dependencies` external (web-push, whose transitive deps do not
+# bundle cleanly, and better-sqlite3, a native module that cannot be bundled), so
+# the runtime image needs their node_modules — not just the build output. Built
+# on the same Alpine base as the runtime, so the native binary matches.
 FROM node:22-alpine AS deps
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
@@ -30,7 +36,9 @@ COPY --from=build /app/build ./build
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 
-# Preferences only (§8). Watch state is never stored here.
+# Seek's own state: the household user store (seek.db), plus the legacy
+# preferences/push JSON it migrates from. Watch state is never stored here — it
+# stays in each person's Floppy.
 RUN mkdir -p /data && chown -R node:node /data
 USER node
 

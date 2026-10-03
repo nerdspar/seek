@@ -1,0 +1,116 @@
+/**
+ * Seek's own database — the household user store (docs/household-multiuser-plan.md).
+ *
+ * Seek used to be stateless (two JSON files). Multi-user needs real storage:
+ * accounts, sessions that can be invalidated, invites, and per-user credentials.
+ * SQLite via better-sqlite3 (synchronous, transactional) in /data next to the
+ * legacy JSON it migrates from. Watch state never lives here — it stays in each
+ * person's Floppy; reading state stays in BookOrbit.
+ *
+ * Migrations are append-only SQL run at open, tracked by PRAGMA user_version.
+ * Never edit a shipped migration — add a new one.
+ */
+import Database from 'better-sqlite3';
+import { env } from '$env/dynamic/private';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+export type DB = Database.Database;
+
+export const MIGRATIONS: string[] = [
+	// v1 — households, accounts, invites/resets, per-user credentials + prefs,
+	// push subscriptions. Covers household phases A–C and books.
+	`
+	CREATE TABLE households (
+		id          INTEGER PRIMARY KEY,
+		name        TEXT NOT NULL,
+		created_at  TEXT NOT NULL
+	);
+
+	CREATE TABLE users (
+		id                          INTEGER PRIMARY KEY,
+		household_id                INTEGER NOT NULL REFERENCES households(id),
+		email                       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		name                        TEXT NOT NULL,
+		password_hash               TEXT NOT NULL,
+		role                        TEXT NOT NULL CHECK (role IN ('owner', 'member')),
+		-- Bumped on password change / sign-out-everywhere; sessions carry it, so a
+		-- bump invalidates every outstanding cookie for this user.
+		session_version             INTEGER NOT NULL DEFAULT 1,
+		email_verified_at           TEXT,
+		-- Credentials Seek uses on this person's behalf, AES-GCM encrypted
+		-- (crypto.ts). Null = not linked.
+		floppy_token_enc            TEXT,
+		floppy_calendar_token_enc   TEXT,
+		bookorbit_username          TEXT,
+		bookorbit_password_enc      TEXT,
+		bookorbit_library_id        INTEGER,
+		-- This person's Seek preferences (prefs.ts), JSON.
+		prefs_json                  TEXT,
+		-- Per-user notification guards (were global in push-subscriptions.json).
+		last_digest                 TEXT,
+		last_at_time                TEXT,
+		created_at                  TEXT NOT NULL
+	);
+
+	-- Invite (no user yet: email + household), email verification, password reset.
+	-- Only a hash of the token is stored; the raw token lives in the link.
+	CREATE TABLE email_tokens (
+		id            INTEGER PRIMARY KEY,
+		kind          TEXT NOT NULL CHECK (kind IN ('invite', 'verify', 'reset')),
+		user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
+		household_id  INTEGER REFERENCES households(id) ON DELETE CASCADE,
+		email         TEXT COLLATE NOCASE,
+		token_hash    TEXT NOT NULL UNIQUE,
+		expires_at    TEXT NOT NULL,
+		used_at       TEXT,
+		created_at    TEXT NOT NULL
+	);
+
+	CREATE TABLE push_subscriptions (
+		endpoint    TEXT PRIMARY KEY,
+		user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		p256dh      TEXT NOT NULL,
+		auth        TEXT NOT NULL,
+		created_at  TEXT NOT NULL
+	);
+	CREATE INDEX push_subscriptions_user ON push_subscriptions(user_id);
+	`
+];
+
+/** Open (creating if needed) and migrate a database. ':memory:' for tests. */
+export function openDatabase(file: string): DB {
+	if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
+	const db = new Database(file);
+	db.pragma('journal_mode = WAL');
+	db.pragma('foreign_keys = ON');
+	migrate(db);
+	return db;
+}
+
+export function migrate(db: DB): void {
+	const current = db.pragma('user_version', { simple: true }) as number;
+	for (let v = current; v < MIGRATIONS.length; v++) {
+		db.transaction(() => {
+			db.exec(MIGRATIONS[v]);
+			db.pragma(`user_version = ${v + 1}`);
+		})();
+	}
+}
+
+const dbPath = () => env.SEEK_DB_PATH || join(env.SEEK_DATA_DIR || '/data', 'seek.db');
+
+let instance: DB | null = null;
+
+/** The process-wide database, opened lazily on first use. */
+export function db(): DB {
+	if (!instance) instance = openDatabase(dbPath());
+	return instance;
+}
+
+/** Tests swap in an in-memory database. */
+export function useDatabase(next: DB | null): void {
+	instance = next;
+}
+
+export const nowIso = () => new Date().toISOString();
