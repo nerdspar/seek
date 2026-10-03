@@ -476,6 +476,44 @@ export function bookRequestBody(
 	};
 }
 
+/* ── "Because you…": what personal recommendations grow from ─────────────── */
+
+/** The books to recommend from: ones you finished, or rated 4+, most recent
+ *  first (a Hardcover id lets us look up its series and author). */
+export function recommendationSeeds(books: MyBook[], max = 4): MyBook[] {
+	const liked = books.filter(
+		(b) => b.status === 'read' || b.status === 'skimmed' || (b.myRating !== null && b.myRating >= 4)
+	);
+	const when = (b: MyBook) => b.finishedAt ?? b.activeAt ?? '';
+	// Loved ones first, then the most recently finished.
+	return liked
+		.sort((a, b) => (b.myRating ?? 3) - (a.myRating ?? 3) || when(b).localeCompare(when(a)))
+		.slice(0, max);
+}
+
+/** The genres you read most, weighting books you rated highly. */
+export function favoriteGenres(books: MyBook[], extra: Map<string, string[]> = new Map(), max = 2): string[] {
+	const counts = new Map<string, { name: string; n: number }>();
+	for (const b of books) {
+		if (!(b.status === 'read' || b.status === 'reading' || b.status === 'skimmed' || b.myRating)) continue;
+		const weight = b.myRating !== null ? Math.max(0.5, b.myRating - 2) : 1;
+		for (const g of [...b.genres, ...(extra.get(b.key) ?? [])]) {
+			const k = g.toLowerCase();
+			const c = counts.get(k) ?? { name: g, n: 0 };
+			c.n += weight;
+			counts.set(k, c);
+		}
+	}
+	return [...counts.values()].sort((a, b) => b.n - a.n).slice(0, max).map((c) => c.name);
+}
+
+/** Recommendations minus anything you already have (library or your list). */
+export function notYours(cards: BookCard[], books: MyBook[]): BookCard[] {
+	const ids = new Set(books.map((b) => b.hardcoverId).filter(Boolean));
+	const keys = new Set(books.map((b) => bookKey(b.title, b.authors[0])));
+	return cards.filter((c) => !ids.has(c.hardcoverId) && !keys.has(bookKey(c.title, c.author)));
+}
+
 /* ── Downloading: release search and grab (BookOrbit self-serve requests) ─── */
 
 /** One downloadable release BookOrbit's sources (Prowlarr) found. */

@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
-import { discoverRails, hardcoverConfigured } from '$lib/server/books/hardcover';
-import { railsWithOwned } from '$lib/server/books/discovery';
+import { BOOK_GENRES, discoverRails, hardcoverConfigured } from '$lib/server/books/hardcover';
+import { personalRails, railsWithOwned } from '$lib/server/books/discovery';
 import { bookorbitLinked } from '$lib/server/books/bookorbit';
 import type { PageServerLoad } from './$types';
 
@@ -12,6 +12,12 @@ export const load: PageServerLoad = async () => {
 	if (!prefs.booksEnabled || !hardcoverConfigured()) redirect(303, '/discover');
 	return {
 		rails: discoverRails().then(railsWithOwned),
+		// "Because you read…/like…": its own stream, so the standard shelves never
+		// wait on it; a failure just means no personal shelves this time.
+		personal: personalRails()
+			.then(railsWithOwned)
+			.catch(() => []),
+		genres: BOOK_GENRES,
 		// Uploading goes into BookOrbit as you, so it needs your login there.
 		canUpload: bookorbitLinked()
 	};

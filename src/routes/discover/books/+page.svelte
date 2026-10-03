@@ -22,6 +22,30 @@
 	let downloading = $state<Card | null>(null);
 	let tileNote = $state<string | null>(null);
 
+	/* ── Genre chips: tap one for its shelves instead of the usual ones ───── */
+	type Rail = { key: string; title: string; subtitle: string; books: Card[] };
+	let genre = $state<string | null>(null);
+	let genreRails = $state<Rail[] | null>(null);
+	let genreError = $state<string | null>(null);
+	async function pickGenre(g: string) {
+		if (genre === g) {
+			genre = null;
+			genreRails = null;
+			return;
+		}
+		genre = g;
+		genreRails = null;
+		genreError = null;
+		try {
+			const res = await fetch(`/api/books/genre?g=${encodeURIComponent(g)}`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const body = (await res.json()) as { rails: Rail[] };
+			if (genre === g) genreRails = body.rails;
+		} catch (e) {
+			if (genre === g) genreError = `Couldn't load ${g} — ${(e as Error).message}`;
+		}
+	}
+
 	/* + on a cover: put it on your want-to-read list. One you already have (in
 	   your library or your own list) opens its sheet instead, to change it. */
 	let added = $state<Record<number, BookReadStatus>>({});
@@ -115,6 +139,13 @@
 				onclear={onInput}
 			/>
 		</div>
+		{#if !query.trim()}
+			<div class="chips" role="group" aria-label="Genres">
+				{#each data.genres as g (g)}
+					<button class:on={genre === g} aria-pressed={genre === g} onclick={() => pickGenre(g)}>{g}</button>
+				{/each}
+			</div>
+		{/if}
 
 		{#if query.trim()}
 			{#if searchError}
@@ -143,7 +174,48 @@
 					{/each}
 				</ul>
 			{/if}
+		{:else if genre}
+			{#if genreError}
+				<p class="msg">{genreError}</p>
+			{:else if !genreRails}
+				{#each Array(2) as _, g (g)}
+					<section class="skshelf">
+						<Skeleton width="46%" height="16px" />
+						<div class="skrail">{#each Array(4) as _, i (i)}<Skeleton height="165px" radius={8} />{/each}</div>
+					</section>
+				{/each}
+			{:else if !genreRails.length}
+				<p class="msg">Nothing in {genre} right now.</p>
+			{:else}
+				{#each genreRails as r (r.key)}
+					<BookShelf
+						title={r.title}
+						subtitle={r.subtitle}
+						books={r.books}
+						overrides={added}
+						canDownload={data.canUpload}
+						onopen={(b) => (open = b)}
+						onadd={quickAdd}
+						ondownload={(b) => (downloading = b)}
+					/>
+				{/each}
+			{/if}
 		{:else}
+			<!-- Yours first: "Because you read…/like…", when there's anything to grow from. -->
+			{#await data.personal then personal}
+				{#each personal as r (r.key)}
+					<BookShelf
+						title={r.title}
+						subtitle={r.subtitle}
+						books={r.books}
+						overrides={added}
+						canDownload={data.canUpload}
+						onopen={(b) => (open = b)}
+						onadd={quickAdd}
+						ondownload={(b) => (downloading = b)}
+					/>
+				{/each}
+			{/await}
 			{#await data.rails}
 				{#each Array(3) as _, g (g)}
 					<section class="skshelf">
@@ -223,6 +295,15 @@
 	main { padding: 6px 0 calc(var(--tabbar-footprint) + 24px); }
 
 	.search { padding: 0 var(--gutter); margin-bottom: 18px; }
+	/* Genre chips, as TV/Movies' mood chips: padding inside the scroller so they
+	   sit level with the headings but scroll to the screen edge. */
+	.chips { display: flex; gap: 6px; margin: -8px 0 20px; overflow-x: auto; padding: 0 var(--gutter) 2px; scrollbar-width: none; }
+	.chips::-webkit-scrollbar { display: none; }
+	.chips button {
+		flex: none; min-height: 34px; padding: 0 13px; border-radius: 9px;
+		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
+	}
+	.chips button.on { background: var(--signal); color: #fff; }
 
 	.skshelf { display: flex; flex-direction: column; gap: 10px; padding: 0 var(--gutter); margin-bottom: 26px; }
 	.skrail { display: grid; grid-template-columns: repeat(4, 110px); gap: 12px; overflow: hidden; }

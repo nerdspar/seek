@@ -172,3 +172,86 @@ export async function bookDetail(id: number): Promise<BookDetail | null> {
 	detailCache.set(String(id), detail);
 	return detail;
 }
+
+/* ── Genres, authors and series — for the genre chips and "because you…" ───── */
+
+/** The genre chips on Discover → Books (Hardcover's genre tags). */
+export const BOOK_GENRES = [
+	'Fantasy',
+	'Science Fiction',
+	'Romance',
+	'Mystery',
+	'Thriller',
+	'Horror',
+	'Historical Fiction',
+	'Literary Fiction',
+	'Young Adult',
+	'Nonfiction',
+	'Biography',
+	'History',
+	'Self Help',
+	'Graphic Novels'
+];
+
+const GENRE_QUERY = `query Genre($genre: jsonb!, $since: Int!) {
+  popular: books(where: {cached_tags: {_contains: $genre}, users_count: {_gte: 20}}, order_by: {users_count: desc}, limit: 30) { ${BOOK_FIELDS} }
+  recent: books(where: {cached_tags: {_contains: $genre}, release_year: {_gte: $since}, users_count: {_gte: 10}}, order_by: {users_count: desc}, limit: 30) { ${BOOK_FIELDS} }
+}`;
+
+const genreCache = new TTLCache<{ popular: BookCard[]; recent: BookCard[] }>(6 * 60 * 60 * 1000, 60);
+
+/** The most-read books in a genre, of all time and of the last couple of years. */
+export async function genreBooks(genre: string, now = new Date()): Promise<{ popular: BookCard[]; recent: BookCard[] }> {
+	const key = `${genre.toLowerCase()}:${now.getFullYear()}`;
+	const hit = genreCache.get(key);
+	if (hit) return hit;
+	const data = await hc<{ popular: unknown[]; recent: unknown[] }>(GENRE_QUERY, {
+		genre: { Genre: [{ tag: genre }] },
+		since: now.getFullYear() - 2
+	});
+	const out = { popular: clean(data.popular.map(mapHardcoverBook)), recent: clean(data.recent.map(mapHardcoverBook)) };
+	genreCache.set(key, out);
+	return out;
+}
+
+const AUTHOR_QUERY = `query Author($name: String!) {
+  books(where: {contributions: {author: {name: {_eq: $name}}}, users_count: {_gt: 10}}, order_by: {users_count: desc}, limit: 25) { ${BOOK_FIELDS} }
+}`;
+const authorCache = new TTLCache<BookCard[]>(12 * 60 * 60 * 1000, 200);
+
+/** An author's best-read books. */
+export async function authorBooks(name: string): Promise<BookCard[]> {
+	const key = name.toLowerCase();
+	const hit = authorCache.get(key);
+	if (hit) return hit;
+	const data = await hc<{ books: unknown[] }>(AUTHOR_QUERY, { name });
+	const out = clean(data.books.map(mapHardcoverBook));
+	authorCache.set(key, out);
+	return out;
+}
+
+const SERIES_OF = `query SeriesOf($id: Int!) { book_series(where: {book_id: {_eq: $id}}, limit: 1) { position series_id } }`;
+const SERIES_AFTER = `query SeriesAfter($series: Int!, $after: float8!) {
+  book_series(where: {series_id: {_eq: $series}, position: {_gt: $after}}, order_by: {position: asc}, limit: 12) {
+    position
+    book { id title rating release_year users_count cached_contributors image { url } }
+  }
+}`;
+const seriesCache = new TTLCache<BookCard[]>(12 * 60 * 60 * 1000, 200);
+
+/** The books that come after this one in its series, in order (none when it
+ *  isn't in one). */
+export async function seriesAfter(hardcoverId: number): Promise<BookCard[]> {
+	const key = String(hardcoverId);
+	const hit = seriesCache.get(key);
+	if (hit) return hit;
+	const of = await hc<{ book_series: { position: number | null; series_id: number }[] }>(SERIES_OF, { id: hardcoverId });
+	const link = of.book_series[0];
+	let out: BookCard[] = [];
+	if (link && link.position != null) {
+		const data = await hc<{ book_series: { book: unknown }[] }>(SERIES_AFTER, { series: link.series_id, after: link.position });
+		out = clean(data.book_series.map((r) => mapHardcoverBook(r.book)));
+	}
+	seriesCache.set(key, out);
+	return out;
+}

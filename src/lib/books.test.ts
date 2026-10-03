@@ -26,6 +26,9 @@ import {
 	mapReleaseSearch,
 	pickBestRelease,
 	emptySearchReason,
+	recommendationSeeds,
+	favoriteGenres,
+	notYours,
 	type BookEntry,
 	type MyBook,
 	mapBookRequest,
@@ -467,5 +470,35 @@ describe('release search', () => {
 		expect(emptySearchReason(s({ releases: [rel({ profileMismatch: { failures: [] } })], indexers: [{ ok: true }] }))).toMatch(
 			/none fit your release profile/
 		);
+	});
+});
+
+describe('what recommendations grow from', () => {
+	const lib = [
+		owned(1, 'read', 'Mistborn', 'Brandon Sanderson', 5, { rating: 5, genres: ['Fantasy'], readStatus: { status: 'read', finishedAt: '2026-01-01T00:00:00Z' } }),
+		owned(2, 'read', 'Dune', 'Frank Herbert', 6, { rating: 2, genres: ['Science Fiction'], readStatus: { status: 'read', finishedAt: '2026-09-01T00:00:00Z' } }),
+		owned(3, 'reading', 'Piranesi', 'Susanna Clarke', 7, { genres: ['Fantasy'] }),
+		owned(4, 'unread', 'Unopened', 'X', 8, { genres: ['Horror', 'Horror'] })
+	];
+	const books = myBooks(lib, [entry(9, 'Loved paper copy', { status: 'reading', myRating: 5 })]);
+
+	it('grows from what you finished or loved, loved first', () => {
+		// Both loved: the more recently active one leads; the 2-star read comes last.
+		expect(recommendationSeeds(books).map((b) => b.title)).toEqual(['Loved paper copy', 'Mistborn', 'Dune']);
+	});
+
+	it('weights genres by your ratings, ignoring books you have not started', () => {
+		expect(favoriteGenres(books)).toEqual(['Fantasy', 'Science Fiction']);
+		// Genres looked up from Hardcover count too — a 5-star book's weigh most.
+		expect(favoriteGenres(books, new Map([['hc:9', ['Romance', 'Romance']]]), 1)).toEqual(['Romance']);
+	});
+
+	it('never recommends something you already have', () => {
+		const cards = [
+			{ hardcoverId: 5, title: 'Mistborn', author: 'Brandon Sanderson', coverUrl: null, year: null, rating: null },
+			{ hardcoverId: 50, title: 'The Way of Kings', author: 'Brandon Sanderson', coverUrl: null, year: null, rating: null },
+			{ hardcoverId: 51, title: 'Unopened', author: 'X', coverUrl: null, year: null, rating: null }
+		];
+		expect(notYours(cards, books).map((c) => c.hardcoverId)).toEqual([50]);
 	});
 });

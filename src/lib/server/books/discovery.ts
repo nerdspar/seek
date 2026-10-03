@@ -3,9 +3,21 @@
  * BookOrbit says whether you own it and where you are in it. Kept apart from
  * both clients so each stays about one service.
  */
-import { arrivedEntries, bookKey, type BookCard, type BookRail, type EntryStatus, type ReadingBook } from '$lib/books';
+import {
+	arrivedEntries,
+	bookKey,
+	favoriteGenres,
+	myBooks,
+	notYours,
+	recommendationSeeds,
+	type BookCard,
+	type BookRail,
+	type EntryStatus,
+	type ReadingBook
+} from '$lib/books';
 import { bookorbitLinked, getAllBooks, setBookRating, setReadStatus } from './bookorbit';
-import { searchBooks } from './hardcover';
+import { authorBooks, bookDetail, genreBooks, searchBooks, seriesAfter } from './hardcover';
+import { memo } from '../memo';
 import { entryStatuses, listEntries, removeEntry } from './entries';
 
 /** What the UI needs to badge a discovery card you already own. */
@@ -115,3 +127,73 @@ export async function settleArrivals(library: ReadingBook[]): Promise<ReadingBoo
 	}
 	return library.map((b) => updated.get(b.id) ?? b);
 }
+
+/* ── Personal shelves: "Because you read …" / "Because you like …" ───────────── */
+
+/**
+ * Recommendations grown from your own reading:
+ * - "Because you read <book>": what comes next in its series, then more by its
+ *   author — for your most-loved, most recent finishes;
+ * - "Because you like <genre>": the most-read recent books in the genres you
+ *   read most (genres from BookOrbit, or Hardcover for books it hasn't tagged).
+ * Nothing you already have is recommended. Cached per person for a few hours;
+ * empty (not an error) when there's nothing to grow from yet.
+ */
+export function personalRails(): Promise<BookRail[]> {
+	return memo('books:personal', 6 * 60 * 60 * 1000, buildPersonalRails);
+}
+
+async function buildPersonalRails(): Promise<BookRail[]> {
+	const library = bookorbitLinked() ? await getAllBooks().catch(() => []) : [];
+	const books = myBooks(library, listEntries());
+	const seeds = recommendationSeeds(books);
+	if (!seeds.length) return [];
+
+	// A Hardcover id for each seed (BookOrbit may not have matched it yet).
+	const withIds = await Promise.all(
+		seeds.map(async (b) => ({ book: b, id: b.hardcoverId ?? (await matchHardcover(b.title, b.authors[0] ?? null).catch(() => null)) }))
+	);
+
+	const rails: BookRail[] = [];
+	const used = new Set<number>();
+	const authorsUsed = new Set<string>();
+	for (const { book, id } of withIds) {
+		if (rails.length >= 2) break;
+		const author = book.authors[0];
+		if (author && authorsUsed.has(author.toLowerCase())) continue;
+		const [next, byAuthor] = await Promise.all([
+			id ? seriesAfter(id).catch(() => []) : Promise.resolve([] as BookCard[]),
+			author ? authorBooks(author).catch(() => []) : Promise.resolve([] as BookCard[])
+		]);
+		const picks = notYours([...next, ...byAuthor], books).filter((c) => c.hardcoverId !== id && !used.has(c.hardcoverId));
+		const unique = picks.filter((c, i) => picks.findIndex((x) => x.hardcoverId === c.hardcoverId) === i).slice(0, 15);
+		if (unique.length < 3) continue;
+		unique.forEach((c) => used.add(c.hardcoverId));
+		if (author) authorsUsed.add(author.toLowerCase());
+		rails.push({
+			key: `read-${book.key}`,
+			title: `Because you read ${book.title}`,
+			subtitle: next.length ? 'What comes next, and more by the same author.' : `More by ${author}.`,
+			books: unique
+		});
+	}
+
+	// Genres: BookOrbit's when it has them, else Hardcover's for the seeds.
+	const extra = new Map<string, string[]>();
+	await Promise.all(
+		withIds.map(async ({ book, id }) => {
+			if (book.genres.length || !id) return;
+			const d = await bookDetail(id).catch(() => null);
+			if (d?.genres.length) extra.set(book.key, d.genres);
+		})
+	);
+	for (const genre of favoriteGenres(books, extra)) {
+		const { recent, popular } = await genreBooks(genre).catch(() => ({ recent: [], popular: [] }));
+		const picks = notYours([...recent, ...popular], books).filter((c) => !used.has(c.hardcoverId)).slice(0, 15);
+		if (picks.length < 3) continue;
+		picks.forEach((c) => used.add(c.hardcoverId));
+		rails.push({ key: `genre-${genre}`, title: `Because you like ${genre}`, subtitle: `Readers' favourites in ${genre}, newest first.`, books: picks });
+	}
+	return rails;
+}
+

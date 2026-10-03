@@ -2,12 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BookCard, ReadingBook } from '$lib/books';
 
 const searchBooks = vi.fn();
-vi.mock('./hardcover', () => ({ searchBooks: (...a: unknown[]) => searchBooks(...a) }));
+const authorBooks = vi.fn();
+const seriesAfter = vi.fn();
+const genreBooks = vi.fn();
+const bookDetail = vi.fn();
+vi.mock('./hardcover', () => ({
+	searchBooks: (...a: unknown[]) => searchBooks(...a),
+	authorBooks: (...a: unknown[]) => authorBooks(...a),
+	seriesAfter: (...a: unknown[]) => seriesAfter(...a),
+	genreBooks: (...a: unknown[]) => genreBooks(...a),
+	bookDetail: (...a: unknown[]) => bookDetail(...a)
+}));
+let library: ReadingBook[] = [];
 const setReadStatus = vi.fn();
 const setBookRating = vi.fn();
 vi.mock('./bookorbit', () => ({
 	bookorbitLinked: () => true,
-	getAllBooks: async () => [],
+	getAllBooks: async () => library,
 	setReadStatus: (...a: unknown[]) => setReadStatus(...a),
 	setBookRating: (...a: unknown[]) => setBookRating(...a)
 }));
@@ -20,7 +31,8 @@ vi.mock('./entries', () => ({
 	removeEntry: (id: number) => removeEntry(id)
 }));
 
-import { markOwned, indexLibrary, matchHardcover, settleArrivals } from './discovery';
+import { markOwned, indexLibrary, matchHardcover, settleArrivals, personalRails } from './discovery';
+import { invalidateEveryone } from '../memo';
 
 const card = (id: number, title = `B${id}`, author: string | null = null): BookCard => ({
 	hardcoverId: id,
@@ -123,5 +135,36 @@ describe('settleArrivals', () => {
 		const lib = [mine({ id: 10, title: 'Hyperion', status: 'unread' })];
 		expect(await settleArrivals(lib)).toBe(lib);
 		expect(setReadStatus).not.toHaveBeenCalled();
+	});
+});
+
+describe('personalRails', () => {
+	beforeEach(() => {
+		invalidateEveryone('books:personal');
+		wishes = [];
+		for (const m of [authorBooks, seriesAfter, genreBooks, bookDetail]) m.mockReset();
+	});
+	const c = (id: number, title = `B${id}`, author = 'Brandon Sanderson') => card(id, title, author);
+
+	it('recommends the next in the series and more by the author, then your genre — never what you have', async () => {
+		library = [
+			mine({ id: 1, title: 'Mistborn', authors: ['Brandon Sanderson'], status: 'read', rating: 5, hardcoverId: 100, genres: ['Fantasy'] } as never),
+			mine({ id: 2, title: 'The Well of Ascension', authors: ['Brandon Sanderson'], status: 'unread', hardcoverId: 101 } as never)
+		];
+		seriesAfter.mockResolvedValue([c(101, 'The Well of Ascension'), c(102, 'The Hero of Ages')]);
+		authorBooks.mockResolvedValue([c(100, 'Mistborn'), c(103), c(104), c(105)]);
+		genreBooks.mockResolvedValue({ recent: [c(200, 'Fourth Wing', 'Rebecca Yarros'), c(201, 'X', 'Y'), c(202, 'Z', 'W')], popular: [c(103)] });
+
+		const rails = await personalRails();
+		expect(rails.map((r) => r.title)).toEqual(['Because you read Mistborn', 'Because you like Fantasy']);
+		expect(rails[0].books.map((b) => b.hardcoverId)).toEqual([102, 103, 104, 105]);
+		expect(rails[1].books.map((b) => b.hardcoverId)).toEqual([200, 201, 202]);
+		expect(seriesAfter).toHaveBeenCalledWith(100);
+	});
+
+	it('is empty (not an error) when you have not finished anything yet', async () => {
+		library = [mine({ id: 1, status: 'reading' })];
+		expect(await personalRails()).toEqual([]);
+		expect(authorBooks).not.toHaveBeenCalled();
 	});
 });
