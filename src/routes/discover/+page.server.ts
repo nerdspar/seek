@@ -2,6 +2,7 @@ import { getDiscoverRows } from '$lib/server/discover';
 import { memo } from '$lib/server/memo';
 import { DEFAULT_PRESET_LABELS, getProviders, tmdbConfigured } from '$lib/server/tmdb';
 import { getPrefs } from '$lib/server/prefs';
+import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import { knownServices, normaliseService } from '$lib/server/watchlist';
 import type { MediaType } from '$lib/types';
 import type { PageServerLoad } from './$types';
@@ -39,6 +40,8 @@ export const load: PageServerLoad = async ({ url }) => {
 	});
 
 	return {
+		// The Books segment: your setting, and Hardcover to discover from.
+		books: prefs.booksEnabled && hardcoverConfigured(),
 		mediaType,
 		query,
 		presets,

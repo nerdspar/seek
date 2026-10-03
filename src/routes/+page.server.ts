@@ -3,6 +3,7 @@ import { memo } from '$lib/server/memo';
 import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import { type Company, type AnimeFilter, animeTagQuery } from '$lib/server/tags';
 import { jellyfinConfigured } from '$lib/server/jellyfin';
+import { bookorbitConfigured } from '$lib/server/books/bookorbit';
 import type { MediaType } from '$lib/types';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -78,6 +79,8 @@ export const load: PageServerLoad = async ({ url }) => {
 	);
 
 	return {
+		// The Books segment: your setting, and a BookOrbit to read from.
+		books: prefs.booksEnabled && bookorbitConfigured(),
 		mediaType,
 		sortKey,
 		filters,

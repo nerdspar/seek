@@ -4,8 +4,94 @@ import {
 	normalizeProgress,
 	mapReadingBook,
 	mapHardcoverBook,
-	mapHardcoverHit
+	mapHardcoverHit,
+	mapHardcoverDetail,
+	groupReading,
+	statusLabel,
+	normTitle,
+	bookKey,
+	coverThumb
 } from './books';
+
+describe('coverThumb', () => {
+	it('routes both cover sources through the thumbnailer at 2x', () => {
+		expect(coverThumb('/api/books/cover/17', 52)).toBe('/api/books/cover/17?w=104');
+		expect(coverThumb('https://assets.hardcover.app/edition/1/x.jpg', 110)).toBe(
+			'/api/books/img?u=https%3A%2F%2Fassets.hardcover.app%2Fedition%2F1%2Fx.jpg&w=220'
+		);
+		expect(coverThumb('https://example.com/x.jpg', 110)).toBe('https://example.com/x.jpg');
+		expect(coverThumb(null, 110)).toBeNull();
+	});
+});
+
+describe('bookKey matching', () => {
+	it('ignores case, punctuation, subtitles, series suffixes and leading articles', () => {
+		expect(normTitle("14th Deadly Sin: (Women's Murder Club 14)")).toBe('14th deadly sin');
+		expect(normTitle('The Hobbit, or There and Back Again')).toBe('hobbit or there and back again');
+		expect(normTitle('Dune: Deluxe Edition')).toBe('dune');
+		expect(bookKey('The Way of Kings', 'Brandon Sanderson')).toBe(bookKey('Way of Kings (Stormlight 1)', 'brandon  sanderson'));
+	});
+	it('keeps different books and different authors apart', () => {
+		expect(bookKey('Dune', 'Frank Herbert')).not.toBe(bookKey('Dune Messiah', 'Frank Herbert'));
+		expect(bookKey('Dune', 'Frank Herbert')).not.toBe(bookKey('Dune', 'Brian Herbert'));
+	});
+});
+
+describe('groupReading', () => {
+	const b = (id: number, status: string) => mapReadingBook({ id, title: `B${id}`, readStatus: { status } });
+	it('sections the list in reading order, leaving out unread library books and empty sections', () => {
+		const groups = groupReading([b(1, 'read'), b(2, 'reading'), b(3, 'unread'), b(4, 'rereading'), b(5, 'want_to_read')]);
+		expect(groups.map((g) => [g.title, g.books.map((x) => x.id)])).toEqual([
+			['Reading', [2, 4]],
+			['Want to read', [5]],
+			['Read', [1]]
+		]);
+	});
+	it('labels statuses for people', () => {
+		expect(statusLabel('abandoned')).toBe('Did not finish');
+		expect(statusLabel('unread')).toBe('In your library');
+	});
+});
+
+describe('mapHardcoverDetail', () => {
+	it('adds description, deduped genres/moods and the series to the card', () => {
+		const d = mapHardcoverDetail({
+			id: 7,
+			title: 'The Way of Kings',
+			subtitle: null,
+			description: 'Roshar is a world of stone and storms.',
+			pages: 1007,
+			rating: 4.6,
+			ratings_count: 9000,
+			users_count: 20000,
+			release_year: 2010,
+			image: { url: 'https://assets.hardcover.app/wok.jpg' },
+			cached_contributors: [{ author: { name: 'Brandon Sanderson' }, primary: true }],
+			cached_tags: {
+				Genre: [{ tag: 'Fantasy' }, { tag: 'fantasy' }, { tag: 'Epic Fantasy' }],
+				Mood: [{ tag: 'adventurous' }]
+			},
+			book_series: [{ position: 1, series: { name: 'The Stormlight Archive' } }]
+		});
+		expect(d).toMatchObject({
+			hardcoverId: 7,
+			author: 'Brandon Sanderson',
+			description: 'Roshar is a world of stone and storms.',
+			pages: 1007,
+			readers: 20000,
+			genres: ['Fantasy', 'Epic Fantasy'],
+			moods: ['adventurous'],
+			series: { name: 'The Stormlight Archive', position: 1 }
+		});
+	});
+
+	it('copes with no tags and no series', () => {
+		const d = mapHardcoverDetail({ id: 1, title: 'X' });
+		expect(d.genres).toEqual([]);
+		expect(d.series).toBeNull();
+		expect(d.description).toBeNull();
+	});
+});
 
 describe('authorNames', () => {
 	it('accepts plain strings (BookOrbit) and {name} objects', () => {

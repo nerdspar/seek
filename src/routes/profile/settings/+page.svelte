@@ -440,6 +440,25 @@
 		{/if}
 	</section>
 
+	{#if data.booksAvailable}
+		<h2 class="group">Books</h2>
+
+		<section>
+			<button
+				class="row"
+				role="switch"
+				aria-checked={local.booksEnabled}
+				onclick={() => patch({ booksEnabled: !local.booksEnabled })}
+			>
+				<span class="rowtext">
+					<span class="label">Books</span>
+					<span class="hint">A Books segment in Watchlist and Discover</span>
+				</span>
+				<span class="toggle" class:on={local.booksEnabled}><span class="knob"></span></span>
+			</button>
+		</section>
+	{/if}
+
 	<h2 class="group">Notifications</h2>
 
 	<section>

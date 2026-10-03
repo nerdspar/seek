@@ -450,6 +450,11 @@
 					onclick={() => onsegment(seg.id)}>{seg.label}</button
 				>
 			{/each}
+			<!-- Books live on their own page (BookOrbit, not Floppy) but read as a
+			     third segment of the same list. -->
+			{#if data.books}
+				<button role="tab" aria-selected="false" onclick={() => goto('/books', { noScroll: true })}>Books</button>
+			{/if}
 		</div>
 
 		<button class="sort" onclick={() => (sortOpen = true)} aria-label="Sort">

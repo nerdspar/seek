@@ -1,0 +1,178 @@
+<script lang="ts">
+	import Sheet from './Sheet.svelte';
+	import Poster from './Poster.svelte';
+	import Skeleton from './Skeleton.svelte';
+	import { coverThumb, statusLabel, type BookCard, type BookDetail, type ReadingBook } from '$lib/books';
+
+	/** A book's sheet. Opened from the reading list (`library`: your copy in
+	 *  BookOrbit) or from Discover (`card`: a Hardcover result). Either way, when
+	 *  the book has a Hardcover id the sheet fills in the description, genres and
+	 *  series from Hardcover. Read-only for now. */
+	type Owned = { bookId: number; status: ReadingBook['status']; progress: number | null };
+	type Props = {
+		hardcoverId: number | null;
+		library?: ReadingBook | null;
+		card?: (BookCard & { owned?: Owned | null }) | null;
+		onclose: () => void;
+	};
+	let { hardcoverId, library = null, card = null, onclose }: Props = $props();
+
+	let detail = $state<(BookDetail & { owned: Owned | null }) | null>(null);
+	let loading = $state(false);
+	let failed = $state(false);
+
+	/* The Hardcover id: given, or — for a library book BookOrbit hasn't matched
+	   yet — looked up by exact title + author (null when it can't be sure). */
+	let matchedId = $state<number | null>(null);
+	const resolvedId = $derived(hardcoverId ?? matchedId);
+
+	$effect(() => {
+		if (hardcoverId || !library) return;
+		let cancelled = false;
+		loading = true;
+		const params = new URLSearchParams({ title: library.title });
+		if (library.authors[0]) params.set('author', library.authors[0]);
+		fetch(`/api/books/match?${params}`)
+			.then((r) => (r.ok ? r.json() : { hardcoverId: null }))
+			.then((b) => {
+				if (cancelled) return;
+				matchedId = b.hardcoverId ?? null;
+				// No match: nothing more to load.
+				if (!matchedId) loading = false;
+			})
+			.catch(() => !cancelled && (loading = false));
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	$effect(() => {
+		const id = resolvedId;
+		if (!id) return;
+		let cancelled = false;
+		loading = true;
+		failed = false;
+		fetch(`/api/books/detail/${id}`)
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((d) => !cancelled && (detail = d))
+			.catch(() => !cancelled && (failed = true))
+			.finally(() => !cancelled && (loading = false));
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	/* What we know immediately (from where it was tapped) vs. what the detail adds. */
+	const title = $derived(detail?.title ?? library?.title ?? card?.title ?? '');
+	const authors = $derived(
+		library?.authors.length ? library.authors.join(', ') : (detail?.author ?? card?.author ?? null)
+	);
+	const cover = $derived(library?.coverUrl ?? detail?.coverUrl ?? card?.coverUrl ?? null);
+	const year = $derived(library?.year ?? detail?.year ?? card?.year ?? null);
+	const pages = $derived(library?.pageCount ?? detail?.pages ?? null);
+	const rating = $derived(detail?.rating ?? card?.rating ?? null);
+	const series = $derived(
+		detail?.series ??
+			(library?.seriesName ? { name: library.seriesName, position: library.seriesIndex } : null)
+	);
+
+	/* Your copy: from the reading list directly, or the ownership Discover found. */
+	const mine = $derived(
+		library
+			? { status: library.status, progress: library.progress }
+			: (detail?.owned ?? card?.owned ?? null)
+	);
+
+	let expanded = $state(false);
+	const pct = (p: number) => `${Math.round(p * 100)}%`;
+</script>
+
+<Sheet label={title || 'Book'} {onclose} scrollable>
+	<div class="pad">
+		<div class="hero">
+			<Poster src={coverThumb(cover, 96)} width={96} height={144} radius={8} eager />
+			<div class="facts">
+				<h2>{title}</h2>
+				{#if authors}<p class="by">{authors}</p>{/if}
+				<p class="meta tnum">
+					{[year, pages ? `${pages} pages` : null, rating ? `★ ${rating.toFixed(1)}` : null]
+						.filter(Boolean)
+						.join(' · ')}
+				</p>
+				{#if series}
+					<p class="series">{series.name}{series.position ? ` · Book ${series.position}` : ''}</p>
+				{/if}
+			</div>
+		</div>
+
+		{#if mine}
+			<div class="mine">
+				<span class="status">{statusLabel(mine.status)}</span>
+				{#if mine.progress !== null && mine.progress > 0}
+					<span class="track"><span class="fill" style:width={pct(mine.progress)}></span></span>
+					<span class="pct tnum">{pct(mine.progress)}</span>
+				{/if}
+			</div>
+		{:else if hardcoverId}
+			<p class="notowned">Not in your library yet.</p>
+		{/if}
+
+		{#if resolvedId || loading}
+			{#if loading && !detail}
+				<div class="sk"><Skeleton height="13px" /><Skeleton width="92%" height="13px" /><Skeleton width="70%" height="13px" /></div>
+			{:else if detail}
+				{#if detail.genres.length}
+					<div class="tags">
+						{#each detail.genres as g (g)}<span class="tag">{g}</span>{/each}
+					</div>
+				{/if}
+				{#if detail.description}
+					<p class="desc" class:clamped={!expanded}>{detail.description}</p>
+					{#if detail.description.length > 280}
+						<button class="more" onclick={() => (expanded = !expanded)}>{expanded ? 'Less' : 'More'}</button>
+					{/if}
+				{/if}
+				{#if detail.readers}
+					<p class="readers tnum">
+						{detail.readers.toLocaleString()} readers on Hardcover{detail.ratingsCount
+							? ` · ${detail.ratingsCount.toLocaleString()} ratings`
+							: ''}
+					</p>
+				{/if}
+			{:else if failed}
+				<p class="notowned">Couldn't load more about this book from Hardcover.</p>
+			{/if}
+		{/if}
+	</div>
+</Sheet>
+
+<style>
+	.pad { padding: 4px var(--gutter) 8px; }
+	.hero { display: flex; gap: 14px; align-items: flex-start; }
+	.facts { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+	h2 { margin: 0; font-size: 19px; font-weight: 650; line-height: 1.25; letter-spacing: -0.01em; }
+	.by { margin: 0; font-size: 14px; color: var(--text); }
+	.meta, .series { margin: 0; font-size: 12.5px; color: var(--text-dim); }
+
+	.mine {
+		display: flex; align-items: center; gap: 10px;
+		margin: 16px 0 4px; padding: 10px 12px;
+		border-radius: var(--radius); background: var(--surface-raised);
+	}
+	.status { flex: none; font-size: 13.5px; font-weight: 650; }
+	.track { flex: 1; height: 5px; border-radius: 3px; background: var(--surface); overflow: hidden; }
+	.fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
+	.pct { flex: none; font-size: 12.5px; color: var(--text-dim); }
+	.notowned { margin: 14px 0 0; font-size: 13px; color: var(--text-dim); }
+
+	.sk { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; }
+	.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+	.tag { padding: 4px 10px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; font-weight: 600; color: var(--text-dim); }
+	.desc { margin: 14px 0 0; font-size: 14.5px; line-height: 1.55; white-space: pre-line; }
+	.desc.clamped {
+		display: -webkit-box; -webkit-line-clamp: 6; line-clamp: 6;
+		-webkit-box-orient: vertical; overflow: hidden;
+	}
+	.more { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
+	.readers { margin: 14px 0 0; font-size: 12px; color: var(--text-dim); }
+</style>

@@ -94,23 +94,51 @@ describe('bookorbit client', () => {
 		await expect(bo.getReadingGoal()).rejects.toThrow(/login failed/);
 	});
 
-	it('pages through the library and filters by status in Seek', async () => {
+	it('pages through the library (BookOrbit pagination shape) and filters by status in Seek', async () => {
 		const fetchMock = vi
 			.fn()
 			.mockResolvedValueOnce(json(LOGIN))
 			.mockResolvedValueOnce(json({ items: [book(1, 'reading'), book(2, 'read')], total: 3 }))
-			.mockResolvedValueOnce(json({ items: [book(3, 'want_to_read')] }));
+			.mockResolvedValueOnce(json({ items: [book(3, 'want_to_read')], total: 3 }));
 		vi.stubGlobal('fetch', fetchMock);
 		const bo = await load();
 
 		const reading = await bo.getReadingList(['reading', 'want_to_read']);
 		expect(reading.map((b) => b.id)).toEqual([1, 3]);
-		// Second page requested with page: 2.
-		expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ limit: 500, page: 2 });
+		// 0-based pages under `pagination` — anything else BookOrbit silently ignores.
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ pagination: { page: 0, size: 200 } });
+		expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ pagination: { page: 1, size: 200 } });
 
 		// Cached: no further fetches for another view of the same list.
 		expect((await bo.getReadingList()).length).toBe(3);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+});
+
+describe('bookorbit paging guard', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	it('never returns the same book twice when pages overlap', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockResolvedValueOnce(json(LOGIN))
+				.mockResolvedValueOnce(json({ items: [book(1, 'read'), book(2, 'read')], total: 3 }))
+				.mockResolvedValueOnce(json({ items: [book(2, 'read'), book(3, 'read')], total: 3 }))
+		);
+		const bo = await load();
+		expect((await bo.getAllBooks()).map((b) => b.id)).toEqual([1, 2, 3]);
 	});
 });
 

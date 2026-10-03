@@ -7,6 +7,7 @@ import { householdName, linkedStatus, listMembers, listPendingInvites } from '$l
 import { mailConfigured } from '$lib/server/mail';
 import { tokenKeyConfigured } from '$lib/server/crypto';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
+import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import type { PageServerLoad } from './$types';
 
 /* Awaited rather than streamed. Preferences are a single small read and the
@@ -26,6 +27,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		/* The commit this build came from (CI stamps it; "dev" locally), so the
 		   deployed version is visible at a glance. */
 		build: env.SEEK_BUILD_SHA || 'dev',
+		// Offer the Books toggle only where there's something to show.
+		booksAvailable: bookorbitConfigured() || hardcoverConfigured(),
 		account: {
 			me,
 			mail: mailConfigured(),

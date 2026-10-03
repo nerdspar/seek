@@ -94,7 +94,11 @@ async function bo<T>(path: string, init: ReqInit = {}): Promise<T> {
    person's statuses differ); a reading change on a device shows up on the next
    refresh. */
 const listCache = new TTLCache<ReadingBook[]>(60_000);
-const PAGE = 500;
+/* BookOrbit's /books/query takes `pagination: { page (0-based), size ≤ 200 }`
+   and silently strips any other key (verified against its zod schema — `limit`
+   and a top-level `page` are ignored, which returns page 0 every time). */
+const PAGE_SIZE = 200;
+const MAX_PAGES = 50;
 
 /** Every owned book as a reading-list row, with *this person's* status. */
 export async function getAllBooks(): Promise<ReadingBook[]> {
@@ -102,22 +106,22 @@ export async function getAllBooks(): Promise<ReadingBook[]> {
 	const hit = listCache.get(key);
 	if (hit) return hit;
 
-	const first = await bo<{ items: unknown[]; total: number }>('/books/query', {
-		method: 'POST',
-		body: { limit: PAGE, page: 1 }
-	});
-	const items = [...first.items];
-	// Page through if the library is larger than one page.
-	for (let page = 2; items.length < first.total && page < 50; page++) {
-		const next = await bo<{ items: unknown[] }>('/books/query', {
+	const items: unknown[] = [];
+	let total = Infinity;
+	for (let page = 0; items.length < total && page < MAX_PAGES; page++) {
+		const res = await bo<{ items: unknown[]; total: number }>('/books/query', {
 			method: 'POST',
-			body: { limit: PAGE, page }
+			body: { pagination: { page, size: PAGE_SIZE } }
 		});
-		if (!next.items.length) break;
-		items.push(...next.items);
+		total = res.total;
+		if (!res.items.length) break;
+		items.push(...res.items);
 	}
 
-	const rows = items.map(mapReadingBook);
+	/* A book added or removed mid-fetch can shift the pages; never hand the UI
+	   the same book twice. */
+	const seen = new Set<number>();
+	const rows = items.map(mapReadingBook).filter((b) => !seen.has(b.id) && seen.add(b.id));
 	listCache.set(key, rows);
 	return rows;
 }

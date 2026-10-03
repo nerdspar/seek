@@ -48,6 +48,96 @@ export type BookCard = {
 	rating: number | null;
 };
 
+/** A discovery shelf (Popular this year, New releases, …). */
+export type BookRail = { key: string; title: string; subtitle: string; books: BookCard[] };
+
+/** Everything the book sheet shows about a Hardcover book. */
+export type BookDetail = BookCard & {
+	subtitle: string | null;
+	description: string | null;
+	pages: number | null;
+	ratingsCount: number | null;
+	/** How many Hardcover readers have it on a shelf — a popularity signal. */
+	readers: number | null;
+	genres: string[];
+	moods: string[];
+	series: { name: string; position: number | null } | null;
+};
+
+const STATUS_LABELS: Record<BookReadStatus, string> = {
+	unread: 'In your library',
+	want_to_read: 'Want to read',
+	reading: 'Reading',
+	on_hold: 'On hold',
+	rereading: 'Rereading',
+	read: 'Read',
+	skimmed: 'Skimmed',
+	abandoned: 'Did not finish'
+};
+
+export const statusLabel = (s: BookReadStatus) => STATUS_LABELS[s];
+
+/** The reading list's sections, in order. Books you own but haven't started
+ *  ("unread") aren't a section — they're the library, browsed separately. */
+export const READING_SECTIONS: { title: string; statuses: BookReadStatus[] }[] = [
+	{ title: 'Reading', statuses: ['reading', 'rereading'] },
+	{ title: 'Want to read', statuses: ['want_to_read'] },
+	{ title: 'On hold', statuses: ['on_hold'] },
+	{ title: 'Read', statuses: ['read', 'skimmed'] },
+	{ title: 'Did not finish', statuses: ['abandoned'] }
+];
+
+/** Group a library into the reading list's sections (empty ones dropped). */
+export function groupReading(
+	books: ReadingBook[]
+): { title: string; books: ReadingBook[] }[] {
+	return READING_SECTIONS.map((s) => ({
+		title: s.title,
+		books: books.filter((b) => s.statuses.includes(b.status))
+	})).filter((s) => s.books.length);
+}
+
+/**
+ * The URL to draw a cover at a given CSS width. Covers come from two places,
+ * neither of which serves sized images, so both go through Seek's thumbnailer
+ * (server/images.ts) at 2× for retina: BookOrbit covers via the cover proxy's
+ * `?w=`, Hardcover covers via /api/books/img. Anything else is used as-is.
+ */
+export function coverThumb(url: string | null, cssWidth: number): string | null {
+	if (!url) return null;
+	const w = Math.round(cssWidth * 2);
+	if (url.startsWith('/api/books/cover/')) return `${url}?w=${w}`;
+	if (url.startsWith('https://assets.hardcover.app/')) {
+		return `/api/books/img?u=${encodeURIComponent(url)}&w=${w}`;
+	}
+	return url;
+}
+
+/* ── Matching a library book to a catalog book without an id ─────────────────
+   BookOrbit only records a Hardcover id once it has matched the book, and until
+   then the two sides can only be joined by what the book is called. Normalise
+   both so cosmetic differences don't break the match — case, punctuation, a
+   subtitle after the colon, a "(Series 14)" suffix — while different books stay
+   different. */
+export function normTitle(title: string): string {
+	return title
+		.toLowerCase()
+		.replace(/\(.*?\)|\[.*?\]/g, ' ') // "(Women's Murder Club 14)"
+		.split(/[:–—]/)[0] // "Dune: Deluxe Edition" → "dune"
+		.replace(/^(the|a|an)\s+/, '')
+		.replace(/&/g, 'and')
+		.replace(/[^a-z0-9]+/g, ' ')
+		.trim();
+}
+
+export function normAuthor(author: string | null | undefined): string {
+	return (author ?? '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+}
+
+/** The join key: normalised title + first author. */
+export const bookKey = (title: string, author: string | null | undefined) =>
+	`${normTitle(title)}|${normAuthor(author)}`;
+
 type Raw = Record<string, unknown>;
 const rec = (v: unknown): Raw => (v && typeof v === 'object' ? (v as Raw) : {});
 const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
@@ -120,6 +210,41 @@ export function mapHardcoverBook(raw: unknown): BookCard {
 		coverUrl: str(rec(b.image).url),
 		year: num(b.release_year),
 		rating: num(b.rating)
+	};
+}
+
+/** Tag names from Hardcover's `cached_tags` for one category (Genre, Mood, …),
+ *  deduplicated case-insensitively — the same tag often appears several ways. */
+function tagNames(cached: unknown, category: string, max: number): string[] {
+	const list = rec(cached)[category];
+	if (!Array.isArray(list)) return [];
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const t of list) {
+		const name = str(rec(t).tag);
+		if (!name || seen.has(name.toLowerCase())) continue;
+		seen.add(name.toLowerCase());
+		out.push(name);
+		if (out.length >= max) break;
+	}
+	return out;
+}
+
+/** Map a Hardcover `books_by_pk` result to the book sheet's detail. */
+export function mapHardcoverDetail(raw: unknown): BookDetail {
+	const b = rec(raw);
+	const firstSeries = Array.isArray(b.book_series) ? rec(b.book_series[0]) : {};
+	const seriesName = str(rec(firstSeries.series).name);
+	return {
+		...mapHardcoverBook(raw),
+		subtitle: str(b.subtitle),
+		description: str(b.description),
+		pages: num(b.pages),
+		ratingsCount: num(b.ratings_count),
+		readers: num(b.users_count),
+		genres: tagNames(b.cached_tags, 'Genre', 6),
+		moods: tagNames(b.cached_tags, 'Mood', 4),
+		series: seriesName ? { name: seriesName, position: num(firstSeries.position) } : null
 	};
 }
 

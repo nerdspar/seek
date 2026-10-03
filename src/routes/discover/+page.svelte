@@ -286,6 +286,10 @@
 					onclick={() => { clearMood(); goto(`/discover?type=${seg.id}`, { noScroll: true }); }}
 				>{seg.label}</button>
 			{/each}
+			<!-- Books discovery is its own page (Hardcover, not TMDB/Floppy). -->
+			{#if data.books}
+				<button role="tab" aria-selected="false" onclick={() => goto('/discover/books', { noScroll: true })}>Books</button>
+			{/if}
 		</div>
 	</header>
 

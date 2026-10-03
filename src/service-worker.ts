@@ -85,6 +85,22 @@ sw.addEventListener('fetch', (event) => {
 
 	if (url.origin !== location.origin) return;
 
+	// Book covers (Seek's thumbnails): cache-first. A cover never changes and the
+	// URL carries its size, so once a device has one it never asks again — that
+	// is most of what keeps Discover → Books light on cellular.
+	if (url.pathname === '/api/books/img' || url.pathname.startsWith('/api/books/cover/')) {
+		event.respondWith(
+			caches.open(IMG_CACHE).then(async (cache) => {
+				const hit = await cache.match(request);
+				if (hit) return hit;
+				const res = await fetch(request);
+				if (res.ok) cache.put(request, res.clone()).then(() => cap(IMG_CACHE, IMG_MAX));
+				return res;
+			})
+		);
+		return;
+	}
+
 	// Hashed build assets / static files: cache-first, they never change.
 	if (PRECACHE.includes(url.pathname)) {
 		event.respondWith(caches.match(request).then((hit) => hit ?? fetch(request)));
