@@ -33,11 +33,23 @@ describe('bookorbit client', () => {
 		delete process.env.BOOKORBIT_PASSWORD;
 	});
 
-	it('is configured only with url, user and password', async () => {
+	it('is configured by the URL; linked only with a login', async () => {
 		const bo = await load();
 		expect(bo.bookorbitConfigured()).toBe(true);
+		expect(bo.bookorbitLinked()).toBe(true);
 		delete process.env.BOOKORBIT_PASSWORD;
+		expect(bo.bookorbitLinked()).toBe(false);
+		delete process.env.BOOKORBIT_URL;
 		expect(bo.bookorbitConfigured()).toBe(false);
+	});
+
+	it('without a login, says so instead of calling BookOrbit', async () => {
+		delete process.env.BOOKORBIT_USER;
+		const fetchMock = vi.fn();
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		await expect(bo.getReadingGoal()).rejects.toThrow(/No BookOrbit account linked/);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('logs in once, then reuses the cached token with a Bearer header', async () => {
@@ -99,5 +111,54 @@ describe('bookorbit client', () => {
 		// Cached: no further fetches for another view of the same list.
 		expect((await bo.getReadingList()).length).toBe(3);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+});
+
+describe('bookorbit per person', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.SEEK_TOKEN_KEY = 'k';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.SEEK_TOKEN_KEY;
+	});
+
+	it('logs each person in as themselves and keeps their lists apart', async () => {
+		vi.resetModules();
+		const db = await import('../db');
+		db.useDatabase(db.openDatabase(':memory:'));
+		const users = await import('../users');
+		const ctx = await import('../userctx');
+		const bo = await import('./bookorbit');
+
+		const owner = await users.createOwner({ email: 'o@x.co', name: 'O', password: 'password-1' });
+		const { token } = users.createInvite(owner, 'm@x.co');
+		const member = await users.acceptInvite(token, { name: 'M', password: 'password-2' });
+		users.setBookOrbit(owner.id, { username: 'scott', password: 'pw-s', libraryId: 1 });
+		users.setBookOrbit(member.id, { username: 'wife', password: 'pw-w', libraryId: 1 });
+
+		// Same library, different per-person statuses.
+		const fetchMock = vi.fn(async (url: string, init: { body?: string; headers: Record<string, string> }) => {
+			if (url.endsWith('/auth/login')) {
+				const who = JSON.parse(init.body!).username;
+				return json({ ...LOGIN, accessToken: `tok-${who}` });
+			}
+			const status = init.headers.Authorization === 'Bearer tok-scott' ? 'reading' : 'want_to_read';
+			return json({ items: [book(1, status)], total: 1 });
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const mine = await ctx.runAs(owner, () => bo.getReadingList());
+		const hers = await ctx.runAs(member, () => bo.getReadingList());
+		expect(mine[0].status).toBe('reading');
+		expect(hers[0].status).toBe('want_to_read');
+
+		const logins = fetchMock.mock.calls
+			.filter((c) => String(c[0]).endsWith('/auth/login'))
+			.map((c) => JSON.parse(c[1].body!).username);
+		expect(logins).toEqual(['scott', 'wife']);
+		db.useDatabase(null);
 	});
 });

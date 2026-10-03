@@ -1,47 +1,66 @@
 /**
  * BookOrbit server client — the self-hosted book library/reading backend.
  *
- * Auth is a session (no static API key): we log in once with a service account's
- * username + password, cache the short-lived access token, and re-login when it
- * expires (stateless — simpler and more robust than storing a rotating refresh
- * token). The token never leaves the server.
+ * Per person. Reading status, progress, goals and stats are per-account in
+ * BookOrbit, so Seek calls it *as the signed-in user* with their own login
+ * (userctx.bookorbitLogin — the owner falls back to the env login; a member
+ * never does). Each user gets their own session and their own cached list.
  *
- * Read-only by design for now: Seek only *reads* the library here. Any mutation
- * (status change, grab, upload) will be added deliberately behind its own
- * function — this module must never touch the user's library on its own.
+ * Auth is a session (no static API key): log in, cache the short-lived access
+ * token, re-login when it expires (stateless — simpler and sturdier than storing
+ * a rotating refresh token). Tokens never leave the server.
+ *
+ * Read-only by design for now: any mutation (status change, grab, upload) gets
+ * its own deliberate function — this module never touches a library on its own.
  */
-import { BOOKORBIT_URL, BOOKORBIT_USER, BOOKORBIT_PASSWORD } from '$lib/server/env';
+import { BOOKORBIT_URL } from '$lib/server/env';
 import { TTLCache } from '$lib/server/cache';
+import { bookorbitLogin, scopeId, scopeKey, NotLinkedError, type BookOrbitLogin } from '$lib/server/userctx';
 import { mapReadingBook, type ReadingBook, type BookReadStatus } from '$lib/books';
 
-export const bookorbitConfigured = () =>
-	Boolean(BOOKORBIT_URL() && BOOKORBIT_USER() && BOOKORBIT_PASSWORD());
+/** A BookOrbit instance exists. Whether *this person* is linked is separate. */
+export const bookorbitConfigured = () => Boolean(BOOKORBIT_URL());
+
+/** BookOrbit exists and the current user has a login for it. */
+export const bookorbitLinked = () => bookorbitConfigured() && bookorbitLogin() !== null;
 
 const api = () => `${BOOKORBIT_URL()}/api/v1`;
 
-/* One cached access token for the whole process. Re-login a little before the
-   real expiry so a request never races the cutover. */
-let session: { token: string; exp: number } | null = null;
+/* One cached access token per user. Remembering whose username it was for means
+   a relinked account re-logs in instead of reusing the old session. Re-login a
+   little before the real expiry so a request never races the cutover. */
+type Session = { token: string; exp: number; username: string };
+const sessions = new Map<number, Session>();
 const EXPIRY_SKEW_MS = 30_000;
 
-async function login(): Promise<{ token: string; exp: number }> {
+function myLogin(): BookOrbitLogin {
+	const login = bookorbitLogin();
+	if (!login) throw new NotLinkedError('bookorbit');
+	return login;
+}
+
+async function login(creds: BookOrbitLogin): Promise<Session> {
 	const res = await fetch(`${api()}/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify({ username: BOOKORBIT_USER(), password: BOOKORBIT_PASSWORD() }),
+		body: JSON.stringify({ username: creds.username, password: creds.password }),
 		signal: AbortSignal.timeout(15_000)
 	});
 	if (!res.ok) throw new Error(`BookOrbit login failed: HTTP ${res.status}`);
 	const d = (await res.json()) as { accessToken?: string; accessTokenExpiresAt?: string };
 	if (!d.accessToken) throw new Error('BookOrbit login returned no access token');
 	const exp = d.accessTokenExpiresAt ? new Date(d.accessTokenExpiresAt).getTime() : Date.now() + 60_000;
-	return { token: d.accessToken, exp };
+	return { token: d.accessToken, exp, username: creds.username };
 }
 
 async function accessToken(): Promise<string> {
-	if (session && session.exp - EXPIRY_SKEW_MS > Date.now()) return session.token;
-	session = await login();
-	return session.token;
+	const creds = myLogin();
+	const who = scopeId();
+	const s = sessions.get(who);
+	if (s && s.username === creds.username && s.exp - EXPIRY_SKEW_MS > Date.now()) return s.token;
+	const fresh = await login(creds);
+	sessions.set(who, fresh);
+	return fresh.token;
 }
 
 type ReqInit = { method?: string; body?: unknown; timeoutMs?: number };
@@ -63,7 +82,7 @@ async function bo<T>(path: string, init: ReqInit = {}): Promise<T> {
 
 	let res = await send(await accessToken());
 	if (res.status === 401) {
-		session = null;
+		sessions.delete(scopeId());
 		res = await send(await accessToken());
 	}
 	if (!res.ok) throw new Error(`BookOrbit ${path} -> HTTP ${res.status}`);
@@ -71,15 +90,16 @@ async function bo<T>(path: string, init: ReqInit = {}): Promise<T> {
 }
 
 /* The library isn't huge and a per-status query filter wasn't exposed, so fetch
-   the whole list once and slice it in Seek. Cached briefly; a reading change on a
-   device shows up on the next refresh. */
+   the whole list once and slice it in Seek. Cached briefly, per user (each
+   person's statuses differ); a reading change on a device shows up on the next
+   refresh. */
 const listCache = new TTLCache<ReadingBook[]>(60_000);
-const LIST_KEY = 'all';
 const PAGE = 500;
 
-/** Every owned book as a reading-list row. */
+/** Every owned book as a reading-list row, with *this person's* status. */
 export async function getAllBooks(): Promise<ReadingBook[]> {
-	const hit = listCache.get(LIST_KEY);
+	const key = scopeKey('books:all');
+	const hit = listCache.get(key);
 	if (hit) return hit;
 
 	const first = await bo<{ items: unknown[]; total: number }>('/books/query', {
@@ -98,7 +118,7 @@ export async function getAllBooks(): Promise<ReadingBook[]> {
 	}
 
 	const rows = items.map(mapReadingBook);
-	listCache.set(LIST_KEY, rows);
+	listCache.set(key, rows);
 	return rows;
 }
 
@@ -110,9 +130,11 @@ export async function getReadingList(statuses?: BookReadStatus[]): Promise<Readi
 	return all.filter((b) => want.has(b.status));
 }
 
-/** Drop the cached list after a mutation (none write yet, but the hook is here). */
-export function dropBooksCache(): void {
-	listCache.clear();
+/** Drop the current user's cached list (after a status change) and, with
+ *  `session`, their BookOrbit session too (after they relink the account). */
+export function dropBooksCache(opts: { session?: boolean } = {}): void {
+	listCache.delete(scopeKey('books:all'));
+	if (opts.session) sessions.delete(scopeId());
 }
 
 export type ReadingGoal = { goalBooks: number; completedBooks: number; year: number };
@@ -129,6 +151,16 @@ export const getReadingGoal = () => bo<ReadingGoal>('/dashboard/widgets/reading-
 
 /** Headline reading stats for the Profile books section. */
 export const getStatsSummary = () => bo<StatsSummary>('/user-statistics/summary');
+
+export type Library = { id: number; name: string };
+
+/** The libraries this person can see — where their uploads and downloads can land. */
+export async function listLibraries(): Promise<Library[]> {
+	const raw = await bo<{ id?: unknown; name?: unknown }[]>('/libraries');
+	return raw
+		.filter((l) => typeof l.id === 'number')
+		.map((l) => ({ id: l.id as number, name: typeof l.name === 'string' ? l.name : `Library ${l.id}` }));
+}
 
 /** Raw cover bytes for a book, proxied to the browser (covers are auth-gated).
  *  Returns the upstream Response so the route can stream it with its headers. */

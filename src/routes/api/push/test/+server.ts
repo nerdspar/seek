@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { pushConfigured, sendToAll } from '$lib/server/push';
+import { pushConfigured, sendToDevices } from '$lib/server/push';
 import { buildTodayDigest } from '$lib/server/digest';
 import type { RequestHandler } from './$types';
 
@@ -16,6 +16,6 @@ export const POST: RequestHandler = async () => {
 		body: "You'll get a morning list when your shows air.",
 		url: '/upcoming'
 	};
-	const { sent, pruned } = await sendToAll({ ...payload, tag: 'seek-test' });
+	const { sent, pruned } = await sendToDevices({ ...payload, tag: 'seek-test' });
 	return json({ ok: true, sent, pruned });
 };

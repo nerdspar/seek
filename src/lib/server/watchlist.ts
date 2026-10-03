@@ -25,6 +25,7 @@
  */
 import { floppy } from './floppy';
 import { TTLCache } from './cache';
+import { scopeKey } from './userctx';
 import { companyQuery, type Company } from './tags';
 import type { MediaType, TrackedMedia, WatchlistRow } from '$lib/types';
 
@@ -210,7 +211,8 @@ function seasonNumberOf(entry: Record<string, unknown>): number | null {
 }
 
 async function nextUpFor(source: string, mediaId: string): Promise<Correction | null> {
-	const key = `${source}:${mediaId}`;
+	// Per user: a correction is derived from *this person's* plays.
+	const key = scopeKey(`${source}:${mediaId}`);
 	const hit = nextUpCache.get(key);
 	if (hit !== undefined) return hit;
 
@@ -446,7 +448,9 @@ export async function getWatchlist(
 const servicesCache = new TTLCache<string[]>(6 * 60 * 60 * 1000, 4);
 
 export async function knownServices(): Promise<string[]> {
-	const hit = servicesCache.get('all');
+	// Per user: the services seen across *this person's* library.
+	const servicesKey = scopeKey('all');
+	const hit = servicesCache.get(servicesKey);
 	if (hit) return hit;
 
 	const found = new Map<string, number>();
@@ -468,7 +472,7 @@ export async function knownServices(): Promise<string[]> {
 
 	// Commonest first — the household's actual services float to the top.
 	const names = [...found.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
-	servicesCache.set('all', names);
+	servicesCache.set(servicesKey, names);
 	return names;
 }
 

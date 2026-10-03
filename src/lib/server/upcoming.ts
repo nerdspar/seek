@@ -7,8 +7,8 @@
  * id, so posters and show links are recovered by matching the event title
  * against the library. Measured 163/163 once RFC 5545 escaping is undone.
  */
-import { env } from '$env/dynamic/private';
 import { floppy } from './floppy';
+import { calendarToken, scopeId, NotLinkedError } from './userctx';
 import { FLOPPY_URL } from './env';
 import { parseIcal, type IcalEvent } from './ical';
 import { memo } from './memo';
@@ -16,15 +16,16 @@ import type { UpcomingItem } from '$lib/types';
 
 
 type Cached = { at: number; items: UpcomingItem[] };
-let cache: Cached | null = null;
-let inflight: Promise<UpcomingItem[]> | null = null;
+/* Per user — each person's calendar feed is their own library's schedule. */
+const cache = new Map<number, Cached>();
+const inflight = new Map<number, Promise<UpcomingItem[]>>();
 
 /** §5.1 says every 30–60 min is plenty; release schedules move slowly. */
 const TTL_MS = 45 * 60 * 1000;
 
 async function fetchFeed(): Promise<IcalEvent[]> {
-	const token = env.FLOPPY_CALENDAR_TOKEN;
-	if (!token) throw new Error('FLOPPY_CALENDAR_TOKEN is not set — Upcoming is unavailable.');
+	const token = calendarToken();
+	if (!token) throw new NotLinkedError('calendar');
 
 	const params = new URLSearchParams();
 	for (const t of ['tv', 'season', 'movie', 'anime']) params.append('media_types', t);
@@ -130,25 +131,35 @@ export async function warmCaches(): Promise<void> {
 	await getUpcoming().catch(() => {});
 }
 
+/** Drop the current user's cached calendar (after they relink their account). */
+export function forgetUpcoming(): void {
+	cache.delete(scopeId());
+}
+
 /** Cached read. Concurrent callers share one in-flight refresh. */
 export async function getUpcoming(force = false): Promise<UpcomingItem[]> {
-	if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.items;
-	if (inflight) return inflight;
+	const who = scopeId();
+	const cached = cache.get(who);
+	if (!force && cached && Date.now() - cached.at < TTL_MS) return cached.items;
+	const running = inflight.get(who);
+	if (running) return running;
 
-	inflight = build()
+	const next = build()
 		.then((items) => {
-			cache = { at: Date.now(), items };
+			cache.set(who, { at: Date.now(), items });
 			return items;
 		})
 		.catch((err) => {
 			// Serve stale rather than nothing — a missed refresh should not empty
 			// the tab.
-			if (cache) return cache.items;
+			const stale = cache.get(who);
+			if (stale) return stale.items;
 			throw err;
 		})
 		.finally(() => {
-			inflight = null;
+			inflight.delete(who);
 		});
 
-	return inflight;
+	inflight.set(who, next);
+	return next;
 }

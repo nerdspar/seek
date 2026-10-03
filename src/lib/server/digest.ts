@@ -11,7 +11,7 @@
 import { getUpcoming } from './upcoming';
 import type { UpcomingItem } from '$lib/types';
 import {
-	sendToAll,
+	sendToDevices,
 	getLastDigest,
 	setLastDigest,
 	getLastAtTime,
@@ -72,7 +72,7 @@ export async function sendDailyDigest(
 		return { sent: 0, note: 'nothing airing today' };
 	}
 
-	const { sent } = await sendToAll({
+	const { sent } = await sendToDevices({
 		title: digest.title,
 		body: digest.body,
 		url: digest.url,
@@ -139,7 +139,7 @@ export async function sendAtTimeNotifications(): Promise<number> {
 		} else {
 			body = `${eps.length} new episodes`;
 		}
-		const res = await sendToAll({ title, body, url: '/upcoming', tag: `seek-airing-${title}` });
+		const res = await sendToDevices({ title, body, url: '/upcoming', tag: `seek-airing-${title}` });
 		sent += res.sent;
 	}
 

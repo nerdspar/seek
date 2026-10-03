@@ -5,7 +5,9 @@
  * Verified against openapi.yaml on build v26.8.20. Floppy ships daily; if calls
  * start failing, re-read GET /api/openapi.yaml before assuming a bug here.
  */
-import { FLOPPY_URL, FLOPPY_TOKEN } from './env';
+import { FLOPPY_URL } from './env';
+// The token is per person: whoever this request (or job) is running as.
+import { floppyToken } from './userctx';
 
 export class FloppyError extends Error {
 	constructor(
@@ -85,7 +87,7 @@ export async function floppy<T = unknown>(path: string, opts: Req = {}): Promise
 	const url = `${FLOPPY_URL()}${path}${buildQuery(query)}`;
 
 	const headers: Record<string, string> = { Accept: 'application/json' };
-	if (!anonymous) headers['X-API-Key'] = FLOPPY_TOKEN();
+	if (!anonymous) headers['X-API-Key'] = floppyToken();
 	if (body !== undefined) headers['Content-Type'] = 'application/json';
 
 	let res: Response;

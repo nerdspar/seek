@@ -11,6 +11,39 @@ import { pushConfigured, subscriptionCount } from './push';
 import { sendDailyDigest, sendAtTimeNotifications } from './digest';
 import { jellyfinConfigured } from './jellyfin';
 import { syncAnimeTags } from './anime-sync';
+import { listUsers, type User } from './users';
+import { runAs, NotLinkedError } from './userctx';
+
+/* Every job here is per person: it runs once for each account, *as* that
+   account, so it reads their prefs, their calendar and their devices. */
+
+/** One person's notification tick. */
+async function notifyTick(): Promise<void> {
+	const prefs = await getPrefs();
+	if (!prefs.notifyDigest && !prefs.notifyAtTime) return;
+	// Nothing to send to — skip the calendar fetch entirely.
+	if ((await subscriptionCount()) === 0) return;
+
+	// The digest: once the chosen local hour has arrived, once a day.
+	if (prefs.notifyDigest && new Date().getHours() >= prefs.digestHour) {
+		await sendDailyDigest();
+	}
+	// At-air: anything that became available since the last tick.
+	if (prefs.notifyAtTime) await sendAtTimeNotifications();
+}
+
+/** Run a job for every account. One person's failure (no calendar linked,
+ *  Floppy hiccup) never stops the others. */
+export async function forEachUser(job: (user: User) => Promise<void>): Promise<void> {
+	for (const user of listUsers()) {
+		try {
+			await runAs(user, () => job(user));
+		} catch (err) {
+			// Not having linked a service is a normal state, not an error.
+			if (!(err instanceof NotLinkedError)) console.warn(`[scheduler] job failed for user ${user.id}:`, err);
+		}
+	}
+}
 
 let started = false;
 
@@ -32,17 +65,7 @@ export function startScheduler(): void {
 		if (running) return;
 		running = true;
 		try {
-			const prefs = await getPrefs();
-			if (!prefs.notifyDigest && !prefs.notifyAtTime) return;
-			// Nothing to send to — skip the calendar fetch entirely.
-			if ((await subscriptionCount()) === 0) return;
-
-			// The digest: once the chosen local hour has arrived, once a day.
-			if (prefs.notifyDigest && new Date().getHours() >= prefs.digestHour) {
-				await sendDailyDigest();
-			}
-			// At-air: anything that became available since the last tick.
-			if (prefs.notifyAtTime) await sendAtTimeNotifications();
+			await forEachUser(notifyTick);
 		} catch {
 			// A bad tick must not kill the interval; the next one tries again.
 		} finally {
@@ -67,10 +90,14 @@ function startAnimeSync(): void {
 		if (running) return;
 		running = true;
 		try {
-			const r = await syncAnimeTags();
-			if (r.added || r.removed) {
-				console.log(`[anime-sync] +${r.added} −${r.removed} (anime in Jellyfin: ${r.animeInJellyfin})`);
-			}
+			// Each person's Floppy carries its own anime tags; Jellyfin's library is
+			// the shared source of truth for all of them.
+			await forEachUser(async (user) => {
+				const r = await syncAnimeTags();
+				if (r.added || r.removed) {
+					console.log(`[anime-sync] user ${user.id}: +${r.added} −${r.removed} (anime in Jellyfin: ${r.animeInJellyfin})`);
+				}
+			});
 		} catch (err) {
 			console.warn('[anime-sync] failed; keeping existing tags:', err);
 		} finally {

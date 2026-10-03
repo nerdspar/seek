@@ -1,6 +1,6 @@
 /**
- * Seek's own preferences (§8). Stored as one small JSON file in /data — the
- * only thing Seek persists. Watch state belongs to Floppy and never lands here.
+ * Seek's own preferences (§8), per person: each account's prefs live on its row
+ * in the user store (users.ts). Watch state belongs to Floppy and never lands here.
  *
  * Server-side rather than localStorage because these affect the *server* render:
  * a default sort kept in the browser would mean the first paint shows one order
@@ -9,6 +9,8 @@
 import { env } from '$env/dynamic/private';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { scopeId, currentUser } from './userctx';
+import { getPrefsJson, setPrefsJson, getOwner } from './users';
 
 export type MarkDirection = 'rtl' | 'ltr';
 
@@ -76,9 +78,12 @@ export type Prefs = {
 	/** Show the download-management layer (edit settings, per-episode/season
 	 *  search, interactive grabs, file delete/replace) on top of the basic add
 	 *  button. On by default when a service is configured; off hides all of it so
-	 *  a household member who only tracks watches never sees it. Seek-wide for now;
-	 *  becomes per-user with the household work. */
+	 *  a household member who only tracks watches never sees it. Per person — a
+	 *  member starts with it off. */
 	arrManage: boolean;
+	/** Show the Books segment in Watchlist and Discover (docs/books-plan.md).
+	 *  Only takes effect when a books backend is configured. */
+	booksEnabled: boolean;
 };
 
 /** Default add settings for one *arr. These pre-fill the add sheet, where any of
@@ -109,8 +114,22 @@ export const DEFAULTS: Prefs = {
 	notifyAtTime: false,
 	sonarr: null,
 	radarr: null,
-	arrManage: true
+	arrManage: true,
+	booksEnabled: true
 };
+
+/* When someone joins the household their prefs start from the defaults, except
+   for these, which describe the household rather than the person: the *arr add
+   defaults, the streaming services you pay for, and whether you track who you
+   watched with. Download management starts hidden for a member — it's the
+   owner's tooling, and they can turn it on. */
+const HOUSEHOLD_FIELDS = ['sonarr', 'radarr', 'services', 'companyTracking'] as const;
+
+export function memberStartingPrefs(owner: Prefs): Prefs {
+	const start: Prefs = { ...DEFAULTS, sort: {}, services: [], moodPresets: null, arrManage: false };
+	for (const k of HOUSEHOLD_FIELDS) (start as Record<string, unknown>)[k] = owner[k];
+	return start;
+}
 
 /** Maps Seek's labels to Floppy's closed sort enum. */
 export const SORTS: Record<SortKey, { label: string; sort: string; direction: 'asc' | 'desc' }> = {
@@ -131,9 +150,12 @@ export const SORTS: Record<SortKey, { label: string; sort: string; direction: 'a
 
 export const DEFAULT_SORT: SortKey = 'recently_watched';
 
+/* The pre-accounts store. Still read for work outside any user context, and as
+   the owner's starting point the first time they sign in. */
 const file = () => join(env.SEEK_DATA_DIR || '/data', 'preferences.json');
 
-let cache: Prefs | null = null;
+/* Per user (userctx scope id); 0 is the legacy file. */
+const cache = new Map<number, Prefs>();
 
 /* These two are written straight into a data attribute that CSS selects on, so
    an unrecognised value matches no rule at all and the page renders with no
@@ -150,21 +172,57 @@ function clamp(p: Prefs): Prefs {
 	};
 }
 
-export async function getPrefs(): Promise<Prefs> {
-	if (cache) return cache;
+function fromJson(raw: string): Prefs {
+	const parsed = JSON.parse(raw) as Partial<Prefs>;
+	return clamp({
+		...DEFAULTS,
+		...parsed,
+		sort: { ...DEFAULTS.sort, ...(parsed.sort ?? {}) }
+	});
+}
+
+async function readLegacy(): Promise<Prefs> {
 	try {
-		const raw = await readFile(file(), 'utf8');
-		const parsed = JSON.parse(raw) as Partial<Prefs>;
-		cache = clamp({
-			...DEFAULTS,
-			...parsed,
-			sort: { ...DEFAULTS.sort, ...(parsed.sort ?? {}) }
-		});
+		return fromJson(await readFile(file(), 'utf8'));
 	} catch {
 		// Missing or unreadable file is the normal first-run case.
-		cache = { ...DEFAULTS, sort: {}, services: [], moodPresets: null };
+		return { ...DEFAULTS, sort: {}, services: [], moodPresets: null };
 	}
-	return cache;
+}
+
+/** The signed-in person's preferences (the legacy file outside any user). */
+export async function getPrefs(): Promise<Prefs> {
+	const who = scopeId();
+	const hit = cache.get(who);
+	if (hit) return hit;
+
+	let prefs: Prefs;
+	const stored = who ? getPrefsJson(who) : null;
+	if (who === 0) {
+		prefs = await readLegacy();
+	} else if (stored) {
+		try {
+			prefs = fromJson(stored);
+		} catch {
+			prefs = { ...DEFAULTS, sort: {}, services: [], moodPresets: null };
+		}
+	} else {
+		// First time this person's prefs are read: the owner inherits everything
+		// set before accounts existed; a member starts fresh with the household
+		// fields copied from the owner.
+		const me = currentUser();
+		const legacy = await readLegacy();
+		if (me?.role === 'owner') {
+			prefs = legacy;
+		} else {
+			const owner = getOwner();
+			const ownerJson = owner ? getPrefsJson(owner.id) : null;
+			prefs = memberStartingPrefs(ownerJson ? fromJson(ownerJson) : legacy);
+		}
+		setPrefsJson(who, JSON.stringify(prefs));
+	}
+	cache.set(who, prefs);
+	return prefs;
 }
 
 /* Writes are serialised. Each one is a read-modify-write over the whole file, so
@@ -196,21 +254,31 @@ async function write(patch: Partial<Prefs>): Promise<Prefs> {
 		moodPresets: patch.moodPresets !== undefined ? patch.moodPresets : current.moodPresets
 	});
 
-	const path = file();
-	try {
-		await mkdir(dirname(path), { recursive: true });
-		// Write-then-rename so a crash mid-write cannot truncate the file.
-		const tmp = `${path}.tmp`;
-		await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8');
-		await rename(tmp, path);
-	} catch (err) {
-		// Preferences are a convenience; an unwritable /data must not break the
-		// app. Keep the change in memory for this process and carry on.
-		console.warn('[seek] could not persist preferences:', err);
+	const who = scopeId();
+	if (who) {
+		setPrefsJson(who, JSON.stringify(next));
+	} else {
+		const path = file();
+		try {
+			await mkdir(dirname(path), { recursive: true });
+			// Write-then-rename so a crash mid-write cannot truncate the file.
+			const tmp = `${path}.tmp`;
+			await writeFile(tmp, JSON.stringify(next, null, 2), 'utf8');
+			await rename(tmp, path);
+		} catch (err) {
+			// Preferences are a convenience; an unwritable /data must not break the
+			// app. Keep the change in memory for this process and carry on.
+			console.warn('[seek] could not persist preferences:', err);
+		}
 	}
 
-	cache = next;
+	cache.set(who, next);
 	return next;
+}
+
+/** Drop a user's cached prefs (e.g. when their account is removed). */
+export function forgetPrefs(userId: number): void {
+	cache.delete(userId);
 }
 
 export const sortFor = (prefs: Prefs, mediaType: string): SortKey =>
