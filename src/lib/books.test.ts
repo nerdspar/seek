@@ -28,6 +28,8 @@ import {
 	emptySearchReason,
 	recommendationSeeds,
 	favoriteGenres,
+	readingStats,
+	bookDiary,
 	notYours,
 	type BookEntry,
 	type MyBook,
@@ -500,5 +502,38 @@ describe('what recommendations grow from', () => {
 			{ hardcoverId: 51, title: 'Unopened', author: 'X', coverUrl: null, year: null, rating: null }
 		];
 		expect(notYours(cards, books).map((c) => c.hardcoverId)).toEqual([50]);
+	});
+});
+
+describe('reading over time', () => {
+	const now = new Date('2026-10-15T12:00:00');
+	const lib = [
+		owned(1, 'read', 'A', 'X', null, { pageCount: 300, rating: 4, genres: ['Fantasy'], readStatus: { status: 'read', startedAt: '2026-09-20T10:00:00Z', finishedAt: '2026-10-02T10:00:00Z' } }),
+		owned(2, 'read', 'B', 'X', null, { pageCount: 200, rating: 2, genres: ['Fantasy', 'Horror'], readStatus: { status: 'read', finishedAt: '2026-03-01T10:00:00Z' } }),
+		owned(3, 'read', 'C', 'X', null, { pageCount: 500, readStatus: { status: 'read', finishedAt: '2025-06-01T10:00:00Z' } }),
+		owned(4, 'reading', 'D', 'X', null, { readStatus: { status: 'reading', startedAt: '2026-10-10T10:00:00Z' } })
+	];
+	const books = myBooks(lib, []);
+
+	it('counts what you finished in a range, with pages, ratings and genres', () => {
+		expect(readingStats(books, 'this_month', now)).toMatchObject({ finished: 1, pages: 300, avgRating: 4, reading: 1 });
+		const year = readingStats(books, 'this_year', now);
+		expect(year).toMatchObject({ finished: 2, pages: 500, avgRating: 3 });
+		expect(year.topGenres).toEqual([{ name: 'Fantasy', count: 2 }, { name: 'Horror', count: 1 }]);
+		expect(year.recent.map((b) => b.title)).toEqual(['A', 'B']);
+		expect(readingStats(books, 'last_year', now).finished).toBe(1);
+		expect(readingStats(books, 'all_time', now).finished).toBe(3);
+	});
+
+	it('lays your reading out as a diary, newest day first', () => {
+		const days = bookDiary(books);
+		expect(days[0].entries.map((e) => `${e.what} ${e.book.title}`)).toEqual(['Started D']);
+		expect(days.flatMap((d) => d.entries).map((e) => `${e.what} ${e.book.title}`)).toEqual([
+			'Started D',
+			'Finished A',
+			'Started A',
+			'Finished B',
+			'Finished C'
+		]);
 	});
 });

@@ -10,6 +10,10 @@ import { getRecentlyAdded } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
 import { bookorbitLinked, getReadingSnapshot } from '$lib/server/books/bookorbit';
+import { myBookList } from '$lib/server/books/discovery';
+import { bookorbitConfigured } from '$lib/server/books/bookorbit';
+import { hardcoverConfigured } from '$lib/server/books/hardcover';
+import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
 
 const RANGES: RangeKey[] = ['this_month', 'this_year', 'last_year', 'all_time'];
@@ -36,16 +40,27 @@ export const load: PageServerLoad = async ({ url }) => {
 	/* Your year in books (goal, streak, achievements), when Books is on and
 	   you've linked BookOrbit. Streamed and cached briefly per user. */
 	const prefs = await getPrefs();
+	const media = mediaOn(prefs, bookorbitConfigured() || hardcoverConfigured());
 	const reading =
-		prefs.booksEnabled && bookorbitLinked()
+		media.book && bookorbitLinked()
 			? memo('books:snapshot', 60 * 1000, getReadingSnapshot)
 			: null;
+
+	/* Watching (shows + films) and Reading are separate views of the page;
+	   whichever kinds are switched off simply aren't offered. */
+	const watchingOn = media.tv || media.movie;
+	const view: 'watching' | 'reading' =
+		(url.searchParams.get('view') === 'reading' || !watchingOn) && media.book ? 'reading' : 'watching';
 
 	return {
 		range,
 		stats,
 		counts,
 		recentlyAdded,
-		reading
+		reading,
+		media,
+		view,
+		// Your books for the Reading view's numbers (computed client-side per range).
+		books: media.book ? myBookList().catch(() => []) : null
 	};
 };

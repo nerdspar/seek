@@ -9,6 +9,8 @@
 	import ReadingCard from '$lib/components/ReadingCard.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import { onMount } from 'svelte';
+	import BookSheet from '$lib/components/BookSheet.svelte';
+	import { coverThumb, readingStats, type MyBook, type ReadingRange } from '$lib/books';
 	import type { PageData } from './$types';
 
 	onMount(() => void loadArrStatus());
@@ -26,6 +28,12 @@
 	];
 
 	const fmt = (n: number) => n.toLocaleString();
+
+	/* Watching and Reading are two views; links keep the range and the view. */
+	const both = $derived((data.media.tv || data.media.movie) && data.media.book);
+	const href = (range: string, view: string) =>
+		`/profile?range=${range}${view === 'reading' ? '&view=reading' : ''}`;
+	let openBook = $state<MyBook | null>(null);
 	const peakOf = (weekday: { hours: number }[]) => Math.max(1, ...weekday.map((d) => d.hours));
 
 	/** Total minutes as "361 days, 20 hours, 20 minutes". Days are dropped when
@@ -68,27 +76,75 @@
 			</button>
 			</div>
 		</div>
+		{#if both}
+			<div class="segments" role="tablist">
+				<button role="tab" aria-selected={data.view === 'watching'} class:active={data.view === 'watching'} onclick={() => goto(href(data.range, 'watching'), { noScroll: true })}>Watching</button>
+				<button role="tab" aria-selected={data.view === 'reading'} class:active={data.view === 'reading'} onclick={() => goto(href(data.range, 'reading'), { noScroll: true })}>Reading</button>
+			</div>
+		{/if}
 		<div class="chips">
 			{#each RANGES as r (r.id)}
 				<button
 					class:on={data.range === r.id}
-					onclick={() => goto(`/profile?range=${r.id}`, { noScroll: true })}
+					onclick={() => goto(href(r.id, data.view), { noScroll: true })}
 				>{r.label}</button>
 			{/each}
 		</div>
 	</header>
 
 	<main use:tabReselect={{ tab: 'profile' }}>
-		<!-- Books sit outside the TV stats: a reader with no Floppy linked still
-		     gets their year in books. Silently absent if BookOrbit is unreachable. -->
-		{#if data.reading}
-			{#await data.reading then snap}
-				<ReadingCard {snap} />
-			{:catch}
-				<!-- Nothing: the TV stats below are the page; books are a bonus card. -->
+		{#if data.view === 'reading'}
+			<!-- Reading: your year in books (BookOrbit), then what you read in the
+			     chosen range — from your library and your own books alike. -->
+			{#if data.reading}
+				{#await data.reading then snap}
+					<ReadingCard {snap} />
+				{:catch}
+					<!-- BookOrbit unreachable: the numbers below still stand. -->
+				{/await}
+			{/if}
+			{#await data.books then books}
+				{@const rs = readingStats(books ?? [], data.range as ReadingRange)}
+				<section class="headline">
+					<span class="big tnum">{fmt(rs.finished)}</span>
+					<span class="unit">{rs.finished === 1 ? 'book' : 'books'} finished · {RANGES.find((r) => r.id === data.range)?.label.toLowerCase()}</span>
+					{#if rs.pages}<span class="breakdown tnum">{fmt(rs.pages)} pages</span>{/if}
+				</section>
+				<ul class="tiles three">
+					<li><span class="n tnum">{rs.reading}</span><span class="l">Reading now</span></li>
+					<li><span class="n tnum">{rs.avgRating ?? '—'}</span><span class="l">Avg rating</span></li>
+					<li><span class="n tnum">{fmt((books ?? []).filter((b) => b.status === 'want_to_read').length)}</span><span class="l">Want to read</span></li>
+				</ul>
+				{#if rs.recent.length}
+					<section class="recent">
+						<h2>Finished</h2>
+						<ul class="rail">
+							{#each rs.recent as b (b.key)}
+								<li>
+									<button onclick={() => (openBook = b)}>
+										<Poster src={coverThumb(b.coverUrl, 92)} width={92} height={138} />
+										<span class="cap">{b.title}</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+				{#if rs.topGenres.length}
+					<section>
+						<h2>Your genres</h2>
+						<ul class="list">
+							{#each rs.topGenres as g (g.name)}
+								<li><span>{g.name}</span><span class="dim tnum">{g.count}</span></li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+				{#if !rs.finished && !rs.reading}
+					<div class="empty"><h2>No books here yet</h2><p>Mark a book Read (from Watchlist → Books) and it shows up here.</p></div>
+				{/if}
 			{/await}
-		{/if}
-
+		{:else}
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">
@@ -264,7 +320,12 @@
 			{@const missing = notLinkedOf(err)}
 			{#if missing}<NotLinked service={missing} />{:else}<div class="empty"><h2>Can't load stats</h2><p>{err.message}</p></div>{/if}
 		{/await}
+		{/if}
 	</main>
+
+	{#if openBook}
+		<BookSheet book={openBook} onclose={() => (openBook = null)} />
+	{/if}
 
 	<TabBar current="profile" />
 
@@ -283,6 +344,15 @@
 		width: var(--tap); height: var(--tap);
 		border-radius: 50%; color: var(--text-dim);
 	}
+
+	/* Watching / Reading — the watchlist's segmented control. */
+	.segments { display: flex; gap: 2px; padding: 3px; margin-bottom: 10px; border-radius: 11px; background: var(--surface); }
+	.segments button {
+		flex: 1; min-height: 34px; border-radius: 9px;
+		font-size: 13px; font-weight: 600; color: var(--text-dim);
+	}
+	.segments button.active { background: var(--surface-raised); color: var(--text); }
+	.tiles.three { grid-template-columns: repeat(3, 1fr); }
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 	.chips button {

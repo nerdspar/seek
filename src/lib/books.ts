@@ -476,6 +476,89 @@ export function bookRequestBody(
 	};
 }
 
+/* ── Profile and diary: your reading over time ─────────────────────────────── */
+
+export type ReadingRange = 'this_month' | 'this_year' | 'last_year' | 'all_time';
+
+/** [from, to) for a Profile range, as ISO date strings ('' = unbounded). */
+export function rangeBounds(range: ReadingRange, now = new Date()): { from: string; to: string } {
+	const y = now.getFullYear();
+	const iso = (d: Date) => d.toISOString();
+	switch (range) {
+		case 'this_month':
+			return { from: iso(new Date(y, now.getMonth(), 1)), to: '' };
+		case 'this_year':
+			return { from: iso(new Date(y, 0, 1)), to: '' };
+		case 'last_year':
+			return { from: iso(new Date(y - 1, 0, 1)), to: iso(new Date(y, 0, 1)) };
+		default:
+			return { from: '', to: '' };
+	}
+}
+
+export type ReadingStats = {
+	finished: number;
+	pages: number;
+	/** Mean of your ratings on books finished in the range, or null. */
+	avgRating: number | null;
+	topGenres: { name: string; count: number }[];
+	/** Finished in the range, newest first. */
+	recent: MyBook[];
+	reading: number;
+};
+
+const isFinished = (b: MyBook) => (b.status === 'read' || b.status === 'skimmed') && Boolean(b.finishedAt);
+
+/** Your reading in a Profile range: what you finished, pages, ratings, genres. */
+export function readingStats(books: MyBook[], range: ReadingRange, now = new Date()): ReadingStats {
+	const { from, to } = rangeBounds(range, now);
+	const inRange = (iso: string) => (!from || iso >= from) && (!to || iso < to);
+	const done = books.filter((b) => isFinished(b) && inRange(b.finishedAt!)).sort((a, b) => b.finishedAt!.localeCompare(a.finishedAt!));
+	const rated = done.filter((b) => b.myRating !== null);
+	const genres = new Map<string, { name: string; count: number }>();
+	for (const b of done)
+		for (const g of b.genres) {
+			const k = g.toLowerCase();
+			const c = genres.get(k) ?? { name: g, count: 0 };
+			c.count++;
+			genres.set(k, c);
+		}
+	return {
+		finished: done.length,
+		pages: done.reduce((n, b) => n + (b.pages ?? 0), 0),
+		avgRating: rated.length ? Math.round((rated.reduce((n, b) => n + b.myRating!, 0) / rated.length) * 10) / 10 : null,
+		topGenres: [...genres.values()].sort((a, b) => b.count - a.count).slice(0, 5),
+		recent: done.slice(0, 12),
+		reading: books.filter((b) => b.status === 'reading' || b.status === 'rereading').length
+	};
+}
+
+export type BookDiaryEntry = { what: 'Finished' | 'Started'; at: string; book: MyBook };
+export type BookDiaryDay = { date: string; entries: BookDiaryEntry[] };
+
+/** Your reading as a diary: each book you started or finished, by day, newest
+ *  first (days are local dates). */
+export function bookDiary(books: MyBook[]): BookDiaryDay[] {
+	const entries: BookDiaryEntry[] = [];
+	for (const b of books) {
+		if (b.finishedAt && (b.status === 'read' || b.status === 'skimmed')) entries.push({ what: 'Finished', at: b.finishedAt, book: b });
+		if (b.startedAt) entries.push({ what: 'Started', at: b.startedAt, book: b });
+	}
+	entries.sort((a, b) => b.at.localeCompare(a.at));
+	const local = (iso: string) => {
+		const d = new Date(iso);
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	};
+	const days: BookDiaryDay[] = [];
+	for (const e of entries) {
+		const date = local(e.at);
+		const last = days[days.length - 1];
+		if (last?.date === date) last.entries.push(e);
+		else days.push({ date, entries: [e] });
+	}
+	return days;
+}
+
 /* ── "Because you…": what personal recommendations grow from ─────────────── */
 
 /** The books to recommend from: ones you finished, or rated 4+, most recent

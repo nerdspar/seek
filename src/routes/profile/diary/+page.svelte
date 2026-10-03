@@ -5,9 +5,15 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
+	import BookSheet from '$lib/components/BookSheet.svelte';
+	import { bookDiary, coverThumb, type MyBook } from '$lib/books';
+	import { dayLabel } from '$lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	const both = $derived((data.media.tv || data.media.movie) && data.media.book);
+	let openBook = $state<MyBook | null>(null);
+	const today = new Date();
 
 	const time = (iso: string | null) =>
 		iso ? new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
@@ -47,6 +53,9 @@
 	}
 </script>
 
+{#if data.view === 'reading' || !data.result}
+	<PageHeader title="Diary" onback={() => history.back()} />
+{:else}
 {#await data.result then r}
 	<PageHeader
 		title="Diary"
@@ -56,8 +65,44 @@
 {:catch}
 	<PageHeader title="Diary" onback={() => history.back()} />
 {/await}
+{/if}
 
 <main>
+	{#if both}
+		<div class="segments" role="tablist">
+			<button role="tab" aria-selected={data.view === 'watching'} class:active={data.view === 'watching'} onclick={() => goto('/profile/diary')}>Watching</button>
+			<button role="tab" aria-selected={data.view === 'reading'} class:active={data.view === 'reading'} onclick={() => goto('/profile/diary?view=reading')}>Reading</button>
+		</div>
+	{/if}
+
+	{#if data.view === 'reading'}
+		{#await data.books then books}
+			{@const days = bookDiary(books ?? [])}
+			{#if !days.length}
+				<div class="empty"><h2>Nothing read yet</h2><p>Books you start and finish show up here.</p></div>
+			{:else}
+				{#each days as day (day.date)}
+					<section>
+						<h2><span>{dayLabel(`${day.date}T12:00:00`, today)}</span></h2>
+						<ul>
+							{#each day.entries as e, i (day.date + i)}
+								<li>
+									<button onclick={() => (openBook = e.book)}>
+										<Poster src={coverThumb(e.book.coverUrl, 40)} width={40} height={60} radius={6} />
+										<span class="meta">
+											<span class="title">{e.book.title}</span>
+											<span class="ep">{e.what}{e.book.authors[0] ? ` · ${e.book.authors[0]}` : ''}{e.what === 'Finished' && e.book.myRating ? ` · ${'★'.repeat(e.book.myRating)}` : ''}</span>
+										</span>
+										<span class="at tnum">{time(e.at)}</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/each}
+			{/if}
+		{/await}
+	{:else if data.result}
 	{#await data.result}
 		<div class="skdays">
 			{#each Array(3) as _, g (g)}
@@ -123,9 +168,17 @@
 		{@const missing = notLinkedOf(err)}
 		{#if missing}<NotLinked service={missing} />{:else}<div class="empty"><h2>Can't load history</h2><p>{err.message}</p></div>{/if}
 	{/await}
+	{/if}
 </main>
 
+{#if openBook}
+	<BookSheet book={openBook} onclose={() => (openBook = null)} />
+{/if}
+
 <style>
+	.segments { display: flex; gap: 2px; padding: 3px; margin: 4px 0 14px; border-radius: 11px; background: var(--surface); }
+	.segments button { flex: 1; min-height: 34px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+	.segments button.active { background: var(--surface-raised); color: var(--text); }
 	main { padding: 0 var(--gutter) calc(var(--safe-b) + 32px); }
 	section { margin-bottom: 20px; }
 	h2 {

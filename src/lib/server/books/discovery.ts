@@ -13,6 +13,7 @@ import {
 	type BookCard,
 	type BookRail,
 	type EntryStatus,
+	type MyBook,
 	type ReadingBook
 } from '$lib/books';
 import { bookorbitLinked, getAllBooks, setBookRating, setReadStatus } from './bookorbit';
@@ -143,9 +144,15 @@ export function personalRails(): Promise<BookRail[]> {
 	return memo('books:personal', 6 * 60 * 60 * 1000, buildPersonalRails);
 }
 
-async function buildPersonalRails(): Promise<BookRail[]> {
+/** All your books — the library (when linked) and your own — as one list. A
+ *  BookOrbit hiccup gives just your own books rather than an error. */
+export async function myBookList(): Promise<MyBook[]> {
 	const library = bookorbitLinked() ? await getAllBooks().catch(() => []) : [];
-	const books = myBooks(library, listEntries());
+	return myBooks(library, listEntries());
+}
+
+async function buildPersonalRails(): Promise<BookRail[]> {
+	const books = await myBookList();
 	const seeds = recommendationSeeds(books);
 	if (!seeds.length) return [];
 
