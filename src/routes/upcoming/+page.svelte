@@ -1,14 +1,7 @@
-<script module lang="ts">
-	// The first open of Upcoming in a session lands anchored at Today (scroll up
-	// for the last 30 days); return navigations restore the window scroll the
-	// framework saved. Module-scoped so it survives the component's unmount/remount.
-	let anchoredThisSession = false;
-</script>
-
 <script lang="ts">
 	import NotLinked from '$lib/components/NotLinked.svelte';
 	import { notLinkedOf } from '$lib/notLinked';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { tabReselect } from '$lib/tabReselect';
@@ -25,15 +18,23 @@
 
 	let todayEl: HTMLElement | undefined = $state();
 
-	/* The first open of a session lands at Today — scroll up for the last 30 days;
-	   return navigations are the framework's window scroll-restoration job (hence
-	   the once-per-session guard). Driven off the Today row actually existing
-	   (markToday binds it once the streamed list renders), not a timer, so it can't
-	   miss a slow load. */
+	/* Every visit lands at Today — scroll up for the last 30 days — except
+	   back/forward, where the framework restores where you were.
+	   It waits for afterNavigate: SvelteKit resets a new page to the top as the
+	   navigation completes, so scrolling any earlier (the list is often already
+	   cached and renders at once) was silently undone — the "opens at the top"
+	   bug. Also driven off the Today row actually existing, so a slow load still
+	   lands. */
+	let navType = $state<string | null>(null);
+	let anchored = false;
+	afterNavigate((nav) => {
+		navType = nav.type;
+	});
 	$effect(() => {
 		const el = todayEl;
-		if (!el || anchoredThisSession) return;
-		anchoredThisSession = true;
+		if (!el || navType === null || anchored) return;
+		anchored = true;
+		if (navType === 'popstate') return;
 		/* Window-scroll (Model B): land Today just below the sticky header. Direct,
 		   not via requestAnimationFrame: getBoundingClientRect forces layout, and the
 		   rows carry fixed poster dimensions so the offset is already final — and a

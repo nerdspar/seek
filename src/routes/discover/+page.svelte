@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SearchField from '$lib/components/SearchField.svelte';
 	import NotLinked from '$lib/components/NotLinked.svelte';
 	import { notLinkedOf } from '$lib/notLinked';
 	import { goto } from '$app/navigation';
@@ -247,8 +248,7 @@
 		runMood(new URLSearchParams({ preset: label }));
 	}
 
-	function submitFreeText(e: SubmitEvent) {
-		e.preventDefault();
+	function submitFreeText() {
 		const q = freeText.trim();
 		if (!q) return;
 		submitFreeTextClearsPlatform();
@@ -311,15 +311,14 @@
 	<main use:tabReselect={{ tab: 'discover' }}>
 		{#if data.moodAvailable}
 			<section class="mood">
-				<form onsubmit={submitFreeText}>
-					<input
+				<div class="moodfield">
+					<SearchField
 						bind:value={freeText}
-						type="search"
 						placeholder="Actor, title, genre, mood, service…"
-						autocapitalize="off"
-						enterkeyhint="search"
+						onsubmit={submitFreeText}
+						onclear={clearMood}
 					/>
-				</form>
+				</div>
 				<div class="chips">
 					{#each data.presets as preset (preset)}
 						<button class:on={mood === preset} onclick={() => pickPreset(preset)}>{preset}</button>
@@ -504,15 +503,7 @@
 	   (main has no horizontal padding) so that scrolling rows can run past the
 	   screen edge. Insetting the section would clip the chips short of it. */
 	.mood { margin-bottom: 18px; }
-	.mood form { padding: 0 var(--gutter); }
-	.mood input {
-		width: 100%; height: var(--tap); padding: 0 14px;
-		border: none; border-radius: var(--radius);
-		background: var(--surface); color: var(--text);
-		font: inherit; font-size: 16px; outline: none;
-		-webkit-appearance: none; appearance: none;
-	}
-	.mood input::-webkit-search-cancel-button { display: none; }
+	.moodfield { padding: 0 var(--gutter); }
 
 	/* Padding inside the scroller, never margin around it — chips then sit level
 	   with the headings at rest but still scroll to the screen edge, matching

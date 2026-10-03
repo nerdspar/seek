@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SearchField from '$lib/components/SearchField.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
@@ -6,7 +7,6 @@
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import UploadSheet from '$lib/components/UploadSheet.svelte';
-	import ShelvesSheet from '$lib/components/ShelvesSheet.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import { coverThumb, cardBadge, type BookCard, type ReadingBook } from '$lib/books';
 	import type { PageData } from './$types';
@@ -18,7 +18,6 @@
 
 	let open = $state<Card | null>(null);
 	let uploading = $state(false);
-	let shelving = $state(false);
 
 	/* ── Search the whole catalog. Debounced; a newer query cancels the older. ── */
 	let query = $state('');
@@ -61,10 +60,11 @@
 		<div class="titlerow">
 			<h1>Discover</h1>
 			{#if data.canUpload}
-				<span class="tools">
-					<button class="upload" onclick={() => (shelving = true)}>Shelves</button>
-					<button class="upload" onclick={() => (uploading = true)}>Upload</button>
-				</span>
+				<div class="actions">
+					<button class="icon" onclick={() => (uploading = true)} aria-label="Upload books">
+						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
+					</button>
+				</div>
 			{/if}
 		</div>
 		<div class="segments" role="tablist">
@@ -75,17 +75,18 @@
 	</header>
 
 	<main use:tabReselect={{ tab: 'discover' }}>
-		<form class="search" onsubmit={(e) => { e.preventDefault(); clearTimeout(timer); if (query.trim()) void run(query.trim()); }}>
-			<input
-				type="search"
+		<div class="search">
+			<SearchField
 				bind:value={query}
-				oninput={onInput}
 				placeholder="Search books, authors, series"
-				autocapitalize="off"
-				autocorrect="off"
-				enterkeyhint="search"
+				oninput={onInput}
+				onsubmit={() => {
+					clearTimeout(timer);
+					if (query.trim()) void run(query.trim());
+				}}
+				onclear={onInput}
 			/>
-		</form>
+		</div>
 
 		{#if query.trim()}
 			{#if searchError}
@@ -148,18 +149,20 @@
 {#if uploading}
 	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
 {/if}
-{#if shelving}
-	<ShelvesSheet onclose={() => (shelving = false)} />
-{/if}
+
 
 <style>
 	/* Identical to Discover's header so Books reads as its third segment. */
 	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
-	.titlerow { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-	.tools { display: flex; gap: 6px; }
-	.upload {
-		min-height: 32px; padding: 0 14px; border-radius: 999px;
-		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--signal-solid);
+	/* Same header icons as Profile. */
+	.titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+	.titlerow h1 { margin: 0; }
+	/* Negative margins: the 44px target must not make this header taller than TV/Movies'. */
+	.actions { display: flex; align-items: center; gap: 2px; margin: -10px -10px -10px 0; }
+	.icon {
+		flex: none; display: grid; place-items: center;
+		width: var(--tap); height: var(--tap);
+		border-radius: 50%; color: var(--text-dim);
 	}
 	.segments { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
 	.segments button {
@@ -171,14 +174,6 @@
 	main { padding: 6px 0 calc(var(--tabbar-footprint) + 24px); }
 
 	.search { padding: 0 var(--gutter); margin-bottom: 18px; }
-	.search input {
-		width: 100%; height: var(--tap); padding: 0 14px;
-		border: none; border-radius: var(--radius);
-		background: var(--surface); color: var(--text);
-		font: inherit; font-size: 16px; outline: none;
-		-webkit-appearance: none; appearance: none;
-	}
-	.search input::-webkit-search-cancel-button { display: none; }
 
 	.skshelf { display: flex; flex-direction: column; gap: 10px; padding: 0 var(--gutter); margin-bottom: 26px; }
 	.skrail { display: grid; grid-template-columns: repeat(4, 110px); gap: 12px; overflow: hidden; }
