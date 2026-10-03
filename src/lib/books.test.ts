@@ -22,6 +22,10 @@ import {
 	NO_BOOK_FILTERS,
 	formatOf,
 	cardBadge,
+	mapRelease,
+	mapReleaseSearch,
+	pickBestRelease,
+	emptySearchReason,
 	type BookEntry,
 	type MyBook,
 	mapBookRequest,
@@ -413,5 +417,55 @@ describe('mapHardcoverHit', () => {
 			year: 2021,
 			rating: 4.5
 		});
+	});
+});
+
+describe('release search', () => {
+	const rel = (over: Record<string, unknown>) => ({
+		indexerId: 1,
+		indexerName: 'Prowlarr',
+		guid: 'g',
+		title: 'Dune (epub)',
+		sizeBytes: 1_000_000,
+		seeders: 10,
+		format: 'epub',
+		score: 50,
+		vipOnly: false,
+		alreadyGrabbed: false,
+		profileMismatch: null,
+		...over
+	});
+
+	it('maps releases and says why one is outside the profile', () => {
+		const r = mapRelease(
+			rel({ profileMismatch: { tier: 1, tierName: 'Ebooks', failures: [{ code: 'format', expected: ['epub'], actual: ['pdf'] }, { code: 'seeders', expected: 2, actual: 0 }] } })
+		);
+		expect(r).toMatchObject({ source: 'Prowlarr', format: 'epub', mismatch: 'not epub, too few seeders' });
+	});
+
+	it('Automatic picks the best-ranked release that fits and can be fetched', () => {
+		const releases = [
+			rel({ guid: 'a', score: 90, vipOnly: true }),
+			rel({ guid: 'b', score: 80, profileMismatch: { failures: [{ code: 'size' }] } }),
+			rel({ guid: 'c', score: 60, seeders: 1 }),
+			rel({ guid: 'd', score: 60, seeders: 30 }),
+			rel({ guid: 'e', score: 70, alreadyGrabbed: true })
+		].map(mapRelease);
+		expect(pickBestRelease(releases)?.guid).toBe('d');
+		expect(pickBestRelease([])).toBeNull();
+	});
+
+	it('explains an empty or unusable search', () => {
+		const s = (over: Record<string, unknown>) =>
+			mapReleaseSearch({ releases: [], indexers: [], enabledIndexerCount: 2, ...over });
+		expect(emptySearchReason(s({ enabledIndexerCount: 0 }))).toMatch(/no download sources/);
+		expect(
+			emptySearchReason(
+				s({ indexers: [{ indexerName: 'Prowlarr', ok: true }, { indexerName: 'MAM', ok: false, failure: 'timeout' }] })
+			)
+		).toBe('No releases found (searched 2 sources). MAM timed out.');
+		expect(emptySearchReason(s({ releases: [rel({ profileMismatch: { failures: [] } })], indexers: [{ ok: true }] }))).toMatch(
+			/none fit your release profile/
+		);
 	});
 });

@@ -1,24 +1,40 @@
 <script lang="ts">
 	import Poster from './Poster.svelte';
-	import { coverThumb, cardBadge, type DiscoveryCard } from '$lib/books';
+	import BookTileButtons from './BookTileButtons.svelte';
+	import { coverThumb, cardBadge, type BookReadStatus, type DiscoveryCard } from '$lib/books';
 
 	/** One horizontal shelf of book covers (Discover → Books). Books you already
-	 *  own carry a small badge with your status. */
+	 *  own carry a small badge with your status; each cover has + (want to read)
+	 *  and download, like a show's. */
 	type Card = DiscoveryCard;
-	type Props = { title: string; subtitle?: string | null; books: Card[]; onopen: (book: Card) => void };
-	let { title, subtitle = null, books, onopen }: Props = $props();
+	type Props = {
+		title: string;
+		subtitle?: string | null;
+		books: Card[];
+		/** Statuses changed on this screen, shown before the page reloads. */
+		overrides?: Record<number, BookReadStatus>;
+		canDownload?: boolean;
+		onopen: (book: Card) => void;
+		onadd: (book: Card) => void;
+		ondownload: (book: Card) => void;
+	};
+	let { title, subtitle = null, books, overrides = {}, canDownload = false, onopen, onadd, ondownload }: Props = $props();
+	const shown = $derived(books.map((b) => (overrides[b.hardcoverId] ? { ...b, mine: overrides[b.hardcoverId] } : b)));
 </script>
 
 <section class="shelf">
 	<h2>{title}</h2>
 	{#if subtitle}<p class="why">{subtitle}</p>{/if}
 	<ul class="rail">
-		{#each books as b (b.hardcoverId)}
+		{#each shown as b (b.hardcoverId)}
 			<li>
-				<button class="tile" onclick={() => onopen(b)}>
-					<Poster src={coverThumb(b.coverUrl, 110)} width={110} height={165} radius={8} />
-					{#if cardBadge(b)}<span class="owned">{cardBadge(b)}</span>{/if}
-				</button>
+				<div class="cover">
+					<button class="tile" onclick={() => onopen(b)}>
+						<Poster src={coverThumb(b.coverUrl, 110)} width={110} height={165} radius={8} />
+						{#if cardBadge(b)}<span class="owned">{cardBadge(b)}</span>{/if}
+					</button>
+					<BookTileButtons card={b} {canDownload} {onadd} {ondownload} />
+				</div>
 				<span class="cap">{b.title}</span>
 				<span class="sub tnum">{[b.author, b.year].filter(Boolean).join(' · ')}</span>
 			</li>
@@ -37,9 +53,10 @@
 		scroll-padding-left: var(--gutter);
 	}
 	.rail li { flex: none; width: 110px; scroll-snap-align: start; }
+	.cover { position: relative; width: 110px; }
 	.tile { position: relative; display: block; width: 110px; }
 	.owned {
-		position: absolute; left: 5px; bottom: 5px; max-width: calc(100% - 10px);
+		position: absolute; left: 5px; bottom: 5px; max-width: calc(100% - 46px);
 		padding: 3px 7px; border-radius: 6px;
 		background: color-mix(in srgb, var(--bg) 82%, transparent);
 		backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);

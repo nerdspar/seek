@@ -668,3 +668,64 @@ describe('goal and send to device', () => {
 		expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ bookIds: [41], recipientIds: [2] });
 	});
 });
+
+describe('downloading it yourself', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+	const card = { hardcoverId: 7, title: 'Dune', author: 'Frank Herbert', coverUrl: null, year: 1965 };
+	const req = (over: Record<string, unknown> = {}) => ({ id: 3, status: 'approved', title: 'Dune', providerKey: 'hardcover', providerId: '7', ...over });
+
+	it('files a self-serve request when you may fetch books yourself', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json({ permissions: ['book_request_access', 'book_request_self_fulfill'] }))
+			.mockResolvedValueOnce(json([{ id: 3, name: 'Books' }]))
+			.mockResolvedValueOnce(json({ request: req(), subscribed: false }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		const out = await bo.startDownload(card, 'ebook');
+		expect(out).toMatchObject({ selfServe: true, joined: false, request: { id: 3 } });
+		expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toMatchObject({ selfServe: true, targetLibraryId: 3, mediaKind: 'ebook' });
+	});
+
+	it('falls back to an ordinary request without the permission', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json({ permissions: ['book_request_access'] }))
+			.mockResolvedValueOnce(json([]))
+			.mockResolvedValueOnce(json({ request: req({ status: 'pending' }) }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect((await bo.startDownload(card, 'audiobook')).selfServe).toBe(false);
+		expect(JSON.parse(fetchMock.mock.calls[3][1].body).selfServe).toBeUndefined();
+	});
+
+	it('searches releases, then grabs one by indexer and guid (never a URL)', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(
+				json({ releases: [{ indexerId: 2, guid: 'abc', title: 'Dune epub', score: 9 }], indexers: [{ ok: true }], enabledIndexerCount: 1 })
+			)
+			.mockResolvedValueOnce(json({ ok: true }))
+			.mockResolvedValueOnce(json(req({ status: 'grabbed' })));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		const s = await bo.searchReleases(3);
+		expect(s.releases.map((r) => r.guid)).toEqual(['abc']);
+		expect(fetchMock.mock.calls[1][0]).toBe('https://bo.test/api/v1/book-request-fulfilment/3/releases/search');
+		expect((await bo.grabRelease(3, { indexerId: 2, guid: 'abc' })).status).toBe('grabbed');
+		expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ indexerId: 2, releaseGuid: 'abc' });
+	});
+});

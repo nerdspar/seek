@@ -7,8 +7,10 @@
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import UploadSheet from '$lib/components/UploadSheet.svelte';
+	import DownloadSheet from '$lib/components/DownloadSheet.svelte';
+	import BookTileButtons from '$lib/components/BookTileButtons.svelte';
 	import { tabReselect } from '$lib/tabReselect';
-	import { coverThumb, cardBadge, type DiscoveryCard } from '$lib/books';
+	import { coverThumb, cardBadge, type BookReadStatus, type DiscoveryCard } from '$lib/books';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -17,6 +19,33 @@
 
 	let open = $state<Card | null>(null);
 	let uploading = $state(false);
+	let downloading = $state<Card | null>(null);
+	let tileNote = $state<string | null>(null);
+
+	/* + on a cover: put it on your want-to-read list. One you already have (in
+	   your library or your own list) opens its sheet instead, to change it. */
+	let added = $state<Record<number, BookReadStatus>>({});
+	async function quickAdd(c: Card) {
+		if (c.owned || c.mine || added[c.hardcoverId]) {
+			open = c;
+			return;
+		}
+		added = { ...added, [c.hardcoverId]: 'want_to_read' };
+		try {
+			const res = await fetch('/api/books/entries', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ...c, status: 'want_to_read' })
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			tileNote = `Added “${c.title}” to Want to read`;
+		} catch (e) {
+			const { [c.hardcoverId]: _, ...rest } = added;
+			added = rest;
+			tileNote = `Couldn't add “${c.title}” — ${(e as Error).message}`;
+		}
+		setTimeout(() => (tileNote = null), 2500);
+	}
 
 	/* ── Search the whole catalog. Debounced; a newer query cancels the older. ── */
 	let query = $state('');
@@ -99,11 +128,15 @@
 			{:else}
 				<ul class="grid">
 					{#each results as b (b.hardcoverId)}
+						{@const c = added[b.hardcoverId] ? { ...b, mine: added[b.hardcoverId] } : b}
 						<li>
-							<button class="tile" onclick={() => (open = b)}>
-								<Poster src={coverThumb(b.coverUrl, 110)} width={110} height={165} radius={8} />
-								{#if cardBadge(b)}<span class="owned">{cardBadge(b)}</span>{/if}
-							</button>
+							<div class="cover">
+								<button class="tile" onclick={() => (open = c)}>
+									<Poster src={coverThumb(c.coverUrl, 110)} width={110} height={165} radius={8} />
+									{#if cardBadge(c)}<span class="owned">{cardBadge(c)}</span>{/if}
+								</button>
+								<BookTileButtons card={c} canDownload={data.canUpload} onadd={quickAdd} ondownload={(x) => (downloading = x)} />
+							</div>
 							<span class="cap">{b.title}</span>
 							<span class="sub">{[b.author, b.year].filter(Boolean).join(' · ')}</span>
 						</li>
@@ -120,7 +153,16 @@
 				{/each}
 			{:then rails}
 				{#each rails as r (r.key)}
-					<BookShelf title={r.title} subtitle={r.subtitle} books={r.books} onopen={(b) => (open = b)} />
+					<BookShelf
+						title={r.title}
+						subtitle={r.subtitle}
+						books={r.books}
+						overrides={added}
+						canDownload={data.canUpload}
+						onopen={(b) => (open = b)}
+						onadd={quickAdd}
+						ondownload={(b) => (downloading = b)}
+					/>
 				{/each}
 				{#if !rails.length}<p class="msg">Hardcover returned no shelves right now.</p>{/if}
 			{:catch err}
@@ -143,6 +185,15 @@
 		}}
 	/>
 {/if}
+
+{#if downloading}
+	<!-- Keyed: a different book is a fresh download, not the last one's state. -->
+	{#key downloading.hardcoverId}
+		<DownloadSheet book={downloading} kind="ebook" onclose={() => (downloading = null)} onchange={() => invalidateAll()} />
+	{/key}
+{/if}
+
+{#if tileNote}<p class="toast" role="status">{tileNote}</p>{/if}
 
 {#if uploading}
 	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
@@ -180,9 +231,16 @@
 		display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
 		gap: 16px 12px; margin: 0; padding: 0 var(--gutter); list-style: none;
 	}
+	.cover { position: relative; width: 110px; }
 	.tile { position: relative; display: block; width: 110px; }
+	.toast {
+		position: fixed; left: var(--gutter); right: var(--gutter);
+		bottom: calc(var(--tabbar-h) + var(--tabbar-safe-b) + 12px); z-index: 60;
+		margin: 0; padding: 12px 14px; border-radius: 12px;
+		background: var(--surface-raised); box-shadow: var(--shadow-sm); font-size: 14px;
+	}
 	.owned {
-		position: absolute; left: 5px; bottom: 5px; max-width: calc(100% - 10px);
+		position: absolute; left: 5px; bottom: 5px; max-width: calc(100% - 46px);
 		padding: 3px 7px; border-radius: 6px;
 		background: color-mix(in srgb, var(--bg) 82%, transparent);
 		backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);

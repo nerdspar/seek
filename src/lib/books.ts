@@ -476,6 +476,127 @@ export function bookRequestBody(
 	};
 }
 
+/* ── Downloading: release search and grab (BookOrbit self-serve requests) ─── */
+
+/** One downloadable release BookOrbit's sources (Prowlarr) found. */
+export type BookRelease = {
+	indexerId: number;
+	guid: string;
+	title: string;
+	source: string;
+	format: string | null;
+	sizeBytes: number | null;
+	seeders: number | null;
+	language: string | null;
+	/** BookOrbit's ranking (higher is better) and the profile tier it matched. */
+	score: number;
+	tierName: string | null;
+	/** It doesn't fit your release profile (wrong format, too big…), in words. */
+	mismatch: string | null;
+	vipOnly: boolean;
+	alreadyGrabbed: boolean;
+};
+
+export type ReleaseSearch = {
+	releases: BookRelease[];
+	/** Sources that couldn't be searched, and why ("Prowlarr: timed out"). */
+	failures: string[];
+	searched: number;
+	/** None enabled at all — a different problem from "not found". */
+	noSources: boolean;
+};
+
+/** Why a release falls outside your release profile, in words. */
+export function mismatchText(raw: unknown): string | null {
+	const m = rec(raw);
+	const failures = Array.isArray(m.failures) ? m.failures.map(rec) : [];
+	if (!raw) return null;
+	const words = failures.map((f) => {
+		const list = (v: unknown) => (Array.isArray(v) ? v.join('/') : String(v ?? ''));
+		switch (f.code) {
+			case 'format':
+			case 'formatUnknown':
+				return `not ${list(f.expected)}`;
+			case 'language':
+			case 'languageUnknown':
+				return 'wrong language';
+			case 'size':
+			case 'sizeUnknown':
+				return 'size';
+			case 'seeders':
+				return 'too few seeders';
+			case 'bitrate':
+				return 'bitrate';
+			case 'fileLayout':
+			case 'fileLayoutUnknown':
+				return 'file layout';
+			default:
+				return null;
+		}
+	});
+	const said = [...new Set(words.filter(Boolean))];
+	return said.length ? said.join(', ') : 'outside your release profile';
+}
+
+export function mapRelease(raw: unknown): BookRelease {
+	const r = rec(raw);
+	return {
+		indexerId: num(r.indexerId) ?? 0,
+		guid: str(r.guid) ?? '',
+		title: str(r.title) ?? 'Untitled release',
+		source: str(r.indexerName) ?? 'Unknown source',
+		format: str(r.format),
+		sizeBytes: num(r.sizeBytes),
+		seeders: num(r.seeders),
+		language: str(r.language),
+		score: num(r.score) ?? 0,
+		tierName: str(r.tierName),
+		mismatch: mismatchText(r.profileMismatch),
+		vipOnly: r.vipOnly === true,
+		alreadyGrabbed: r.alreadyGrabbed === true
+	};
+}
+
+const FAILURE_WORDS: Record<string, string> = {
+	unauthorized: 'rejected the API key',
+	throttled: 'is rate-limiting',
+	timeout: 'timed out',
+	unreachable: "couldn't be reached",
+	unsupportedMedium: "doesn't carry this kind of book",
+	error: 'failed'
+};
+
+export function mapReleaseSearch(raw: unknown): ReleaseSearch {
+	const r = rec(raw);
+	const indexers = (Array.isArray(r.indexers) ? r.indexers : []).map(rec);
+	return {
+		releases: (Array.isArray(r.releases) ? r.releases : []).map(mapRelease),
+		failures: indexers
+			.filter((i) => i.ok === false)
+			.map((i) => `${str(i.indexerName) ?? 'A source'} ${FAILURE_WORDS[str(i.failure) ?? 'error'] ?? 'failed'}`),
+		searched: indexers.length,
+		noSources: (num(r.enabledIndexerCount) ?? indexers.length) === 0
+	};
+}
+
+/** What Automatic grabs: the best-ranked release that fits your profile and
+ *  can actually be downloaded — or null, and the sheet says why. */
+export function pickBestRelease(releases: BookRelease[]): BookRelease | null {
+	return (
+		releases
+			.filter((r) => !r.mismatch && !r.vipOnly && !r.alreadyGrabbed && r.guid)
+			.sort((a, b) => b.score - a.score || (b.seeders ?? -1) - (a.seeders ?? -1))[0] ?? null
+	);
+}
+
+/** Why a search found nothing worth grabbing, in a sentence. */
+export function emptySearchReason(s: ReleaseSearch): string {
+	if (s.noSources) return 'BookOrbit has no download sources turned on (Settings → Indexers in BookOrbit).';
+	const failed = s.failures.length ? ` ${s.failures.join('; ')}.` : '';
+	if (!s.releases.length) return `No releases found${s.searched ? ` (searched ${s.searched} source${s.searched === 1 ? '' : 's'})` : ''}.${failed}`;
+	return `Found ${s.releases.length}, but none fit your release profile — pick one yourself if you like.${failed}`;
+}
+
 /**
  * The URL to draw a cover at a given CSS width. Covers come from two places,
  * neither of which serves sized images, so both go through Seek's thumbnailer

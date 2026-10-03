@@ -27,7 +27,9 @@ import {
 	type BookReadStatus,
 	type BookCard,
 	type BookRequest,
-	type RequestMediaKind
+	type RequestMediaKind,
+	type ReleaseSearch,
+	mapReleaseSearch
 } from '$lib/books';
 
 /** A BookOrbit instance exists. Whether *this person* is linked is separate. */
@@ -366,6 +368,67 @@ export async function listMyRequests(): Promise<BookRequest[]> {
 	const rows = res.items.map(mapBookRequest);
 	requestCache.set(key, rows);
 	return rows;
+}
+
+/** One of your requests, as it is now (for watching a download). */
+export async function getRequest(id: number): Promise<BookRequest> {
+	return mapBookRequest(await bo<unknown>(`/book-requests/${id}`));
+}
+
+/* ── Downloading it yourself (self-serve requests) ────────────────────────────
+   With BookOrbit's "download books directly" permission you can fulfil your own
+   request: search your sources for releases and send one to the download
+   client. Without it, a request waits for whoever approves requests. */
+
+const permCache = new TTLCache<string[]>(5 * 60 * 1000);
+
+/** Can this person fetch books themselves (not just ask)? */
+export async function canSelfServe(): Promise<boolean> {
+	const key = scopeKey('books:perms');
+	let perms = permCache.get(key);
+	if (!perms) {
+		const me = await bo<{ permissions?: unknown; isSuperuser?: unknown }>('/auth/me');
+		perms = Array.isArray(me.permissions) ? (me.permissions as string[]) : [];
+		if (me.isSuperuser === true) perms = [...perms, 'superuser'];
+		permCache.set(key, perms);
+	}
+	return perms.includes('superuser') || (perms.includes('book_request_self_fulfill') && perms.includes('book_request_access'));
+}
+
+/**
+ * Start getting a book: a self-serve request when you're allowed to fetch it
+ * yourself (approved at once, nothing searched yet — you choose or let Seek pick
+ * the best release), otherwise an ordinary request for approval.
+ */
+export async function startDownload(
+	book: Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>,
+	mediaKind: RequestMediaKind
+): Promise<{ request: BookRequest; joined: boolean; selfServe: boolean }> {
+	const selfServe = await canSelfServe().catch(() => false);
+	const res = await bo<{ request: unknown; subscribed?: boolean }>('/book-requests', {
+		method: 'POST',
+		body: { ...bookRequestBody(book, mediaKind, await requestDestination()), ...(selfServe ? { selfServe: true } : {}) }
+	});
+	requestCache.delete(scopeKey('books:requests'));
+	return { request: mapBookRequest(res.request), joined: Boolean(res.subscribed), selfServe };
+}
+
+/** Search your sources for releases of a request's book (takes a while). */
+export async function searchReleases(id: number): Promise<ReleaseSearch> {
+	return mapReleaseSearch(
+		await bo<unknown>(`/book-request-fulfilment/${id}/releases/search`, { method: 'POST', body: {}, timeoutMs: 90_000 })
+	);
+}
+
+/** Send one release to the download client. */
+export async function grabRelease(id: number, release: { indexerId: number; guid: string }): Promise<BookRequest> {
+	await bo<unknown>(`/book-request-fulfilment/${id}/grab`, {
+		method: 'POST',
+		body: { indexerId: release.indexerId, releaseGuid: release.guid },
+		timeoutMs: 60_000
+	});
+	requestCache.delete(scopeKey('books:requests'));
+	return getRequest(id);
 }
 
 /** Call off one of your requests (stops a download that's under way). */
