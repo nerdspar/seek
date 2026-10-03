@@ -292,3 +292,103 @@ describe('bookorbit per person', () => {
 		db.useDatabase(null);
 	});
 });
+
+describe('book requests', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	const card = { hardcoverId: 427578, title: 'Project Hail Mary', author: 'Andy Weir', coverUrl: null, year: 2021 };
+	const item = (over: Record<string, unknown> = {}) => ({
+		id: 9,
+		status: 'pending',
+		title: 'Project Hail Mary',
+		authors: ['Andy Weir'],
+		providerKey: 'hardcover',
+		providerId: '427578',
+		mediaKind: 'ebook',
+		createdAt: '2026-10-03T00:00:00Z',
+		...over
+	});
+
+	it('files the request as you, into the only library when you have not picked one', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json([{ id: 3, name: 'Books' }]))
+			.mockResolvedValueOnce(json({ request: item(), subscribed: false }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+
+		const out = await bo.requestBook(card, 'ebook');
+		expect(out).toMatchObject({ joined: false, request: { id: 9, status: 'pending', hardcoverId: 427578 } });
+		const [url, init] = fetchMock.mock.calls[2];
+		expect(url).toBe('https://bo.test/api/v1/book-requests');
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body)).toEqual({
+			title: 'Project Hail Mary',
+			mediaKind: 'ebook',
+			authors: ['Andy Weir'],
+			publishedYear: 2021,
+			providerKey: 'hardcover',
+			providerId: '427578',
+			targetLibraryId: 3
+		});
+	});
+
+	it('leaves the destination to BookOrbit when there are several libraries', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json([{ id: 3, name: 'Books' }, { id: 4, name: 'Audio' }]))
+			.mockResolvedValueOnce(json({ request: item(), subscribed: true }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect((await bo.requestBook(card, 'audiobook')).joined).toBe(true);
+		const body = JSON.parse(fetchMock.mock.calls[2][1].body);
+		expect(body.targetLibraryId).toBeUndefined();
+		expect(body.mediaKind).toBe('audiobook');
+	});
+
+	it("surfaces BookOrbit's own reason when it refuses", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json([]))
+			.mockResolvedValueOnce(
+				json({ statusCode: 400, message: 'Pick a destination library', code: 'SUBMIT_DESTINATION_REQUIRED' }, 400)
+			);
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		await expect(bo.requestBook(card, 'ebook')).rejects.toMatchObject({
+			status: 400,
+			message: 'Pick a destination library',
+			code: 'SUBMIT_DESTINATION_REQUIRED'
+		});
+	});
+
+	it('lists and cancels your requests', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json({ items: [item(), item({ id: 10, status: 'downloading', download: { progressPercent: 40 } })], total: 2 }))
+			.mockResolvedValueOnce(json(item({ status: 'cancelled' })));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		const list = await bo.listMyRequests();
+		expect(list.map((r) => [r.id, r.status, r.progress])).toEqual([
+			[9, 'pending', null],
+			[10, 'downloading', 0.4]
+		]);
+		expect((await bo.cancelRequest(9)).status).toBe('cancelled');
+		expect(fetchMock.mock.calls[2][0]).toBe('https://bo.test/api/v1/book-requests/9/cancel');
+	});
+});

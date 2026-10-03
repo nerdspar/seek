@@ -115,17 +115,166 @@ export function unownedWishes(wishlist: WishBook[], library: ReadingBook[]): Wis
 	return wishlist.filter((w) => !ids.has(w.hardcoverId) && !keys.has(bookKey(w.title, w.author)));
 }
 
-export type ReadingSection = { title: string; books: ReadingBook[]; wishes: WishBook[] };
+/** Wishes whose book is now in the library, paired with the library copy. */
+export function arrivedWishes(
+	wishlist: WishBook[],
+	library: ReadingBook[]
+): { wish: WishBook; book: ReadingBook }[] {
+	const byHc = new Map(library.filter((b) => b.hardcoverId).map((b) => [b.hardcoverId!, b]));
+	const byKey = new Map(library.map((b) => [bookKey(b.title, b.authors[0]), b]));
+	return wishlist.flatMap((wish) => {
+		const book = byHc.get(wish.hardcoverId) ?? byKey.get(bookKey(wish.title, wish.author));
+		return book ? [{ wish, book }] : [];
+	});
+}
 
-/** The reading list: status sections from the library, with the wishlist's
- *  not-yet-owned books folded into "Want to read". */
-export function readingSections(library: ReadingBook[], wishlist: WishBook[]): ReadingSection[] {
-	const wishes = unownedWishes(wishlist, library);
-	return READING_SECTIONS.map((s) => ({
+export type ReadingSection = {
+	title: string;
+	books: ReadingBook[];
+	wishes: WishBook[];
+	requests: BookRequest[];
+};
+
+/** The reading list: status sections from the library, the books you've asked
+ *  BookOrbit for (while they're on the way) right after Reading, and the
+ *  wishlist's not-yet-owned books folded into "Want to read" — minus any that
+ *  are already shown as on the way. */
+export function readingSections(
+	library: ReadingBook[],
+	wishlist: WishBook[],
+	requests: BookRequest[] = []
+): ReadingSection[] {
+	const onTheWay = requests.filter((r) => requestActive(r.status));
+	const coming = new Set(onTheWay.map((r) => r.hardcoverId).filter(Boolean));
+	const wishes = unownedWishes(wishlist, library).filter((w) => !coming.has(w.hardcoverId));
+	const sections: ReadingSection[] = READING_SECTIONS.map((s) => ({
 		title: s.title,
 		books: library.filter((b) => s.statuses.includes(b.status)),
-		wishes: s.title === 'Want to read' ? wishes : []
-	})).filter((s) => s.books.length || s.wishes.length);
+		wishes: s.title === 'Want to read' ? wishes : [],
+		requests: []
+	}));
+	sections.splice(1, 0, { title: 'Requested', books: [], wishes: [], requests: onTheWay });
+	return sections.filter((s) => s.books.length || s.wishes.length || s.requests.length);
+}
+
+/* ── Requests: asking BookOrbit to get a book you don't own ─────────────────
+   BookOrbit runs the whole pipeline (approval → Prowlarr search → download
+   client → import); Seek files the request as you and shows where it is. */
+
+export type RequestMediaKind = 'ebook' | 'audiobook';
+
+export type BookRequestStatus =
+	| 'pending'
+	| 'approved'
+	| 'rejected'
+	| 'cancelled'
+	| 'searching'
+	| 'grabbed'
+	| 'downloading'
+	| 'importing'
+	| 'needs_review'
+	| 'available'
+	| 'failed';
+
+export type BookRequest = {
+	id: number;
+	status: BookRequestStatus;
+	title: string;
+	author: string | null;
+	coverUrl: string | null;
+	/** The Hardcover id it was requested from, when it came from Seek/Hardcover. */
+	hardcoverId: number | null;
+	mediaKind: RequestMediaKind | 'comic';
+	/** 0..1 while a download is running, else null. */
+	progress: number | null;
+	/** Why it failed or was rejected, in BookOrbit's words. */
+	reason: string | null;
+	/** The library book once it's arrived. */
+	bookId: number | null;
+	createdAt: string;
+};
+
+const REQUEST_LABELS: Record<BookRequestStatus, string> = {
+	pending: 'Waiting for approval',
+	approved: 'Approved',
+	rejected: 'Declined',
+	cancelled: 'Cancelled',
+	searching: 'Searching',
+	grabbed: 'Found — starting download',
+	downloading: 'Downloading',
+	importing: 'Adding to library',
+	needs_review: 'Needs a look in BookOrbit',
+	available: 'In your library',
+	failed: "Couldn't get it"
+};
+
+export const requestLabel = (s: BookRequestStatus) => REQUEST_LABELS[s];
+
+/** Still on its way (BookOrbit's ACTIVE statuses) — not settled either way. */
+export const requestActive = (s: BookRequestStatus) =>
+	['pending', 'approved', 'searching', 'grabbed', 'downloading', 'importing', 'needs_review'].includes(s);
+
+/** Can still be called off (BookOrbit's CANCELLABLE statuses). */
+export const requestCancellable = (s: BookRequestStatus) => requestActive(s) || s === 'failed';
+
+/** Your request for a Hardcover book worth showing: the live one if there is
+ *  one, else the latest that settled badly (so "declined"/"failed" is visible
+ *  and you can ask again). Cancelled and fulfilled ones are history. */
+export function requestFor(requests: BookRequest[], hardcoverId: number): BookRequest | null {
+	const mine = requests.filter((r) => r.hardcoverId === hardcoverId);
+	return (
+		mine.find((r) => requestActive(r.status)) ??
+		mine.find((r) => r.status === 'failed' || r.status === 'rejected') ??
+		null
+	);
+}
+
+const REQUEST_STATUSES = Object.keys(REQUEST_LABELS) as BookRequestStatus[];
+
+/** Map one BookOrbit `BookRequestItem` to what Seek shows. */
+export function mapBookRequest(raw: unknown): BookRequest {
+	const r = rec(raw);
+	const status = str(r.status);
+	const download = rec(r.download);
+	const running = ['grabbed', 'downloading'].includes(status ?? '') && num(download.progressPercent) !== null;
+	const hc = str(r.providerKey) === 'hardcover' ? Number(str(r.providerId)) : NaN;
+	const kind = str(r.mediaKind);
+	return {
+		id: num(r.id) ?? 0,
+		status: status && (REQUEST_STATUSES as string[]).includes(status) ? (status as BookRequestStatus) : 'pending',
+		title: str(r.title) ?? 'Untitled',
+		author: authorNames(r.authors)[0] ?? null,
+		coverUrl: str(r.coverUrl),
+		hardcoverId: Number.isInteger(hc) && hc > 0 ? hc : null,
+		mediaKind: kind === 'audiobook' || kind === 'comic' ? kind : 'ebook',
+		progress: running ? normalizeProgress(num(download.progressPercent)! / 100) : null,
+		reason: str(r.decisionNote) ?? str(r.statusReason) ?? str(download.errorMessage),
+		bookId: num(r.matchedBookId),
+		createdAt: str(r.createdAt) ?? ''
+	};
+}
+
+/**
+ * The body for BookOrbit's POST /book-requests from a Hardcover book. Only keys
+ * its DTO declares — it rejects unknown ones (forbidNonWhitelisted). The
+ * provider key/id let BookOrbit fold a second request for the same book into
+ * the first, and tie the request back to the Hardcover book here.
+ */
+export function bookRequestBody(
+	book: Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>,
+	mediaKind: RequestMediaKind,
+	targetLibraryId: number | null
+) {
+	return {
+		title: book.title,
+		mediaKind,
+		authors: book.author ? [book.author] : [],
+		...(book.year ? { publishedYear: book.year } : {}),
+		...(book.coverUrl ? { coverUrl: book.coverUrl } : {}),
+		providerKey: 'hardcover',
+		providerId: String(book.hardcoverId),
+		...(targetLibraryId ? { targetLibraryId } : {})
+	};
 }
 
 /**

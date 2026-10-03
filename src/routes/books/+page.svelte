@@ -7,13 +7,29 @@
 	import NotLinked from '$lib/components/NotLinked.svelte';
 	import { notLinkedOf } from '$lib/notLinked';
 	import { tabReselect } from '$lib/tabReselect';
-	import { readingSections, type ReadingBook, type WishBook } from '$lib/books';
+	import {
+		readingSections,
+		requestLabel,
+		type BookRequest,
+		type ReadingBook,
+		type WishBook
+	} from '$lib/books';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	let open = $state<ReadingBook | null>(null);
 	let openWish = $state<WishBook | null>(null);
+
+	/* Your requests arrive on their own (they're a nicety — BookOrbit may be slow). */
+	let requests = $state<BookRequest[]>([]);
+	$effect(() => {
+		let live = true;
+		data.requests.then((r) => live && (requests = r));
+		return () => {
+			live = false;
+		};
+	});
 
 	/* A wishlisted book drawn as a reading-list row. It has no BookOrbit id, so
 	   its key is the (negated) Hardcover id — never collides with a library id. */
@@ -31,6 +47,19 @@
 		coverUrl: w.coverUrl,
 		hardcoverId: w.hardcoverId
 	});
+
+	/* A request as a wish-shaped card, so it opens the same sheet. */
+	const asWish = (r: BookRequest): WishBook => ({
+		hardcoverId: r.hardcoverId ?? 0,
+		title: r.title,
+		author: r.author,
+		coverUrl: r.coverUrl,
+		year: null,
+		rating: null,
+		addedAt: r.createdAt
+	});
+	const requestNote = (r: BookRequest) =>
+		`${requestLabel(r.status)}${r.progress !== null ? ` · ${Math.round(r.progress * 100)}%` : ''}`;
 
 	/* Long finished lists would bury everything after them; they open on request. */
 	const CAP = 8;
@@ -71,22 +100,28 @@
 				{#each Array(5) as _, i (i)}<li><Skeleton height="98px" radius={14} /></li>{/each}
 			</ul>
 		{:then books}
-			{@const groups = readingSections(books, data.wishlist)}
+			{@const groups = readingSections(books, data.wishlist, requests)}
 			{@const library = unstarted(books)}
 			{#each groups as g (g.title)}
 				{@const all = expanded[g.title]}
 				{@const rows = [
-					...g.books.map((b) => ({ b, wish: null })),
-					...g.wishes.map((w) => ({ b: asRow(w), wish: w }))
+					...g.books.map((b) => ({ b, wish: null, note: null })),
+					...g.requests.map((r) => ({
+						// Never collides with a library id (positive) or a wish (−hardcoverId).
+						b: { ...asRow(asWish(r)), id: -1e9 - r.id },
+						wish: r.hardcoverId ? asWish(r) : null,
+						note: requestNote(r)
+					})),
+					...g.wishes.map((w) => ({ b: asRow(w), wish: w, note: 'Not in your library yet' }))
 				]}
 				<section class="group">
 					<h2>{g.title} <span class="count tnum">{rows.length}</span></h2>
 					<ul class="rows">
 						{#each all ? rows : rows.slice(0, CAP) as r (r.b.id)}
 							<li>
-								{#if r.wish}
+								{#if r.note}
 									{@const w = r.wish}
-									<BookRow book={r.b} note="Not in your library yet" onopen={() => (openWish = w)} />
+									<BookRow book={r.b} note={r.note} onopen={() => w && (openWish = w)} />
 								{:else}
 									<BookRow book={r.b} onopen={(x) => (open = x)} />
 								{/if}

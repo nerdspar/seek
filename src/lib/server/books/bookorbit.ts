@@ -10,14 +10,25 @@
  * token, re-login when it expires (stateless — simpler and sturdier than storing
  * a rotating refresh token). Tokens never leave the server.
  *
- * Writes are deliberate, one function each: so far only setReadStatus, which
- * changes the signed-in person's own reading state — never a book or the library.
+ * Writes are deliberate, one function each: setReadStatus (your own reading
+ * state) and requestBook/cancelRequest (asking BookOrbit to fetch a book — its
+ * own approval rules and automation decide what happens next). Never a book's
+ * metadata or files.
  */
 import { BOOKORBIT_URL } from '$lib/server/env';
 import { TTLCache } from '$lib/server/cache';
 import { invalidate } from '$lib/server/memo';
 import { bookorbitLogin, scopeId, scopeKey, NotLinkedError, type BookOrbitLogin } from '$lib/server/userctx';
-import { mapReadingBook, type ReadingBook, type BookReadStatus } from '$lib/books';
+import {
+	mapReadingBook,
+	mapBookRequest,
+	bookRequestBody,
+	type ReadingBook,
+	type BookReadStatus,
+	type BookCard,
+	type BookRequest,
+	type RequestMediaKind
+} from '$lib/books';
 
 /** A BookOrbit instance exists. Whether *this person* is linked is separate. */
 export const bookorbitConfigured = () => Boolean(BOOKORBIT_URL());
@@ -66,6 +77,28 @@ async function accessToken(): Promise<string> {
 
 type ReqInit = { method?: string; body?: unknown; timeoutMs?: number };
 
+/** A refusal from BookOrbit, carrying its own explanation (it writes good ones —
+ *  "Pick a destination library…") so the UI can show it instead of a status code. */
+export class BookOrbitError extends Error {
+	constructor(
+		readonly status: number,
+		message: string,
+		readonly code: string | null = null
+	) {
+		super(message);
+	}
+}
+
+async function refusal(path: string, res: Response): Promise<BookOrbitError> {
+	const body = (await res.json().catch(() => null)) as { message?: unknown; code?: unknown } | null;
+	const msg = Array.isArray(body?.message) ? body.message.join('; ') : body?.message;
+	return new BookOrbitError(
+		res.status,
+		typeof msg === 'string' && msg ? msg : `BookOrbit ${path} -> HTTP ${res.status}`,
+		typeof body?.code === 'string' ? body.code : null
+	);
+}
+
 /** Authenticated BookOrbit request. Retries once on a 401 by re-logging in, so a
  *  server-side token expiry is invisible to the caller. */
 async function bo<T>(path: string, init: ReqInit = {}): Promise<T> {
@@ -86,7 +119,8 @@ async function bo<T>(path: string, init: ReqInit = {}): Promise<T> {
 		sessions.delete(scopeId());
 		res = await send(await accessToken());
 	}
-	if (!res.ok) throw new Error(`BookOrbit ${path} -> HTTP ${res.status}`);
+	if (!res.ok) throw await refusal(path, res);
+	if (res.status === 204) return undefined as T;
 	return res.json() as Promise<T>;
 }
 
@@ -253,6 +287,58 @@ export async function listLibraries(): Promise<Library[]> {
 	return raw
 		.filter((l) => typeof l.id === 'number')
 		.map((l) => ({ id: l.id as number, name: typeof l.name === 'string' ? l.name : `Library ${l.id}` }));
+}
+
+/* ── Requests ─────────────────────────────────────────────────────────────── */
+
+/** Where a request from this person lands: their linked library, else the only
+ *  library there is. Null when that's ambiguous — BookOrbit then either queues
+ *  it for an approver to route, or says a destination is needed. */
+async function requestDestination(): Promise<number | null> {
+	const mine = myLogin().libraryId;
+	if (mine) return mine;
+	const libs = await listLibraries().catch(() => []);
+	return libs.length === 1 ? libs[0].id : null;
+}
+
+/**
+ * Ask BookOrbit to get a book. Filed as *you*, so its rules apply as they would
+ * in its own UI: queued for approval, or — if your account auto-approves and
+ * automation is on — searched and downloaded straight away. A book someone
+ * already asked for just adds you to that request.
+ */
+export async function requestBook(
+	book: Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>,
+	mediaKind: RequestMediaKind
+): Promise<{ request: BookRequest; joined: boolean }> {
+	const res = await bo<{ request: unknown; subscribed?: boolean }>('/book-requests', {
+		method: 'POST',
+		body: bookRequestBody(book, mediaKind, await requestDestination())
+	});
+	requestCache.delete(scopeKey('books:requests'));
+	return { request: mapBookRequest(res.request), joined: Boolean(res.subscribed) };
+}
+
+/* Requests move on their own (search → download → import), so the list is only
+   cached long enough to serve one screen's worth of sheet opens. */
+const requestCache = new TTLCache<BookRequest[]>(20_000);
+
+/** Your requests, newest first (the ones you've hidden in BookOrbit left out). */
+export async function listMyRequests(): Promise<BookRequest[]> {
+	const key = scopeKey('books:requests');
+	const hit = requestCache.get(key);
+	if (hit) return hit;
+	const res = await bo<{ items: unknown[] }>('/book-requests?limit=100&sortBy=createdAt&sortDir=desc');
+	const rows = res.items.map(mapBookRequest);
+	requestCache.set(key, rows);
+	return rows;
+}
+
+/** Call off one of your requests (stops a download that's under way). */
+export async function cancelRequest(id: number): Promise<BookRequest> {
+	const out = mapBookRequest(await bo<unknown>(`/book-requests/${id}/cancel`, { method: 'POST' }));
+	requestCache.delete(scopeKey('books:requests'));
+	return out;
 }
 
 /** Raw cover bytes for a book, proxied to the browser (covers are auth-gated).

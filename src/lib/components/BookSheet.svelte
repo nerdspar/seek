@@ -2,7 +2,18 @@
 	import Sheet from './Sheet.svelte';
 	import Poster from './Poster.svelte';
 	import Skeleton from './Skeleton.svelte';
-	import { coverThumb, statusLabel, type BookCard, type BookDetail, type ReadingBook } from '$lib/books';
+	import {
+		coverThumb,
+		statusLabel,
+		requestLabel,
+		requestActive,
+		requestCancellable,
+		type BookCard,
+		type BookDetail,
+		type BookRequest,
+		type ReadingBook,
+		type RequestMediaKind
+	} from '$lib/books';
 
 	/** A book's sheet. Opened from the reading list (`library`: your copy in
 	 *  BookOrbit) or from Discover (`card`: a Hardcover result). Either way, when
@@ -19,7 +30,13 @@
 	};
 	let { hardcoverId, library = null, card = null, onclose, onchange }: Props = $props();
 
-	let detail = $state<(BookDetail & { owned: Owned | null; wished?: boolean }) | null>(null);
+	type Detail = BookDetail & {
+		owned: Owned | null;
+		wished?: boolean;
+		canRequest?: boolean;
+		request?: BookRequest | null;
+	};
+	let detail = $state<Detail | null>(null);
 	let loading = $state(false);
 	let failed = $state(false);
 
@@ -164,6 +181,63 @@
 			saving = false;
 		}
 	}
+
+	/* ── Requests: ask BookOrbit to get it (its approval + Prowlarr do the rest) ── */
+	let reqPicked = $state<BookRequest | null | undefined>(undefined);
+	const request = $derived(reqPicked !== undefined ? reqPicked : (detail?.request ?? null));
+	let reqNote = $state<string | null>(null);
+
+	/** The server's own words when it refuses (BookOrbit explains itself). */
+	const failure = async (res: Response) =>
+		((await res.json().catch(() => null)) as { message?: string } | null)?.message ?? `HTTP ${res.status}`;
+
+	async function ask(mediaKind: RequestMediaKind) {
+		if (!resolvedId || saving) return;
+		saving = true;
+		saveError = null;
+		reqNote = null;
+		try {
+			const res = await fetch('/api/books/requests', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					hardcoverId: resolvedId,
+					title: detail?.title ?? card?.title,
+					author: detail?.author ?? card?.author ?? null,
+					coverUrl: detail?.coverUrl ?? card?.coverUrl ?? null,
+					year: detail?.year ?? card?.year ?? null,
+					mediaKind
+				})
+			});
+			if (!res.ok) throw new Error(await failure(res));
+			const out = (await res.json()) as { request: BookRequest; joined: boolean };
+			reqPicked = out.request;
+			wishPicked = true; // asking for it puts it on your list
+			if (out.joined) reqNote = 'Someone already asked for this one — you’re on that request too.';
+			onchange?.();
+		} catch (e) {
+			saveError = `Couldn't request — ${(e as Error).message}`;
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function cancelAsk() {
+		if (!request || saving) return;
+		saving = true;
+		saveError = null;
+		try {
+			const res = await fetch(`/api/books/requests/${request.id}/cancel`, { method: 'POST' });
+			if (!res.ok) throw new Error(await failure(res));
+			reqPicked = null;
+			reqNote = null;
+			onchange?.();
+		} catch (e) {
+			saveError = `Couldn't cancel — ${(e as Error).message}`;
+		} finally {
+			saving = false;
+		}
+	}
 </script>
 
 <Sheet label={title || 'Book'} {onclose} scrollable>
@@ -215,7 +289,35 @@
 			<button class="wish" class:on={wished} aria-pressed={wished} disabled={saving} onclick={toggleWish}>
 				{wished ? '✓ On your want-to-read list' : '+ Want to read'}
 			</button>
-			<p class="notowned">Not in your library yet.</p>
+			{#if request && requestActive(request.status)}
+				<div class="req">
+					<span class="reqtext">
+						<span class="reqlabel">{requestLabel(request.status)}</span>
+						<span class="reqsub">Requested {request.mediaKind}{request.progress !== null ? ` · ${pct(request.progress)}` : ''}</span>
+					</span>
+					{#if requestCancellable(request.status)}
+						<button class="reqcancel" disabled={saving} onclick={cancelAsk}>Cancel</button>
+					{/if}
+				</div>
+				{#if request.progress !== null}
+					<span class="track reqtrack"><span class="fill" style:width={pct(request.progress)}></span></span>
+				{/if}
+			{:else if detail?.canRequest}
+				{#if request}
+					<p class="notowned">
+						Last request: {requestLabel(request.status).toLowerCase()}{request.reason ? ` — ${request.reason}` : ''}.
+					</p>
+				{:else}
+					<p class="notowned">Not in your library yet.</p>
+				{/if}
+				<div class="picker2 get">
+					<button disabled={saving} onclick={() => ask('ebook')}>{request ? 'Ask again — ebook' : 'Get the ebook'}</button>
+					<button disabled={saving} onclick={() => ask('audiobook')}>Audiobook</button>
+				</div>
+			{:else}
+				<p class="notowned">Not in your library yet.</p>
+			{/if}
+			{#if reqNote}<p class="notowned">{reqNote}</p>{/if}
 			{#if saveError}<p class="err">{saveError}</p>{/if}
 		{/if}
 
@@ -273,6 +375,18 @@
 	.wish.on { background: var(--surface-raised); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--signal-solid); }
 	.wish:disabled { opacity: 0.7; }
 	.wish + .notowned { margin-top: 8px; text-align: center; }
+	.get { justify-content: center; }
+	.get button { flex: 1; color: var(--text); }
+	.req {
+		display: flex; align-items: center; gap: 10px;
+		margin-top: 10px; padding: 10px 12px;
+		border-radius: var(--radius); background: var(--surface-raised);
+	}
+	.reqtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+	.reqlabel { font-size: 13.5px; font-weight: 650; }
+	.reqsub { font-size: 12px; color: var(--text-dim); }
+	.reqcancel { flex: none; min-height: 32px; padding: 0 12px; border-radius: 9px; background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+	.reqtrack { display: block; margin-top: 6px; }
 
 	.picker {
 		display: flex; gap: 3px; margin-top: 16px; padding: 3px;

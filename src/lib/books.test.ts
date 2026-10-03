@@ -13,7 +13,11 @@ import {
 	coverThumb,
 	readingSections,
 	unownedWishes,
-	cardBadge
+	cardBadge,
+	mapBookRequest,
+	requestLabel,
+	requestCancellable,
+	requestFor
 } from './books';
 
 describe('readingSections', () => {
@@ -37,6 +41,21 @@ describe('readingSections', () => {
 		]);
 	});
 
+	it('shows requests on the way after Reading, and takes their wishes out of Want to read', () => {
+		const req = (id: number, status: string, hc: number | null) =>
+			mapBookRequest({ id, status, title: `R${id}`, ...(hc ? { providerKey: 'hardcover', providerId: String(hc) } : {}) });
+		const sections = readingSections(
+			[owned(1, 'reading', 'Dune')],
+			[wish(50, 'Hyperion'), wish(51, 'Wanted')],
+			[req(7, 'downloading', 50), req(8, 'pending', null), req(9, 'cancelled', 51)]
+		);
+		expect(sections.map((s) => [s.title, s.requests.map((r) => r.id), s.wishes.map((w) => w.title)])).toEqual([
+			['Reading', [], []],
+			['Requested', [7, 8], []],
+			['Want to read', [], ['Wanted']]
+		]);
+	});
+
 	it('drops a wish once you own the book (by id or by title + author)', () => {
 		const lib = [owned(1, 'unread', 'Hyperion', 'Dan Simmons'), owned(2, 'unread', 'Other', 'A', 77)];
 		const left = unownedWishes([wish(50, 'Hyperion', 'Dan Simmons'), wish(77, 'Renamed'), wish(9, 'Still wanted')], lib);
@@ -49,6 +68,45 @@ describe('cardBadge', () => {
 		expect(cardBadge({ owned: { status: 'read' }, wished: true })).toBe('Read');
 		expect(cardBadge({ owned: null, wished: true })).toBe('Want to read');
 		expect(cardBadge({})).toBeNull();
+	});
+});
+
+describe('mapBookRequest', () => {
+	it('ties a request back to its Hardcover book and reads download progress', () => {
+		const r = mapBookRequest({
+			id: 4,
+			status: 'downloading',
+			title: 'Dune',
+			authors: ['Frank Herbert'],
+			providerKey: 'hardcover',
+			providerId: '312460',
+			mediaKind: 'audiobook',
+			download: { progressPercent: 62.5, errorMessage: null },
+			createdAt: '2026-10-01T00:00:00Z'
+		});
+		expect(r).toMatchObject({ id: 4, hardcoverId: 312460, author: 'Frank Herbert', mediaKind: 'audiobook', progress: 0.625 });
+	});
+
+	it('has no Hardcover id for requests made elsewhere, and keeps the reason', () => {
+		const r = mapBookRequest({ id: 5, status: 'rejected', title: 'X', providerKey: 'openlibrary', providerId: 'OL1W', decisionNote: 'Already have it' });
+		expect(r.hardcoverId).toBeNull();
+		expect(r.reason).toBe('Already have it');
+		expect(r.progress).toBeNull();
+		expect(requestLabel(r.status)).toBe('Declined');
+		expect(requestCancellable(r.status)).toBe(false);
+		expect(requestCancellable('failed')).toBe(true);
+	});
+
+	it('picks the request worth showing for a book', () => {
+		const req = (id: number, status: string, hc = 7) =>
+			mapBookRequest({ id, status, providerKey: 'hardcover', providerId: String(hc) });
+		expect(requestFor([req(1, 'cancelled'), req(2, 'downloading'), req(3, 'searching', 8)], 7)?.id).toBe(2);
+		expect(requestFor([req(1, 'cancelled'), req(4, 'rejected')], 7)?.id).toBe(4);
+		expect(requestFor([req(1, 'cancelled'), req(5, 'available')], 7)).toBeNull();
+	});
+
+	it('treats an unknown status as pending', () => {
+		expect(mapBookRequest({ id: 1, status: 'weird' }).status).toBe('pending');
 	});
 });
 

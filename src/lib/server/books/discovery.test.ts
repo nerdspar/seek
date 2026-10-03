@@ -3,10 +3,21 @@ import type { BookCard, ReadingBook } from '$lib/books';
 
 const searchBooks = vi.fn();
 vi.mock('./hardcover', () => ({ searchBooks: (...a: unknown[]) => searchBooks(...a) }));
-vi.mock('./bookorbit', () => ({ bookorbitLinked: () => true, getAllBooks: async () => [] }));
-vi.mock('./wishlist', () => ({ wishlistIds: () => new Set() }));
+const setReadStatus = vi.fn();
+vi.mock('./bookorbit', () => ({
+	bookorbitLinked: () => true,
+	getAllBooks: async () => [],
+	setReadStatus: (...a: unknown[]) => setReadStatus(...a)
+}));
+let wishes: { hardcoverId: number; title: string; author: string | null }[] = [];
+const removeFromWishlist = vi.fn((id: number) => (wishes = wishes.filter((w) => w.hardcoverId !== id)));
+vi.mock('./wishlist', () => ({
+	wishlistIds: () => new Set(),
+	listWishlist: () => wishes,
+	removeFromWishlist: (id: number) => removeFromWishlist(id)
+}));
 
-import { markOwned, indexLibrary, matchHardcover } from './discovery';
+import { markOwned, indexLibrary, matchHardcover, settleArrivals } from './discovery';
 
 const card = (id: number, title = `B${id}`, author: string | null = null): BookCard => ({
 	hardcoverId: id,
@@ -19,7 +30,11 @@ const card = (id: number, title = `B${id}`, author: string | null = null): BookC
 const mine = (over: Partial<ReadingBook>) =>
 	({ id: 41, title: 'x', authors: [], status: 'reading', progress: 0.3, hardcoverId: null, ...over }) as ReadingBook;
 
-beforeEach(() => searchBooks.mockReset());
+beforeEach(() => {
+	searchBooks.mockReset();
+	setReadStatus.mockReset();
+	removeFromWishlist.mockClear();
+});
 
 describe('markOwned', () => {
 	it('matches by Hardcover id when BookOrbit has one', () => {
@@ -61,5 +76,38 @@ describe('matchHardcover', () => {
 	it('returns null rather than guess', async () => {
 		searchBooks.mockResolvedValue([card(1, 'Dune Messiah', 'Frank Herbert')]);
 		expect(await matchHardcover('Dune', 'Frank Herbert')).toBeNull();
+	});
+});
+
+describe('settleArrivals', () => {
+	it('marks an arrived wish Want to read and clears it; leaves a status you already set', async () => {
+		wishes = [
+			{ hardcoverId: 1, title: 'Hyperion', author: 'Dan Simmons' },
+			{ hardcoverId: 2, title: 'Dune', author: 'Frank Herbert' },
+			{ hardcoverId: 3, title: 'Not here yet', author: null }
+		];
+		const lib = [
+			mine({ id: 10, title: 'Hyperion', authors: ['Dan Simmons'], status: 'unread' }),
+			mine({ id: 11, title: 'Dune', authors: ['Frank Herbert'], status: 'read', hardcoverId: 2 })
+		];
+		const out = await settleArrivals(lib);
+		expect(setReadStatus.mock.calls).toEqual([[10, 'want_to_read']]);
+		expect(out.map((b) => b.status)).toEqual(['want_to_read', 'read']);
+		expect(wishes.map((w) => w.hardcoverId)).toEqual([3]);
+	});
+
+	it('keeps the wish when BookOrbit refuses the write', async () => {
+		wishes = [{ hardcoverId: 1, title: 'Hyperion', author: 'Dan Simmons' }];
+		setReadStatus.mockRejectedValue(new Error('down'));
+		const lib = [mine({ id: 10, title: 'Hyperion', authors: ['Dan Simmons'], status: 'unread' })];
+		expect((await settleArrivals(lib))[0].status).toBe('unread');
+		expect(wishes).toHaveLength(1);
+	});
+
+	it('does nothing (no writes) when nothing has arrived', async () => {
+		wishes = [{ hardcoverId: 3, title: 'Elsewhere', author: null }];
+		const lib = [mine({ id: 10, title: 'Hyperion', status: 'unread' })];
+		expect(await settleArrivals(lib)).toBe(lib);
+		expect(setReadStatus).not.toHaveBeenCalled();
 	});
 });
