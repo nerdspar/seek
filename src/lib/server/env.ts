@@ -38,6 +38,23 @@ export const JELLYFIN_API_KEY = () => env.JELLYFIN_API_KEY ?? '';
 export const JELLYFIN_ANIME_LIBRARY = () => env.JELLYFIN_ANIME_LIBRARY ?? 'Anime';
 
 /**
+ * BookOrbit — the self-hosted book library/reading backend (optional). Its API
+ * is session-authenticated (no static key), so Seek logs in with a service
+ * account's username + password and caches the short-lived access token
+ * server-side; the password is a secret and never reaches the browser. A books
+ * backend is "configured" only when URL, user and password are all present.
+ */
+export const BOOKORBIT_URL = () => (env.BOOKORBIT_URL ?? '').replace(/\/+$/, '');
+export const BOOKORBIT_USER = () => env.BOOKORBIT_USER ?? '';
+export const BOOKORBIT_PASSWORD = () => env.BOOKORBIT_PASSWORD ?? '';
+
+/**
+ * Hardcover — book discovery only (search, trending, new). A personal access
+ * token, read-only, resolved server-side. Unset simply hides book discovery.
+ */
+export const HARDCOVER_TOKEN = () => env.HARDCOVER_TOKEN ?? '';
+
+/**
  * Browser-reachable Floppy address, for the one link the phone follows directly
  * (§8's link out to Floppy's settings). Distinct from FLOPPY_URL, which is only
  * ever resolved server-side and is typically a container name that a phone
