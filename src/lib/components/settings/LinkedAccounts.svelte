@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import StatusDot from './StatusDot.svelte';
 
 	/** "Your accounts" — the credentials Seek uses on *your* behalf: your own
 	 *  Floppy (watchlist, stats), its calendar feed (Upcoming), and BookOrbit
@@ -105,6 +106,30 @@
 	}
 	const isLinked = (s: Service) => (s === 'bookorbit' ? Boolean(linked.bookorbit) : linked[s]);
 
+	/* Test a saved link: does the service still accept it? (A token can be
+	   regenerated or revoked on the other side long after it was linked.) */
+	let testing = $state<Service | null>(null);
+	let tested = $state<Partial<Record<Service, boolean>>>({});
+	async function test(service: Service) {
+		testing = service;
+		msg = null;
+		try {
+			const res = await fetch('/api/connections', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ service })
+			});
+			const r = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+			tested[service] = Boolean(r.ok);
+			msg = { service, ok: Boolean(r.ok), text: r.ok ? 'Works.' : (r.error ?? `HTTP ${res.status}`) };
+		} catch (e) {
+			msg = { service, ok: false, text: (e as Error).message };
+		} finally {
+			testing = null;
+		}
+	}
+	const dotFor = (s: Service) => (tested[s] === false ? 'bad' : isLinked(s) ? 'ok' : 'off');
+
 	const SERVICES: { id: Service; label: string; what: string; how: string }[] = [
 		{
 			id: 'floppy',
@@ -135,12 +160,16 @@
 	{#each visible as s (s.id)}
 		<div class="svc">
 			<div class="row static">
+				<StatusDot state={dotFor(s.id)} />
 				<span class="rowtext">
 					<span class="label">{s.label}</span>
 					<span class="hint">{s.what} · <span class:ok={isLinked(s.id)}>{status(s.id)}</span></span>
 				</span>
 				<span class="actions">
 					{#if isLinked(s.id)}
+						<button class="link" disabled={testing !== null} onclick={() => test(s.id)}>
+							{testing === s.id ? 'Testing…' : 'Test'}
+						</button>
 						<button class="link" onclick={() => unlink(s.id)}>Unlink</button>
 					{/if}
 					<button class="link" onclick={() => start(s.id)}>
@@ -209,7 +238,7 @@
 		border-radius: var(--radius); background: var(--surface-raised); text-align: left;
 	}
 	.row.sub { margin-top: 6px; }
-	.rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+	.rowtext { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 	.label { font-size: 15px; font-weight: 600; }
 	.hint { font-size: 12px; opacity: 0.7; }
 	.ok { color: var(--signal-solid); opacity: 1; font-weight: 600; }

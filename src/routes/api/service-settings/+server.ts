@@ -18,7 +18,24 @@ export const GET: RequestHandler = async ({ locals }) => {
  *  it's being replaced; an empty string turns a setting off. */
 export const PUT: RequestHandler = async ({ locals, request }) => {
 	if (locals.user?.role !== 'owner') error(403, 'Only the household owner manages services.');
-	const body = await request.json().catch(() => ({}));
+	const { group, values } = readGroup(await request.json().catch(() => ({})));
+	setSettings(values);
+	// Everything cached was fetched with the old addresses and keys.
+	invalidateEveryone('');
+	if (group.id === 'books') forgetBookOrbitSessions();
+	return json({ services: settingsForDisplay(), check: await checkGroup(group.id, { saved: true }) });
+};
+
+/** Test one group's values as typed, without saving them. Email's test sends a
+ *  test message to you. */
+export const POST: RequestHandler = async ({ locals, request }) => {
+	if (locals.user?.role !== 'owner') error(403, 'Only the household owner manages services.');
+	const { group, values } = readGroup(await request.json().catch(() => ({})));
+	return json({ check: await checkGroup(group.id, { values, sendTo: locals.user.email }) });
+};
+
+/** The group named in the body, and just that group's fields from it. */
+function readGroup(body: { group?: unknown; values?: Record<string, unknown> }) {
 	const group = SERVICE_GROUPS.find((g) => g.id === body.group);
 	if (!group) error(400, 'Unknown service.');
 	const values: Partial<Record<ServiceKey, string>> = {};
@@ -26,9 +43,5 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
 		const v = body.values?.[f.key];
 		if (typeof v === 'string') values[f.key] = v;
 	}
-	setSettings(values);
-	// Everything cached was fetched with the old addresses and keys.
-	invalidateEveryone('');
-	if (group.id === 'books') forgetBookOrbitSessions();
-	return json({ services: settingsForDisplay(), check: await checkGroup(group.id) });
-};
+	return { group, values };
+}

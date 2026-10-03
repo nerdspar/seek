@@ -30,11 +30,21 @@ export type ServiceField = {
 	hint?: string;
 };
 
-export type ServiceGroup = { id: string; title: string; about: string; fields: ServiceField[] };
+export type ServiceGroup = {
+	id: string;
+	title: string;
+	about: string;
+	fields: ServiceField[];
+	/** What must be set for the service to count as set up. */
+	needs: ServiceKey[];
+	/** What the Test button says (email's sends a real message). */
+	testLabel?: string;
+};
 
 export const SERVICE_GROUPS: ServiceGroup[] = [
 	{
 		id: 'floppy',
+		needs: ['FLOPPY_URL'],
 		title: 'Floppy',
 		about: 'Your TV and movie tracker. Each person links their own Floppy token under Your accounts.',
 		fields: [
@@ -56,12 +66,14 @@ export const SERVICE_GROUPS: ServiceGroup[] = [
 	},
 	{
 		id: 'tmdb',
+		needs: ['TMDB_API_KEY'],
 		title: 'TMDB',
 		about: 'Artwork, cast, recommendations and Discover for shows and movies.',
 		fields: [{ key: 'TMDB_API_KEY', label: 'API key', secret: true, hint: 'themoviedb.org → Settings → API.' }]
 	},
 	{
 		id: 'books',
+		needs: ['BOOKORBIT_URL', 'HARDCOVER_TOKEN'],
 		title: 'Books',
 		about: 'BookOrbit is your library; Hardcover powers book discovery. Each person links their own BookOrbit login under Your accounts.',
 		fields: [
@@ -76,6 +88,7 @@ export const SERVICE_GROUPS: ServiceGroup[] = [
 	},
 	{
 		id: 'sonarr',
+		needs: ['SONARR_URL', 'SONARR_API_KEY'],
 		title: 'Sonarr',
 		about: 'Optional — add shows to Sonarr and manage downloads.',
 		fields: [
@@ -85,6 +98,7 @@ export const SERVICE_GROUPS: ServiceGroup[] = [
 	},
 	{
 		id: 'radarr',
+		needs: ['RADARR_URL', 'RADARR_API_KEY'],
 		title: 'Radarr',
 		about: 'Optional — add movies to Radarr and manage downloads.',
 		fields: [
@@ -94,6 +108,7 @@ export const SERVICE_GROUPS: ServiceGroup[] = [
 	},
 	{
 		id: 'jellyfin',
+		needs: ['JELLYFIN_URL', 'JELLYFIN_API_KEY'],
 		title: 'Jellyfin',
 		about: 'Optional — its Anime library decides which shows count as anime.',
 		fields: [
@@ -104,6 +119,8 @@ export const SERVICE_GROUPS: ServiceGroup[] = [
 	},
 	{
 		id: 'email',
+		needs: ['RESEND_API_KEY', 'MAIL_FROM'],
+		testLabel: 'Send me a test email',
 		title: 'Email',
 		about: 'Optional — send invites and password resets by email (Resend). Without it, Seek gives you the links to pass on.',
 		fields: [

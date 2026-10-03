@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { SERVICE_GROUPS, type ServiceGroup } from '$lib/serviceFields';
+	import StatusDot, { type DotState } from './StatusDot.svelte';
 
 	/** The household's services — addresses and keys for Floppy, TMDB, BookOrbit,
 	 *  Hardcover, Sonarr, Radarr, Jellyfin and email. Owner only. Secrets are
@@ -21,8 +22,11 @@
 
 	let draft = $state<Record<string, string>>({});
 	let clearing = $state<Record<string, boolean>>({});
-	let busy = $state(false);
+	let busy = $state<'save' | 'test' | null>(null);
 	let result = $state<{ group: string; ok: boolean; message: string } | null>(null);
+	/* The last test/save outcome per service this visit, so a failing one shows
+	   red on its collapsed row too. */
+	let lastCheck = $state<Record<string, boolean>>({});
 
 	function toggle(g: ServiceGroup) {
 		if (open === g.id) {
@@ -35,6 +39,13 @@
 		draft = Object.fromEntries(g.fields.filter((f) => !f.secret).map((f) => [f.key, current[f.key]?.value ?? '']));
 	}
 
+	/** Set up (everything it needs), part set up, not set up — or failing. */
+	function dot(g: ServiceGroup): DotState {
+		if (lastCheck[g.id] === false) return 'bad';
+		const set = g.needs.filter((k) => current[k]?.set).length;
+		return set === g.needs.length ? 'ok' : set ? 'partial' : 'off';
+	}
+
 	/** One line under each service: what's set, at a glance. */
 	function summary(g: ServiceGroup): string {
 		const set = g.fields.filter((f) => current[f.key]?.set);
@@ -43,9 +54,8 @@
 		return address ? (current[address].value ?? '') : 'Set';
 	}
 
-	async function save(g: ServiceGroup) {
-		busy = true;
-		result = null;
+	/** The form as typed. A secret left blank isn't sent (keep what's saved). */
+	function typed(g: ServiceGroup): Record<string, string> {
 		const values: Record<string, string> = {};
 		for (const f of g.fields) {
 			if (f.secret) {
@@ -53,6 +63,34 @@
 				else if (draft[f.key]?.trim()) values[f.key] = draft[f.key];
 			} else values[f.key] = draft[f.key] ?? '';
 		}
+		return values;
+	}
+
+	/** Check what's typed, without saving it. */
+	async function test(g: ServiceGroup) {
+		busy = 'test';
+		result = null;
+		try {
+			const res = await fetch('/api/service-settings', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ group: g.id, values: typed(g) })
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
+			result = { group: g.id, ...body.check };
+			lastCheck[g.id] = body.check.ok;
+		} catch (e) {
+			result = { group: g.id, ok: false, message: `Couldn't test — ${(e as Error).message}` };
+		} finally {
+			busy = null;
+		}
+	}
+
+	async function save(g: ServiceGroup) {
+		busy = 'save';
+		result = null;
+		const values = typed(g);
 		try {
 			const res = await fetch('/api/service-settings', {
 				method: 'PUT',
@@ -65,12 +103,13 @@
 			for (const f of g.fields) if (f.secret) draft[f.key] = '';
 			clearing = {};
 			result = { group: g.id, ...(body.check ?? { ok: true, message: 'Saved.' }) };
+			if (body.check) lastCheck[g.id] = body.check.ok;
 			// Pages and toggles that depend on what's configured (Books, Sonarr…).
 			await invalidateAll();
 		} catch (e) {
 			result = { group: g.id, ok: false, message: `Couldn't save — ${(e as Error).message}` };
 		} finally {
-			busy = false;
+			busy = null;
 		}
 	}
 </script>
@@ -82,6 +121,7 @@
 	{#each SERVICE_GROUPS as g (g.id)}
 		<div class="svc">
 			<button class="row" aria-expanded={open === g.id} onclick={() => toggle(g)}>
+				<StatusDot state={dot(g)} />
 				<span class="rowtext">
 					<span class="label">{g.title}</span>
 					<span class="hint addr">{summary(g)}</span>
@@ -104,7 +144,7 @@
 										autocomplete="off"
 										autocapitalize="off"
 										spellcheck="false"
-										disabled={busy || clearing[f.key]}
+										disabled={busy !== null || clearing[f.key]}
 									/>
 									{#if current[f.key]?.set}
 										<button type="button" class="link" onclick={() => (clearing[f.key] = !clearing[f.key])}>
@@ -122,13 +162,18 @@
 									autocapitalize="off"
 									autocorrect="off"
 									spellcheck="false"
-									disabled={busy}
+									disabled={busy !== null}
 								/>
 							{/if}
 							{#if f.hint}<span class="hint">{f.hint}</span>{/if}
 						</label>
 					{/each}
-					<button type="submit" class="primary" disabled={busy}>{busy ? 'Checking…' : 'Save'}</button>
+					<div class="buttons">
+					<button type="submit" class="primary" disabled={busy !== null}>{busy === 'save' ? 'Saving…' : 'Save'}</button>
+					<button type="button" class="secondary" disabled={busy !== null} onclick={() => test(g)}>
+						{busy === 'test' ? 'Testing…' : (g.testLabel ?? 'Test')}
+					</button>
+				</div>
 					{#if result?.group === g.id}
 						<p class="msg" class:bad={!result.ok}>{result.ok ? '✓ ' : ''}{result.message}</p>
 					{/if}
@@ -148,7 +193,7 @@
 		width: 100%; min-height: var(--tap); padding: 9px 14px;
 		border-radius: var(--radius); background: var(--surface-raised); text-align: left;
 	}
-	.rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+	.rowtext { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 	.label { font-size: 15px; font-weight: 600; }
 	.hint { font-size: 12px; opacity: 0.7; line-height: 1.4; }
 	.addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -167,8 +212,13 @@
 	}
 	input:disabled { opacity: 0.6; }
 	.link { flex: none; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
-	.primary {
-		align-self: flex-start; min-height: 40px; padding: 0 20px; border-radius: var(--radius);
+	.buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+	.secondary {
+		min-height: 40px; padding: 0 16px; border-radius: var(--radius);
+		background: var(--surface-raised); color: var(--text); font-size: 14px; font-weight: 600;
+	}
+	.secondary:disabled { opacity: 0.5; }
+	.primary { min-height: 40px; padding: 0 20px; border-radius: var(--radius);
 		background: var(--signal); color: #fff; font-size: 14px; font-weight: 600;
 	}
 	.primary:disabled { opacity: 0.5; }

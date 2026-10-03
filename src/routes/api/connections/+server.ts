@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import {
+	getCredentials,
 	linkedStatus,
 	setBookOrbit,
 	setBookOrbitLibrary,
@@ -68,6 +69,29 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			setBookOrbit(me.id, { username, password, libraryId });
 			forgetCurrentUserData();
 			return json({ linked: linkedStatus(me.id), libraries: check.libraries });
+		}
+		default:
+			return fail('Unknown service.');
+	}
+};
+
+/** Test a saved link against the real service, without changing anything. */
+export const POST: RequestHandler = async ({ request, locals }) => {
+	const me = locals.user;
+	if (!me) error(401);
+	const { service } = await request.json().catch(() => ({}));
+	const creds = getCredentials(me.id);
+	switch (service) {
+		case 'floppy':
+			if (!creds.floppyToken) return json({ ok: false, error: 'Not linked.' });
+			return json(await checkFloppyToken(creds.floppyToken));
+		case 'calendar':
+			if (!creds.calendarToken) return json({ ok: false, error: 'Not linked.' });
+			return json(await checkCalendarToken(creds.calendarToken));
+		case 'bookorbit': {
+			if (!creds.bookorbit) return json({ ok: false, error: 'Not linked.' });
+			const check = await checkBookOrbitLogin(creds.bookorbit.username, creds.bookorbit.password);
+			return json(check.ok ? { ok: true } : check);
 		}
 		default:
 			return fail('Unknown service.');
