@@ -8,6 +8,8 @@ import {
 } from '$lib/server/stats';
 import { getRecentlyAdded } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
+import { getPrefs } from '$lib/server/prefs';
+import { bookorbitLinked, getReadingSnapshot } from '$lib/server/books/bookorbit';
 import type { PageServerLoad } from './$types';
 
 const RANGES: RangeKey[] = ['this_month', 'this_year', 'last_year', 'all_time'];
@@ -31,10 +33,19 @@ export const load: PageServerLoad = async ({ url }) => {
 	   a fresh addition appears at once. Independent of `range`. */
 	const recentlyAdded = memo('recent:added', 60 * 1000, () => getRecentlyAdded(12));
 
+	/* Your year in books (goal, streak, achievements), when Books is on and
+	   you've linked BookOrbit. Streamed and cached briefly per user. */
+	const prefs = await getPrefs();
+	const reading =
+		prefs.booksEnabled && bookorbitLinked()
+			? memo('books:snapshot', 60 * 1000, getReadingSnapshot)
+			: null;
+
 	return {
 		range,
 		stats,
 		counts,
-		recentlyAdded
+		recentlyAdded,
+		reading
 	};
 };

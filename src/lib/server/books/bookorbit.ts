@@ -156,6 +156,79 @@ export const getReadingGoal = () => bo<ReadingGoal>('/dashboard/widgets/reading-
 /** Headline reading stats for the Profile books section. */
 export const getStatsSummary = () => bo<StatsSummary>('/user-statistics/summary');
 
+/* ── Profile → Reading: the per-person numbers BookOrbit keeps ─────────────── */
+
+export type ReadingStreak = { current: number; longest: number; lastSevenDays: boolean[] };
+export type MonthlyChallenge = {
+	title: string;
+	description: string;
+	progress: number;
+	target: number;
+	completed: boolean;
+};
+export type Achievement = { name: string; description: string; awardedAt: string };
+export type AchievementSummary = { earned: number; available: number; recent: Achievement[] };
+export type ReadingSnapshot = {
+	goal: ReadingGoal | null;
+	streak: ReadingStreak | null;
+	summary: StatsSummary | null;
+	challenge: MonthlyChallenge | null;
+	achievements: AchievementSummary | null;
+};
+
+type RawObj = Record<string, unknown>;
+const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const s = (v: unknown) => (typeof v === 'string' ? v : '');
+
+export function toStreak(raw: unknown): ReadingStreak {
+	const r = (raw ?? {}) as RawObj;
+	return {
+		current: n(r.currentStreak),
+		longest: n(r.longestStreak),
+		lastSevenDays: Array.isArray(r.lastSevenDays) ? r.lastSevenDays.map(Boolean).slice(0, 7) : []
+	};
+}
+
+export function toChallenge(raw: unknown): MonthlyChallenge | null {
+	const r = (raw ?? {}) as RawObj;
+	if (!s(r.title)) return null;
+	return {
+		title: s(r.title),
+		description: s(r.description),
+		progress: n(r.progress),
+		target: Math.max(1, n(r.target)),
+		completed: Boolean(r.completed)
+	};
+}
+
+/** Earned/available totals and the three most recently earned. */
+export function toAchievements(raw: unknown): AchievementSummary {
+	const r = (raw ?? {}) as RawObj;
+	const all = (Array.isArray(r.categories) ? r.categories : []).flatMap((c) =>
+		Array.isArray((c as RawObj).achievements) ? ((c as RawObj).achievements as RawObj[]) : []
+	);
+	const recent = all
+		.filter((a) => a.earned && s(a.awardedAt))
+		.sort((a, b) => s(b.awardedAt).localeCompare(s(a.awardedAt)))
+		.slice(0, 3)
+		.map((a) => ({ name: s(a.name), description: s(a.description), awardedAt: s(a.awardedAt) }));
+	return { earned: n(r.totalEarned), available: n(r.totalAvailable), recent };
+}
+
+/** Everything Profile → Reading shows, for the signed-in person. Each widget
+ *  stands alone — one failing never blanks the others. */
+export async function getReadingSnapshot(): Promise<ReadingSnapshot> {
+	const safe = <T>(p: Promise<T>) => p.catch(() => null);
+	const [goal, streak, summary, challenge, achievements] = await Promise.all([
+		safe(getReadingGoal()),
+		safe(bo<unknown>('/dashboard/widgets/reading-streak').then(toStreak)),
+		safe(getStatsSummary()),
+		safe(bo<unknown>('/dashboard/widgets/monthly-challenge').then(toChallenge)),
+		safe(bo<unknown>('/achievements').then(toAchievements))
+	]);
+	return { goal, streak, summary, challenge, achievements };
+}
+
 export type Library = { id: number; name: string };
 
 /** The libraries this person can see — where their uploads and downloads can land. */

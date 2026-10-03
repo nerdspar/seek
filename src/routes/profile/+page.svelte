@@ -6,6 +6,7 @@
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import StatsChart from '$lib/components/StatsChart.svelte';
+	import ReadingCard from '$lib/components/ReadingCard.svelte';
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
@@ -78,6 +79,16 @@
 	</header>
 
 	<main use:tabReselect={{ tab: 'profile' }}>
+		<!-- Books sit outside the TV stats: a reader with no Floppy linked still
+		     gets their year in books. Silently absent if BookOrbit is unreachable. -->
+		{#if data.reading}
+			{#await data.reading then snap}
+				<ReadingCard {snap} />
+			{:catch}
+				<!-- Nothing: the TV stats below are the page; books are a bonus card. -->
+			{/await}
+		{/if}
+
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
 			<div class="loading">

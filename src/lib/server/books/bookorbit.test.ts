@@ -115,6 +115,74 @@ describe('bookorbit client', () => {
 	});
 });
 
+describe('reading snapshot mappers', () => {
+	it('maps the streak and challenge widgets', async () => {
+		const bo = await load();
+		expect(bo.toStreak({ currentStreak: 3, longestStreak: 9, lastSevenDays: [true, false, 1, 0, true, true, false, true] })).toEqual({
+			current: 3,
+			longest: 9,
+			lastSevenDays: [true, false, true, false, true, true, false]
+		});
+		expect(bo.toChallenge({ title: 'Genre Explorer', description: 'd', progress: 0, target: 0, completed: false })).toMatchObject({
+			title: 'Genre Explorer',
+			target: 1 // never a divide-by-zero
+		});
+		expect(bo.toChallenge({})).toBeNull();
+	});
+
+	it('totals achievements and picks the three most recently earned', async () => {
+		const bo = await load();
+		const a = (name: string, awardedAt: string | null) => ({ name, description: '', earned: Boolean(awardedAt), awardedAt });
+		const out = bo.toAchievements({
+			totalEarned: 4,
+			totalAvailable: 87,
+			categories: [
+				{ achievements: [a('Old', '2026-01-01T00:00:00Z'), a('Not yet', null)] },
+				{ achievements: [a('Newest', '2026-09-30T00:00:00Z'), a('Mid', '2026-05-01T00:00:00Z'), a('Older', '2026-03-01T00:00:00Z')] }
+			]
+		});
+		expect(out.earned).toBe(4);
+		expect(out.available).toBe(87);
+		expect(out.recent.map((x) => x.name)).toEqual(['Newest', 'Mid', 'Older']);
+	});
+});
+
+describe('getReadingSnapshot', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	it('assembles every widget, and one failing widget only blanks itself', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				if (url.endsWith('/auth/login')) return json(LOGIN);
+				if (url.endsWith('/reading-goal')) return json({ goalBooks: 24, completedBooks: 5, year: 2026 });
+				if (url.endsWith('/reading-streak')) return json({ currentStreak: 2, longestStreak: 4, lastSevenDays: [] });
+				if (url.endsWith('/summary')) return json({}, 500);
+				if (url.endsWith('/monthly-challenge')) return json({ title: 'T', progress: 1, target: 2 });
+				if (url.endsWith('/achievements')) return json({ totalEarned: 1, totalAvailable: 87, categories: [] });
+				return json({}, 404);
+			})
+		);
+		const bo = await load();
+		const snap = await bo.getReadingSnapshot();
+		expect(snap.goal?.goalBooks).toBe(24);
+		expect(snap.streak?.current).toBe(2);
+		expect(snap.summary).toBeNull();
+		expect(snap.challenge?.title).toBe('T');
+		expect(snap.achievements?.earned).toBe(1);
+	});
+});
+
 describe('bookorbit paging guard', () => {
 	beforeEach(() => {
 		process.env.BOOKORBIT_URL = 'https://bo.test';
