@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, existsSync } from 'node:fs
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { resetSecretsCache, sessionSecret, tokenKey, tokenKeyFromEnv, vapidKeys } from './secrets';
+import { decryptSecret, encryptSecret } from './crypto';
 
 const saved = { ...process.env };
 function restoreEnv(saved: NodeJS.ProcessEnv) {
@@ -66,5 +67,17 @@ describe('env from an older deployment', () => {
 		expect(tokenKey()).toBe('kept-apart');
 		expect(tokenKeyFromEnv()).toBe(true);
 		expect(existsSync(file()) ? stored().tokenKey : undefined).toBeUndefined();
+	});
+
+	it('adding SEEK_TOKEN_KEY after Seek already ran still reads what was stored before', () => {
+		const before = encryptSecret('flp_saved_earlier'); // generated key, in the file
+		process.env.SEEK_TOKEN_KEY = 'added-later';
+		resetSecretsCache();
+		expect(decryptSecret(before)).toBe('flp_saved_earlier');
+		const after = encryptSecret('flp_saved_now');
+		expect(decryptSecret(after)).toBe('flp_saved_now');
+		// New writes use the env key: without it they can't be read.
+		delete process.env.SEEK_TOKEN_KEY;
+		expect(() => decryptSecret(after)).toThrow();
 	});
 });

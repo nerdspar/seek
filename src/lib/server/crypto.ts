@@ -9,7 +9,7 @@
  *   `v1:iv:tag:ciphertext` (base64url). GCM authenticates, so a tampered or
  *   wrong-key value fails loudly instead of decrypting to garbage.
  */
-import { tokenKey } from './secrets';
+import { generatedTokenKey, tokenKey } from './secrets';
 import {
 	createCipheriv,
 	createDecipheriv,
@@ -54,11 +54,9 @@ export async function verifyPassword(password: string, stored: string): Promise<
 	return timingSafeEqual(actual, expected);
 }
 
-function key(): Buffer {
-	const raw = tokenKey();
-	// Any high-entropy string works; hashing normalises it to the 32 bytes AES-256 needs.
-	return createHash('sha256').update(raw).digest();
-}
+// Any high-entropy string works; hashing normalises it to the 32 bytes AES-256 needs.
+const derive = (raw: string) => createHash('sha256').update(raw).digest();
+const key = () => derive(tokenKey());
 
 export function encryptSecret(plain: string): string {
 	const iv = randomBytes(12);
@@ -68,12 +66,25 @@ export function encryptSecret(plain: string): string {
 	return ['v1', iv, tag, ct].map((x) => (typeof x === 'string' ? x : x.toString('base64url'))).join(':');
 }
 
+function decryptWith(k: Buffer, iv: string, tag: string, ct: string): string {
+	const decipher = createDecipheriv('aes-256-gcm', k, Buffer.from(iv, 'base64url'));
+	decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+	return Buffer.concat([decipher.update(Buffer.from(ct, 'base64url')), decipher.final()]).toString('utf8');
+}
+
 export function decryptSecret(stored: string): string {
 	const [version, iv, tag, ct] = stored.split(':');
 	if (version !== 'v1' || !iv || !tag || ct === undefined) throw new Error('Unrecognised secret format');
-	const decipher = createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64url'));
-	decipher.setAuthTag(Buffer.from(tag, 'base64url'));
-	return Buffer.concat([decipher.update(Buffer.from(ct, 'base64url')), decipher.final()]).toString('utf8');
+	try {
+		return decryptWith(key(), iv, tag, ct);
+	} catch (err) {
+		/* SEEK_TOKEN_KEY added after Seek had already generated its own key:
+		   anything saved before then was encrypted with the generated one. GCM's
+		   tag check means a wrong key fails loudly, never decrypts to garbage. */
+		const earlier = generatedTokenKey();
+		if (earlier && earlier !== tokenKey()) return decryptWith(derive(earlier), iv, tag, ct);
+		throw err;
+	}
 }
 
 /** A random, URL-safe token (invites, password resets) and the hash we store

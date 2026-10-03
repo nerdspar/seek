@@ -74,6 +74,11 @@ export function tokenKey(): string {
 	return read().tokenKey ?? update({ tokenKey: random() }).tokenKey!;
 }
 
+/** A key Seek generated into the file earlier, if any. When SEEK_TOKEN_KEY is
+ *  added to env *after* Seek has already run without it, what was stored then
+ *  was encrypted with this — crypto.ts still reads it with this key. */
+export const generatedTokenKey = (): string | null => read().tokenKey ?? null;
+
 /** Whether the token key came from env (kept apart from /data) or the file. */
 export const tokenKeyFromEnv = () => Boolean(env.SEEK_TOKEN_KEY);
 
