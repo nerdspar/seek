@@ -125,6 +125,16 @@ export const MIGRATIONS: string[] = [
 		user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
 		scanned_at  TEXT NOT NULL
 	);
+	`,
+	// v4 — the household's service settings (Floppy/BookOrbit addresses, API
+	// keys…), edited in Settings → Services instead of the compose file. Secret
+	// values are encrypted like account links.
+	`
+	CREATE TABLE settings (
+		key         TEXT PRIMARY KEY,
+		value       TEXT NOT NULL,
+		updated_at  TEXT NOT NULL
+	);
 	`
 ];
 
@@ -148,7 +158,10 @@ export function migrate(db: DB): void {
 	}
 }
 
-const dbPath = () => env.SEEK_DB_PATH || join(env.SEEK_DATA_DIR || '/data', 'seek.db');
+/** Where Seek keeps its state (the container's /data volume). */
+export const dataDir = () => env.SEEK_DATA_DIR || '/data';
+
+const dbPath = () => env.SEEK_DB_PATH || join(dataDir(), 'seek.db');
 
 let instance: DB | null = null;
 

@@ -6,7 +6,6 @@ import {
 	setCalendarToken,
 	setFloppyToken
 } from '$lib/server/users';
-import { tokenKeyConfigured } from '$lib/server/crypto';
 import {
 	checkBookOrbitLogin,
 	checkCalendarToken,
@@ -29,17 +28,13 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (!locals.user) error(401);
 	return json({
 		linked: linkedStatus(locals.user.id),
-		canStore: tokenKeyConfigured(),
-		bookorbit: bookorbitConfigured(),
-		// The owner can run on the deployment's env config without linking.
-		envFallback: locals.user.role === 'owner'
+		bookorbit: bookorbitConfigured()
 	});
 };
 
 export const PUT: RequestHandler = async ({ request, locals }) => {
 	const me = locals.user;
 	if (!me) error(401);
-	if (!tokenKeyConfigured()) return fail('SEEK_TOKEN_KEY isn’t set on the server, so links can’t be stored yet.');
 	const body = await request.json().catch(() => ({}));
 
 	switch (body.service) {

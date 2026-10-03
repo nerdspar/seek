@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { issue, verify, setupTokenRequired, passphraseMatches, SESSION_MAX_AGE_MS } from './session';
+import { issue, verify, setupCode, setupCodeIsPassphrase, setupCodeMatches, SESSION_MAX_AGE_MS } from './session';
 
 beforeEach(() => {
 	process.env.SEEK_SESSION_SECRET = 'session-secret';
@@ -41,18 +41,28 @@ describe('session tokens', () => {
 		expect(verify(t)).toBeNull();
 	});
 
-	it('requires a session secret', () => {
+	it('works without a configured secret (Seek generates its own)', () => {
 		delete process.env.SEEK_SESSION_SECRET;
-		expect(() => issue(1, 1)).toThrow(/SEEK_SESSION_SECRET/);
+		expect(verify(issue(1, 1))).toEqual({ userId: 1, version: 1 });
 	});
 });
 
-describe('setup token', () => {
-	it('is required only when SEEK_PASSPHRASE is set, and must match it', () => {
-		expect(setupTokenRequired()).toBe(false);
+describe('setup code', () => {
+	it('is a generated code by default, forgiving case and spaces', () => {
+		expect(setupCodeIsPassphrase()).toBe(false);
+		const code = setupCode();
+		expect(code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+		expect(setupCode()).toBe(code); // stable for the life of the process
+		expect(setupCodeMatches(` ${code.toLowerCase()} `)).toBe(true);
+		expect(setupCodeMatches('ABCD-EFGH')).toBe(code === 'ABCD-EFGH');
+		expect(setupCodeMatches('')).toBe(false);
+	});
+
+	it('is the old SEEK_PASSPHRASE on an upgraded deployment, matched exactly', () => {
 		process.env.SEEK_PASSPHRASE = 'open sesame';
-		expect(setupTokenRequired()).toBe(true);
-		expect(passphraseMatches('open sesame')).toBe(true);
-		expect(passphraseMatches('open sesam')).toBe(false);
+		expect(setupCodeIsPassphrase()).toBe(true);
+		expect(setupCodeMatches('open sesame')).toBe(true);
+		expect(setupCodeMatches('OPEN SESAME')).toBe(false);
+		expect(setupCodeMatches('open sesam')).toBe(false);
 	});
 });

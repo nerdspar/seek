@@ -1,35 +1,28 @@
 # =============================================================================
 # Seek — self-hosted PWA front-ending Floppy for fast episode marking.
 # The image is built by GitHub Actions and pulled from GHCR; TrueNAS just runs
-# it. There is no .env file — paste your secrets directly below.
+# it. Nothing secret goes in this file: Seek generates its own secrets, and the
+# household's services (Floppy, TMDB, BookOrbit, Hardcover, Sonarr, Radarr,
+# Jellyfin, email) are set in the app under Settings → Services.
 #
 # ── 1. Create the storage folder on your NAS ─────────────────────────────
 #        mkdir -p /mnt/NAS/Data/seek
 #        chown -R 1000:1000 /mnt/NAS/Data/seek
 #      (The container runs as the `node` user, uid 1000.)
-#      This holds Seek's household accounts (seek.db) and preferences. Floppy
-#      remains the single source of truth for all watch state. Back it up with
-#      the rest of /mnt/NAS/Data — losing it means re-creating the accounts.
+#      This holds everything Seek keeps: accounts and settings (seek.db) and
+#      its generated secrets (secrets.json). Floppy remains the source of truth
+#      for watch state. Back it up with the rest of /mnt/NAS/Data.
 #
-# ── 2. Generate two secrets ──────────────────────────────────────────────
-#        openssl rand -hex 32     # SEEK_SESSION_SECRET
-#        openssl rand -hex 32     # SEEK_TOKEN_KEY
-#
-# ── 3. Paste your values at the ⬅ markers below ──────────────────────────
-#      FLOPPY_TOKEN          Floppy → Settings → Integrations → API Token
-#      SEEK_SESSION_SECRET   from step 2
-#      SEEK_TOKEN_KEY        from step 2
-#      FLOPPY_URL            see the note on that line
-#
-#   First launch: open Seek and you'll land on /setup — create the owner
-#   account (enter SEEK_PASSPHRASE there if it's set), then invite the rest of
-#   the household from Settings → Household.
-#
-# ── 4. Log in to GHCR once (private image) and launch ────────────────────
+# ── 2. Log in to GHCR once (private image) and launch ────────────────────
 #        docker login ghcr.io -u nerdspar     # paste a read:packages PAT
 #        docker compose up -d
-#      Then on the iPhone: http://<nas-ip>:8100 → Share → Add to Home Screen.
-#      See DEPLOY.md for the GHCR token, updates, and troubleshooting.
+#
+# ── 3. Set up in the browser ─────────────────────────────────────────────
+#      Open http://<nas-ip>:8100. Seek asks for a setup code — it's printed in
+#      the container log ("First-run setup code: XXXX-XXXX"; TrueNAS → Apps →
+#      Seek → Logs). Create your account, then add Floppy's address under
+#      Settings → Services and link your own Floppy under Your accounts.
+#      On the iPhone: Share → Add to Home Screen. See DEPLOY.md for more.
 # =============================================================================
 
 services:
@@ -42,126 +35,9 @@ services:
     restart: unless-stopped
     environment:
       TZ: "America/New_York"
-
-      # Where Floppy lives.
-      #  • Floppy on this same Docker host (even in a different compose stack):
-      #    use its container name and INTERNAL port, and uncomment the two
-      #    `networks:` blocks below. Preferred — it keeps traffic off the LAN.
-      #
-      #    Verified on this host: `docker ps` reports
-      #        floppy  0.0.0.0:8007->8000/tcp
-      #    so the hostname is `floppy` and the INTERNAL port is 8000. 8007 is
-      #    only the published port. Re-check if Floppy is ever redeployed:
-      #        docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
-      #
-      #  • Floppy anywhere else: use its LAN address, e.g. http://192.168.1.10:8007
-      FLOPPY_URL: "http://floppy:8000" # ⬅ FLOPPY_URL
-
-      # Floppy → Settings → Integrations → API Token. This is the OWNER's
-      # fallback — the owner's account uses it until they link their own in
-      # Settings. Other household members always link their own (never this).
-      FLOPPY_TOKEN: "PASTE_FLOPPY_TOKEN_HERE" # ⬅ FLOPPY_TOKEN
-
-      # openssl rand -hex 32 — signs the login cookie.
-      SEEK_SESSION_SECRET: "PASTE_SEEK_SESSION_SECRET_HERE" # ⬅ SEEK_SESSION_SECRET
-
-      # openssl rand -hex 32 — encrypts each person's stored links (their Floppy
-      # token, calendar token, BookOrbit password). Keep it: changing it makes
-      # the stored links unreadable and everyone would have to re-link.
-      SEEK_TOKEN_KEY: "PASTE_SEEK_TOKEN_KEY_HERE" # ⬅ SEEK_TOKEN_KEY
-
-      # Everyone signs in with their own account now. The passphrase only
-      # unlocks first-run setup (/setup), proving the person creating the owner
-      # account is whoever deployed Seek. Set it before exposing Seek beyond
-      # the LAN, so a stranger can't claim a fresh install.
-      SEEK_PASSPHRASE: "" # ⬅ SEEK_PASSPHRASE (recommended)
-
-      # --- Email (optional): invites, password resets, email confirmation ----
-      # Via Resend (resend.com). Without these, Settings → Household gives the
-      # owner the invite / reset links to send by hand instead.
-      # MAIL_FROM must be on a domain verified in Resend.
-      RESEND_API_KEY: "" # ⬅ RESEND_API_KEY (optional)
-      MAIL_FROM: "" # ⬅ e.g. "Seek <seek@nerdspar.com>"
-
-      # --- Books (optional) — see docs/books-plan.md -------------------------
-      # BookOrbit is the library; each person links their own BookOrbit login in
-      # Settings. BOOKORBIT_USER/PASSWORD are only the owner's fallback.
-      # Hardcover powers book discovery (one personal token serves everyone).
-      BOOKORBIT_URL: "" # ⬅ e.g. https://bookorbit.example.com
-      BOOKORBIT_USER: "" # ⬅ (optional) owner fallback
-      BOOKORBIT_PASSWORD: "" # ⬅ (optional) owner fallback
-      HARDCOVER_TOKEN: "" # ⬅ hardcover.app/settings → API
-
-      # Browser-reachable Floppy address, for the one settings link the phone
-      # opens directly. Every other call is proxied, so FLOPPY_URL can stay a
-      # container name. Blank hides the link.
-      FLOPPY_PUBLIC_URL: "https://floppy.example.com" # ⬅ FLOPPY_PUBLIC_URL (optional)
-
-      # --- Required --------------------------------------------------------
-      # The address browsers actually use, protocol included. SvelteKit compares
-      # it against the Origin header on every POST, so getting it wrong makes the
-      # sign-in form fail with 403 "Cross-site POST form submissions are
-      # forbidden" — the password is never even read. It also decides whether the
-      # session cookie is marked Secure, and it's the base of invite/reset links.
-      #
-      # Not optional in practice: with ORIGIN unset, adapter-node assumes https,
-      # so a plain-HTTP deployment rejects its own login page.
-      #
-      # Use the SAME hostname on the LAN as from outside so one value covers both.
-      ORIGIN: "https://seek.example.com" # ⬅ ORIGIN (required)
-
-      # Lets the login throttle tell clients apart. Without it every request
-      # carries the proxy's address and the throttle becomes one global bucket —
-      # still safe, but one stranger's failures would lock out everyone.
-      #   openresty/nginx/Traefik: x-forwarded-for   Cloudflare: cf-connecting-ip
-      # Set XFF_DEPTH to the number of proxies in front of Seek.
-      #
-      # Only safe if the proxy is the sole route in: the header is trusted as
-      # given, so anything able to reach Seek directly could forge it.
-      ADDRESS_HEADER: "x-forwarded-for" # ⬅ ADDRESS_HEADER (recommended behind a proxy)
-      XFF_DEPTH: "1"
-
-      # Calendar feed token — powers the Upcoming tab AND the daily notification.
-      # Floppy → Calendar page → the token in the .ics feed URL. This one is the
-      # OWNER's fallback; each person can link their own in Settings.
-      FLOPPY_CALENDAR_TOKEN: "" # ⬅ FLOPPY_CALENDAR_TOKEN
-      # themoviedb.org API key — enables search and Discover.
-      TMDB_API_KEY: "" # ⬅ TMDB_API_KEY
-
-      # --- Notifications: the daily "airing today" push ----------------------
-      # Optional. Leave these blank and notifications are simply unavailable;
-      # everything else works. Generate a keypair ONCE and paste both halves —
-      # web-push ships in the image, so you can do it in the container:
-      #     docker exec seek node -e "console.log(require('web-push').generateVAPIDKeys())"
-      # The PUBLIC key is sent to browsers (that's fine); keep the PRIVATE key
-      # secret. iOS shows these only inside the Home-Screen PWA (16.4+).
-      VAPID_PUBLIC_KEY: "" # ⬅ VAPID_PUBLIC_KEY (optional)
-      VAPID_PRIVATE_KEY: "" # ⬅ VAPID_PRIVATE_KEY (optional)
-      # A contact the push services can reach you at — mailto: or https:.
-      VAPID_SUBJECT: "mailto:you@example.com" # ⬅ VAPID_SUBJECT
-
-      # --- Sonarr / Radarr: send shows & movies for monitoring ---------------
-      # Optional. Set a service's URL + API key and an "Add to Sonarr/Radarr"
-      # button appears on Discover, Search and the detail pages. Leave blank and
-      # the button simply never shows. The API key (Settings → General →
-      # Security in each app) is read server-side only, never sent to the phone.
-      # Use an address Seek's container can reach — a container name on the same
-      # Docker network, or the LAN IP:port.
-      SONARR_URL: "" # ⬅ e.g. http://sonarr:8989
-      SONARR_API_KEY: "" # ⬅ SONARR_API_KEY
-      RADARR_URL: "" # ⬅ e.g. http://radarr:7878
-      RADARR_API_KEY: "" # ⬅ RADARR_API_KEY
-
-      # --- Jellyfin: source of truth for the Shows/Anime split ---------------
-      # Optional. Seek reads which shows live in your Jellyfin "Anime" library
-      # and mirrors it to a Floppy `anime` tag; the Shows/Anime tabs read that
-      # tag. Leave blank and everything shows as TV (no Anime tab). The API key
-      # (Jellyfin Dashboard → API Keys) is read-only and server-side only. Use
-      # an address Seek's container can reach — the public URL works, or a
-      # container name on the same Docker network.
-      JELLYFIN_URL: "" # ⬅ e.g. https://jellyfin.example.com
-      JELLYFIN_API_KEY: "" # ⬅ JELLYFIN_API_KEY
-      JELLYFIN_ANIME_LIBRARY: "Anime" # ⬅ the anime library's name
+      # That's all. Upgrading from an older Seek? Leave your existing variables
+      # here for the first boot: Seek copies them into Settings → Services and
+      # onto your account, logs which ones, and after that they can be deleted.
 
     ports:
       # host:container — the app listens on 8100 inside the container. Change
@@ -172,8 +48,8 @@ services:
       - /mnt/NAS/Data/seek:/data
 
     healthcheck:
-      # Reports unhealthy if Floppy is unreachable or the API token is rejected,
-      # so a bad token shows up in `docker ps` rather than as a blank screen.
+      # Reports unhealthy if Floppy is configured but unreachable, so an outage
+      # shows up in `docker ps` rather than as a blank screen.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
@@ -260,8 +136,8 @@ services:
 # could not be found" — a loud, harmless failure, not a silent misconfiguration.
 #
 # To skip all of this and reach Floppy over the LAN instead, comment out this
-# whole block AND the service's `networks:` above, then set FLOPPY_URL back to
-# http://192.168.1.10:8007.
+# whole block AND the service's `networks:` above, then set Floppy's address in
+# Settings → Services to its LAN address, e.g. http://192.168.1.10:8007.
 networks:
   floppy-net:
     external: true

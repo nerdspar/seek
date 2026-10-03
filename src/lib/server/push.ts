@@ -7,31 +7,31 @@
  * keyed by account, and every read/write here acts for the current user
  * (userctx). The pre-accounts JSON file is imported for the owner at setup.
  */
-import { env } from '$env/dynamic/private';
 import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import webpush from 'web-push';
-import { db, nowIso } from './db';
+import { db, nowIso, dataDir } from './db';
 import { currentUser } from './userctx';
-import { getNotifyState, setNotifyState } from './users';
+import { getNotifyState, getOwner, setNotifyState } from './users';
+import { vapidKeys } from './secrets';
 
 export type PushSub = {
 	endpoint: string;
 	keys: { p256dh: string; auth: string };
 };
 
-export const vapidPublicKey = () => env.VAPID_PUBLIC_KEY || '';
-export const pushConfigured = () =>
-	Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY);
+/* Seek generates its own VAPID keys on first boot (secrets.ts), so push is
+   always available. */
+export const vapidPublicKey = () => vapidKeys().publicKey;
+export const pushConfigured = () => true;
 
 let configured = false;
 function ensureVapid() {
-	if (configured || !pushConfigured()) return;
-	webpush.setVapidDetails(
-		env.VAPID_SUBJECT || 'mailto:seek@localhost',
-		env.VAPID_PUBLIC_KEY!,
-		env.VAPID_PRIVATE_KEY!
-	);
+	if (configured) return;
+	const { publicKey, privateKey } = vapidKeys();
+	// Push services want a contact; the owner's address is the natural one.
+	const owner = getOwner();
+	webpush.setVapidDetails(owner ? `mailto:${owner.email}` : 'mailto:seek@localhost', publicKey, privateKey);
 	configured = true;
 }
 
@@ -127,7 +127,7 @@ export async function sendToDevices(payload: {
  * afterwards so the import can't run twice.
  */
 export async function importLegacyPush(ownerId: number): Promise<number> {
-	const path = join(env.SEEK_DATA_DIR || '/data', 'push-subscriptions.json');
+	const path = join(dataDir(), 'push-subscriptions.json');
 	let parsed: { subs?: PushSub[]; lastDigest?: string | null; lastAtTime?: string | null };
 	try {
 		parsed = JSON.parse(await readFile(path, 'utf8'));

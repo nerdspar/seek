@@ -12,9 +12,7 @@
 	type Props = {
 		account: {
 			linked: Linked;
-			canStore: boolean;
 			bookorbit: boolean;
-			envFallback: { floppy: boolean; calendar: boolean; bookorbit: boolean };
 		};
 	};
 	let { account }: Props = $props();
@@ -103,7 +101,6 @@
 	function status(service: Service): string {
 		if (service === 'bookorbit' && linked.bookorbit) return `Linked as ${linked.bookorbit.username}`;
 		if (service !== 'bookorbit' && linked[service]) return 'Linked';
-		if (account.envFallback[service]) return "Using the server's default (from the deployment)";
 		return 'Not linked';
 	}
 	const isLinked = (s: Service) => (s === 'bookorbit' ? Boolean(linked.bookorbit) : linked[s]);
@@ -134,9 +131,6 @@
 <section id="accounts">
 	<h3>Your accounts</h3>
 	<p class="hint lead">Seek reads your own data with these — nobody else's account is used for you.</p>
-	{#if !account.canStore}
-		<p class="error">SEEK_TOKEN_KEY isn't set on the server, so links can't be saved yet.</p>
-	{/if}
 
 	{#each visible as s (s.id)}
 		<div class="svc">
@@ -149,7 +143,7 @@
 					{#if isLinked(s.id)}
 						<button class="link" onclick={() => unlink(s.id)}>Unlink</button>
 					{/if}
-					<button class="link" disabled={!account.canStore} onclick={() => start(s.id)}>
+					<button class="link" onclick={() => start(s.id)}>
 						{open === s.id ? 'Cancel' : isLinked(s.id) ? 'Replace' : 'Link'}
 					</button>
 				</span>

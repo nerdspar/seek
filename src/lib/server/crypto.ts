@@ -5,11 +5,11 @@
  *   `scrypt$N$r$p$salt$hash` so the cost can be raised later without breaking
  *   existing hashes.
  * - Secrets Seek holds on a user's behalf (Floppy token, calendar token,
- *   BookOrbit password): AES-256-GCM under SEEK_TOKEN_KEY, stored as
+ *   BookOrbit password): AES-256-GCM under the token key (secrets.ts), stored as
  *   `v1:iv:tag:ciphertext` (base64url). GCM authenticates, so a tampered or
  *   wrong-key value fails loudly instead of decrypting to garbage.
  */
-import { env } from '$env/dynamic/private';
+import { tokenKey } from './secrets';
 import {
 	createCipheriv,
 	createDecipheriv,
@@ -54,12 +54,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
 	return timingSafeEqual(actual, expected);
 }
 
-/** True when secrets can be stored — the key is required to encrypt them. */
-export const tokenKeyConfigured = () => Boolean(env.SEEK_TOKEN_KEY);
-
 function key(): Buffer {
-	const raw = env.SEEK_TOKEN_KEY;
-	if (!raw) throw new Error('SEEK_TOKEN_KEY is required to store account credentials.');
+	const raw = tokenKey();
 	// Any high-entropy string works; hashing normalises it to the 32 bytes AES-256 needs.
 	return createHash('sha256').update(raw).digest();
 }

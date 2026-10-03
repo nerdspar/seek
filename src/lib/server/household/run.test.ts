@@ -8,7 +8,7 @@ vi.mock('./mirror', () => ({
 	backfillShow: (...a: unknown[]) => backfillShow(...a),
 	mirrorMembers: () => linked
 }));
-const setJoint = vi.fn(async () => []);
+const setJoint = vi.fn(async (..._args: unknown[]) => []);
 vi.mock('../tags', () => ({ setJoint: (...a: unknown[]) => setJoint(...a) }));
 
 import { openDatabase, useDatabase } from '../db';

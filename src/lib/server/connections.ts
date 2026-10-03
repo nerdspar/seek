@@ -66,7 +66,7 @@ export type BookOrbitCheck = { ok: true; libraries: BookOrbitLibrary[] } | { ok:
 /** Can this login sign in to BookOrbit? On success, the libraries it can see
  *  (for choosing where this person's uploads and downloads land). */
 export async function checkBookOrbitLogin(username: string, password: string): Promise<BookOrbitCheck> {
-	if (!BOOKORBIT_URL()) return { ok: false, error: 'BookOrbit isn’t configured on this Seek (BOOKORBIT_URL).' };
+	if (!BOOKORBIT_URL()) return { ok: false, error: 'BookOrbit isn’t set up yet — the owner adds its address in Settings → Services.' };
 	if (!username.trim() || !password) return { ok: false, error: 'Enter your BookOrbit username and password.' };
 	const api = `${BOOKORBIT_URL()}/api/v1`;
 	try {

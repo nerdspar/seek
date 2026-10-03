@@ -1,26 +1,24 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import { AccountError, createOwner, userCount } from '$lib/server/users';
-import { passphraseMatches, setupTokenRequired } from '$lib/server/session';
-import { tokenKeyConfigured } from '$lib/server/crypto';
+import { announceSetupCode, setupCodeIsPassphrase, setupCodeMatches } from '$lib/server/session';
 import { setSession, throttled } from '$lib/server/auth';
 import { importLegacyPush } from '$lib/server/push';
+import { importEnvCredentials } from '$lib/server/upgrade';
+import { floppyConfigured } from '$lib/server/env';
 import { warmInBackground } from '$lib/server/warmup';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
  * First run: create the household owner. Only reachable while there are no
- * accounts at all. When SEEK_PASSPHRASE is set (always, for an internet-facing
- * deployment) it must be entered here — that's what stops a stranger who finds
- * a freshly deployed Seek from claiming it.
+ * accounts at all, and only with the setup code — printed in Seek's log on boot
+ * (or the old SEEK_PASSPHRASE on an upgraded deployment). That's what stops a
+ * stranger who finds a freshly deployed Seek from claiming it.
  */
 export const load: PageServerLoad = async () => {
 	if (userCount() > 0) redirect(303, '/login');
-	return {
-		needsSetupToken: setupTokenRequired(),
-		missingSessionSecret: !env.SEEK_SESSION_SECRET,
-		missingTokenKey: !tokenKeyConfigured()
-	};
+	// Print it again, in case the boot lines have scrolled out of the log view.
+	announceSetupCode();
+	return { passphrase: setupCodeIsPassphrase() };
 };
 
 export const actions: Actions = {
@@ -36,13 +34,11 @@ export const actions: Actions = {
 
 		if (password !== confirm) return fail(400, { ...keep, error: "The passwords don't match." });
 
-		if (setupTokenRequired()) {
-			const token = String(data.get('setupToken') ?? '');
-			const gate = await throttled(getClientAddress(), 'That setup passphrase is wrong.', async () =>
-				passphraseMatches(token) ? true : null
-			);
-			if (!gate.ok) return fail(gate.status, { ...keep, error: gate.error });
-		}
+		const code = String(data.get('setupToken') ?? '');
+		const gate = await throttled(getClientAddress(), 'That setup code is wrong.', async () =>
+			setupCodeMatches(code) ? true : null
+		);
+		if (!gate.ok) return fail(gate.status, { ...keep, error: gate.error });
 
 		let owner;
 		try {
@@ -52,10 +48,13 @@ export const actions: Actions = {
 			throw err;
 		}
 
+		// An upgraded deployment: the old env Floppy/BookOrbit logins become yours.
+		importEnvCredentials();
 		// Devices that had notifications before accounts keep them, as the owner's.
 		await importLegacyPush(owner.id).catch((err) => console.warn('[seek] legacy push import failed:', err));
 		setSession(cookies, url, owner);
 		warmInBackground(owner);
-		redirect(303, '/');
+		// A brand-new install has nothing to show until Floppy is connected.
+		redirect(303, floppyConfigured() ? '/' : '/profile/settings?welcome=1#services');
 	}
 };

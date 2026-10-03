@@ -2,13 +2,13 @@
  * Transactional email (household phase B) — invites, password resets, address
  * verification — through Resend's HTTP API. No SDK: one POST.
  *
- * Optional. Without RESEND_API_KEY + MAIL_FROM, nothing is emailed and the
+ * Optional (Settings → Services → Email). Without a Resend key + From address, nothing is emailed and the
  * account flows fall back to links the owner hands over directly (Settings →
  * Household shows them), so the household works before email is set up.
  */
-import { env } from '$env/dynamic/private';
+import { MAIL_FROM, RESEND_API_KEY } from './env';
 
-export const mailConfigured = () => Boolean(env.RESEND_API_KEY && env.MAIL_FROM);
+export const mailConfigured = () => Boolean(RESEND_API_KEY() && MAIL_FROM());
 
 export class MailError extends Error {
 	constructor(readonly status: number, body: string) {
@@ -20,15 +20,15 @@ export class MailError extends Error {
 export type Mail = { to: string; subject: string; text: string; html: string };
 
 export async function sendMail(mail: Mail): Promise<void> {
-	if (!mailConfigured()) throw new Error('Email is not configured (RESEND_API_KEY / MAIL_FROM).');
+	if (!mailConfigured()) throw new Error('Email is not set up (Settings → Services → Email).');
 	const res = await fetch('https://api.resend.com/emails', {
 		method: 'POST',
 		headers: {
-			Authorization: `Bearer ${env.RESEND_API_KEY}`,
+			Authorization: `Bearer ${RESEND_API_KEY()}`,
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify({
-			from: env.MAIL_FROM,
+			from: MAIL_FROM(),
 			to: [mail.to],
 			subject: mail.subject,
 			text: mail.text,

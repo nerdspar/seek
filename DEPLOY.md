@@ -61,38 +61,29 @@ chown -R 1000:1000 /mnt/NAS/Data/seek
 
 The container runs as the `node` user (uid 1000), so it needs to own that path.
 
-A dataset is slightly nicer if you want snapshots, but this folder holds only
-Seek's preferences — swipe direction, default sort, theme. Losing it costs you
-nothing but a few toggles. **Do not** put anything about watch history here.
+It holds Seek's accounts and settings (`seek.db`) and the secrets Seek generates
+for itself (`secrets.json` — session signing, the key that encrypts stored
+logins, Web Push keys). Back it up with the rest of `/mnt/NAS/Data`; losing it
+means setting Seek up again (nobody's Floppy or BookOrbit data is affected).
+**Do not** put anything about watch history here — Floppy owns that.
 
-## 3. Put `docker-compose.yml` on the NAS and fill in the secrets
+## 3. Put `docker-compose.yml` on the NAS
 
 Copy just that one file (the image is prebuilt — you don't need the repo):
 
 ```bash
 mkdir -p /mnt/NAS/apps/seek && cd /mnt/NAS/apps/seek
-# copy docker-compose.yml here, then edit it
+# copy docker-compose.yml here
 ```
 
-Fill in the three values marked ⬅ :
-
-| Setting | Where it comes from |
-|---|---|
-| `FLOPPY_URL` | `http://floppy:8000` if Floppy runs on this same Docker host — note 8000 is the *internal* port, not the published one (see below). Otherwise its LAN address, e.g. `http://192.168.1.10:8007` |
-| `FLOPPY_TOKEN` | Floppy → Settings → Integrations → API Token |
-| `SEEK_SESSION_SECRET` | `openssl rand -hex 32` |
-| `SEEK_TOKEN_KEY` | `openssl rand -hex 32` — encrypts each person's stored account links; keep it |
-
-`SEEK_PASSPHRASE` unlocks first-run setup — set it for anything reachable off the
-LAN (see "Security"). The rest — `FLOPPY_CALENDAR_TOKEN`, `TMDB_API_KEY`, the
-`VAPID_*` keys, email (`RESEND_API_KEY`, `MAIL_FROM`) and books (`BOOKORBIT_*`,
-`HARDCOVER_TOKEN`) — turn on optional features and can be filled in whenever you
-want them (see "Optional features").
+There is nothing to fill in. The only variable is `TZ`; no secrets, tokens or
+addresses go in the compose file. (Behind a tunnel you'll also set `ORIGIN` —
+see "Security".)
 
 **If Floppy runs on this same host** — including in a *different compose stack* —
-prefer reaching it by container name. `docker-compose.yml` ships configured that
-way (`FLOPPY_URL: http://floppy:8000` plus the two `networks:` blocks). Two things
-to verify first, because both are easy to get wrong:
+reach it by container name: keep the two `networks:` blocks, and in Settings →
+Services give Floppy's address as `http://floppy:8000`. Two things to verify,
+because both are easy to get wrong:
 
 **The network name is project-prefixed.** Floppy's compose declares `floppy-net`
 with no `name:` override, so Compose creates it as `<project>_floppy-net` — most
@@ -103,54 +94,41 @@ docker network ls | grep floppy
 ```
 
 Put that exact string in the `name:` field at the bottom of `docker-compose.yml`.
-A mismatch fails loudly at startup with "network ... declared as external, but
-could not be found".
-
-On this NAS it is **`ix-floppy_floppy-net`** — TrueNAS Apps adds an `ix-` prefix
-on top of the compose project prefix. The shipped file already has it.
+On this NAS it is **`ix-floppy_floppy-net`** (TrueNAS Apps adds an `ix-` prefix);
+the shipped file already has it.
 
 **The port is the internal one, not the published one.** Floppy listens on 8000
-inside the container by default. If you changed the published port to 8007, the
-mapping is `8007:8000` and the internal port is still **8000** — Floppy's own
-compose comments say not to set `FLOPPY_PORT` merely to change what's published.
-Confirm with the right-hand side of the arrow:
+inside its container; `8007:8000` publishes it as 8007. Use 8000:
 
 ```bash
 docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
 ```
 
-On this NAS that reports `floppy  0.0.0.0:8007->8000/tcp`, so `http://floppy:8000`
-is correct and is what the shipped file uses.
+To skip all of this, comment out both `networks:` blocks and use Floppy's LAN
+address (`http://192.168.1.10:8007`) in Settings → Services instead.
 
-Then prove the route works from inside the container:
-
-```bash
-docker compose up -d && sleep 5
-docker compose exec seek node -e \
-  "fetch('http://floppy:8000/api/v1/info/').then(r=>r.json()).then(j=>console.log('reached Floppy',j.version)).catch(e=>console.log('FAILED',e.message))"
-```
-
-To skip all of this, comment out both `networks:` blocks and set `FLOPPY_URL`
-back to the LAN address (`http://192.168.1.10:8007`). It works fine; it just
-hairpins through the router.
-
-## 4. Launch
+## 4. Launch and set up
 
 ```bash
 docker compose up -d
-docker compose logs -f seek     # expect: Listening on http://0.0.0.0:8100
+docker compose logs seek
+# [seek] First-run setup code: ABCD-EFGH  (open Seek in a browser to create your account)
 ```
 
-Confirm it can actually reach Floppy:
+1. Open `http://<nas-ip>:8100`. Enter your name, email, a password and the
+   **setup code** from the log (TrueNAS → Apps → Seek → Logs). The code proves
+   you're the one who deployed Seek; it changes on every restart until the
+   first account exists.
+2. Seek opens **Settings → Services**. Add **Floppy**'s address, then the
+   rest you use: **TMDB** key, **Books** (BookOrbit address + Hardcover token),
+   **Sonarr / Radarr**, **Jellyfin**, **Email**. Each one is checked when you
+   save, so a typo shows up immediately.
+3. Under **Your accounts**, link your own Floppy (and calendar, and BookOrbit).
+4. Invite the household from **Settings → Household**. Each person links their
+   own accounts the same way.
 
-```bash
-curl -s http://localhost:8100/api/health
-# {"ok":true,"floppy":{"reachable":true,"version":"v26.8.20",...},"token":"accepted"}
-```
-
-The container's healthcheck runs that same endpoint, so a bad token or an
-unreachable Floppy shows up as `unhealthy` in `docker ps` rather than as a blank
-screen on your phone.
+The container healthcheck hits `/api/health`, which reports unhealthy only if
+Floppy is configured but unreachable.
 
 ## 5. Add it to the iPhone home screen
 
@@ -170,27 +148,27 @@ docker image prune -f
 Pushing to `main` publishes a new `:latest` within a couple of minutes, so this
 is all it takes. If you run Watchtower, it will pick it up on its own.
 
-### Upgrading from the shared passphrase to accounts (one time)
+### Upgrading from an env-configured Seek (one time)
 
-The household-accounts release replaces the single passphrase with a sign-in per
-person. Before pulling it:
+The accounts release moves everything out of the compose file. **Don't change
+the compose file before upgrading** — Seek needs the old values on its first
+boot to carry them over.
 
-1. **Add `SEEK_TOKEN_KEY`** to the compose environment (`openssl rand -hex 32`)
-   — it encrypts each person's stored links. Keep `SEEK_SESSION_SECRET` and
-   `SEEK_PASSPHRASE` as they are.
-2. **Pull and restart.** Existing sessions stop working (they named no user), so
-   every device lands on **`/setup`** once.
-3. **Create the owner account** there — your name, email and a password, plus
-   the old `SEEK_PASSPHRASE` as the setup token. Your existing preferences and
-   notification devices carry over to this account automatically, and it keeps
-   using the env `FLOPPY_TOKEN` / `FLOPPY_CALENDAR_TOKEN` until you link your own.
-4. **Invite the household** from Settings → Household. Without email set up,
-   Seek shows you the invite link to send. Each person then links their own
-   Floppy (and BookOrbit) under Settings → Your accounts.
-
-`seek.db` now lives in `/data` next to the old JSON files — back it up with the
-rest of the dataset. Losing it means re-creating the accounts (nobody's Floppy
-data is affected).
+1. **Pull and restart.** On boot Seek copies your old settings in and logs what
+   it took: service addresses and keys go to Settings → Services; the session
+   secret and VAPID keys go to `/data/secrets.json` (so nobody is signed out
+   twice and notifications keep working).
+2. **Every device lands on `/setup` once** (old sessions named no user). Create
+   your account with your old `SEEK_PASSPHRASE` as the setup code. Your old
+   `FLOPPY_TOKEN` / `FLOPPY_CALENDAR_TOKEN` (and `BOOKORBIT_USER/PASSWORD`, if
+   set) become *your* linked accounts; your preferences and notification
+   devices carry over. Seek then looks exactly as it did.
+3. **Add anything new** in Settings → Services (e.g. Books: BookOrbit address +
+   Hardcover token), and link your BookOrbit login under Your accounts.
+4. **Invite the household** from Settings → Household.
+5. **Optional cleanup:** delete every variable except `TZ` from the compose file
+   (and `ORIGIN`/`ADDRESS_HEADER` if you're behind a tunnel). They're ignored
+   now — later changes belong in Settings.
 
 ## Security
 
@@ -200,15 +178,20 @@ every page and API route requires an account.
 
 - **Accounts, not a shared secret.** Each person signs in with their own email
   and password; the owner invites everyone else (there's no open signup).
-  `SEEK_PASSPHRASE` survives only as the token that unlocks first-run setup —
-  set it before exposing a fresh install, so a stranger can't claim it.
+  Creating the first (owner) account needs the setup code printed in the
+  server log, so a stranger who finds a fresh install can't claim it.
 - **Nobody runs on someone else's account.** Each request runs as the signed-in
   person with *their* Floppy token, caches and preferences. A household member
   who hasn't linked Floppy sees a "link your account" prompt — never the
-  owner's library. Only the owner may fall back to the env tokens.
-- **Stored links are encrypted.** Floppy/calendar tokens and BookOrbit passwords
-  are AES-GCM encrypted at rest under `SEEK_TOKEN_KEY`, and each is checked
-  against the real service before it's saved.
+  owner's library. The owner is no exception.
+- **Stored secrets are encrypted.** Floppy/calendar tokens, BookOrbit passwords
+  and the API keys in Settings → Services are AES-GCM encrypted at rest, and
+  each is checked against the real service when it's saved. The key is
+  generated into `/data/secrets.json`; to keep it apart from the database (so a
+  copy of `/data` alone can't decrypt anything), set `SEEK_TOKEN_KEY` in the
+  compose file instead — and then never remove it.
+- **Keys never reach the browser.** Settings → Services is owner-only and shows
+  a secret only as "set".
 
 ### How sessions work
 
@@ -257,12 +240,11 @@ Then use that URL on the phone too, not `http://192.168.1.10:8100`.
 A Cloudflare Tunnel avoids opening ports and reuses the hostname you already
 have. In order:
 
-1. **Finish setup first.** `SEEK_PASSPHRASE`, `SEEK_SESSION_SECRET`,
-   `SEEK_TOKEN_KEY` and `ORIGIN` set, container restarted, the owner account
+1. **Finish setup first.** `ORIGIN` set, container restarted, the owner account
    created at `/setup`, sign-in reached and passed — *before* the name resolves
    publicly. Scanners find new hostnames within hours of a certificate being
-   issued, and an un-set-up Seek would offer them the setup page (the passphrase
-   is what stops them).
+   issued, and an un-set-up Seek would offer them the setup page (the setup code
+   from the log is what stops them).
 2. **Set `ADDRESS_HEADER`** so the throttle can tell clients apart. Without it
    every request carries the proxy's address and one stranger's failures would
    lock out the household.
@@ -364,36 +346,29 @@ outside. LAN clients stay individually counted.
 - **Someone leaving the household:** the owner removes them in Settings →
   Household. Their Seek account and its stored links are deleted; their own
   Floppy and BookOrbit data are untouched.
-- **Nuclear option:** rotating `SEEK_SESSION_SECRET` and restarting invalidates
-  every session for everyone.
+- **Nuclear option:** delete `sessionSecret` from `/data/secrets.json` and restart
+  — every session for everyone is invalidated (Seek makes a new one).
 
 ## Optional features
 
-Three features stay dark until you provide their keys; everything else works
-without them.
+Everything is in the app — nothing to add to the compose file:
 
-- **`FLOPPY_CALENDAR_TOKEN`** — the Upcoming tab and the daily notification. From
-  Floppy's Calendar page, the token in the `.ics` feed URL.
-- **`TMDB_API_KEY`** — search and Discover.
-- **`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`** — the daily
-  "airing today" push. Generate the pair once — web-push ships in the image, so
-  you can do it in the container:
-
-  ```sh
-  docker exec seek node -e "console.log(require('web-push').generateVAPIDKeys())"
-  ```
-
-  Paste both halves; keep the private key secret. `VAPID_SUBJECT` is a contact
-  URI push services can reach you at (`mailto:you@…` or `https://…`). The digest
-  also needs `FLOPPY_CALENDAR_TOKEN`, and on iPhone notifications only work from
-  the Home-Screen PWA (iOS 16.4+).
+- **Upcoming and the daily notification** — each person links their Floppy
+  calendar under Your accounts.
+- **Search, Discover, artwork** — TMDB key in Settings → Services.
+- **Books** — BookOrbit address + Hardcover token in Settings → Services; each
+  person links their BookOrbit login.
+- **Push notifications** — always available (Seek makes its own VAPID keys). On
+  iPhone they only work from the Home-Screen app (iOS 16.4+).
+- **Sonarr, Radarr, Jellyfin, Email** — Settings → Services.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
 | `denied` / `manifest unknown` on pull | Not logged in to GHCR, or the first build hasn't published. Check GitHub → Packages. |
-| Health shows `"token":"rejected"` | `FLOPPY_TOKEN` is wrong or was regenerated in Floppy. |
+| Health shows `"token":"rejected"` | Your linked Floppy token is wrong or was regenerated in Floppy — re-link it under Settings → Your accounts. |
+| Lost the setup code | It's printed on every boot (and every time `/setup` is opened) until the first account exists: TrueNAS → Apps → Seek → Logs. |
 | `network ... declared as external, but could not be found` | The `name:` under the top-level `networks:` doesn't match. Run `docker network ls \| grep floppy` — it's project-prefixed, e.g. `floppy_floppy-net`. |
 | Health shows `reachable:false` with a container-name URL | Wrong internal port (it's 8000, not the published 8007), or Seek isn't actually on Floppy's network. |
 | Watchlist empty, health OK | No shows are `in_progress` with an unwatched episode — check Floppy directly. |

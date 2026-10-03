@@ -7,7 +7,7 @@
  * so a missed tick (or a restart) just sends a little later, never twice.
  */
 import { getPrefs } from './prefs';
-import { pushConfigured, subscriptionCount } from './push';
+import { subscriptionCount } from './push';
 import { sendDailyDigest, sendAtTimeNotifications } from './digest';
 import { jellyfinConfigured } from './jellyfin';
 import { syncAnimeTags } from './anime-sync';
@@ -53,12 +53,11 @@ export function startScheduler(): void {
 	// Shared-show mirroring is independent of push and Jellyfin; with fewer than
 	// two linked people (or nothing shared) each pass is a couple of DB reads.
 	startMirroring();
-	// Start if either job has something to do.
-	if (!pushConfigured() && !jellyfinConfigured()) return;
 	started = true;
-
-	if (jellyfinConfigured()) startAnimeSync();
-	if (!pushConfigured()) return;
+	/* Always scheduled: Jellyfin can be connected later in Settings → Services,
+	   so the sync checks on each run rather than once at boot. Push is always
+	   available (Seek generates its own keys). */
+	startAnimeSync();
 
 	/* A tick's work (a cold calendar build plus a push fan-out) can in principle
 	   outrun the interval; without this, two overlapping ticks could both pass the
@@ -91,7 +90,7 @@ export function startScheduler(): void {
 function startAnimeSync(): void {
 	let running = false;
 	const sync = async () => {
-		if (running) return;
+		if (running || !jellyfinConfigured()) return;
 		running = true;
 		try {
 			// Each person's Floppy carries its own anime tags; Jellyfin's library is

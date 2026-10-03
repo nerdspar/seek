@@ -195,6 +195,12 @@ export function dropBooksCache(opts: { session?: boolean } = {}): void {
 	if (opts.session) sessions.delete(scopeId());
 }
 
+/** BookOrbit's address changed: every session and cached list belongs to the old one. */
+export function forgetBookOrbitSessions(): void {
+	sessions.clear();
+	listCache.clear();
+}
+
 export type ReadingGoal = { goalBooks: number; completedBooks: number; year: number };
 export type StatsSummary = {
 	trackedBooks: number;

@@ -38,12 +38,6 @@ services:
     volumes:
       - ./data:/data
     environment:
-      # Floppy's address as this container can reach it. A LAN address always
-      # works; see DEPLOY.md for reaching it by container name instead, which
-      # needs a shared Docker network.
-      FLOPPY_URL: "http://192.168.1.10:8007"
-      FLOPPY_TOKEN: "your-floppy-api-token"
-      SEEK_SESSION_SECRET: "run: openssl rand -hex 32"
       TZ: "America/New_York"
 ```
 
@@ -52,45 +46,30 @@ mkdir -p data && chown -R 1000:1000 data
 docker compose up -d
 ```
 
-The image is public, so no `docker login` is needed. Open `http://<host>:8100` on your phone, then **Share → Add to Home Screen**.
+The image is public, so no `docker login` is needed. Then:
 
-Check it came up cleanly:
-
-```sh
-curl -s http://<host>:8100/api/health
-# {"ok":true,"floppy":{"reachable":true,"version":"v26.8.20",...},"token":"accepted"}
-```
+1. `docker compose logs seek` shows a **setup code** (`First-run setup code: ABCD-EFGH`).
+2. Open `http://<host>:8100`, create your account with that code.
+3. Seek opens **Settings → Services**: add Floppy's address (and TMDB's key, and anything else you use). Then link your own Floppy token under **Your accounts**.
+4. On your phone: **Share → Add to Home Screen**.
 
 [DEPLOY.md](DEPLOY.md) covers this in full, including running Seek on Floppy's own Docker network so traffic never touches the LAN.
 
 ## Configuration
 
-All configuration is environment variables. Copy [`.env.example`](.env.example) for local development, or set them in your compose file.
+There's nothing to configure in the compose file beyond `TZ`. Seek generates its own secrets into `/data/secrets.json`, and everything else is set in the app:
 
-| Variable | Required | Description |
-|---|---|---|
-| `FLOPPY_URL` | **yes** | Floppy's base URL, as the *container* can reach it. A container name works and is preferred. |
-| `FLOPPY_TOKEN` | **yes** | Floppy → Settings → Integrations → API Token. |
-| `SEEK_SESSION_SECRET` | **yes** | `openssl rand -hex 32`. Signs the session cookie. |
-| `TMDB_API_KEY` | for search | Enables search, discovery and the universal search box. |
-| `FLOPPY_CALENDAR_TOKEN` | for Upcoming | The token in Floppy's `.ics` feed URL. Also powers the daily notification. |
-| `VAPID_PUBLIC_KEY` | for notifications | With the private key, enables the daily "airing today" push. Generate a pair: `node -e "console.log(require('web-push').generateVAPIDKeys())"`. |
-| `VAPID_PRIVATE_KEY` | for notifications | The private half of the pair. Keep it secret. |
-| `VAPID_SUBJECT` | for notifications | A contact URI push services can reach you at — `mailto:you@…` or `https://…`. |
-| `FLOPPY_PUBLIC_URL` | no | Floppy's *browser-reachable* address, for the one link the phone opens directly. Blank hides the link. |
-| `SEEK_PASSPHRASE` | see below | Enables the login gate. Blank means no gate. |
-| `ORIGIN` | if gated | The exact URL browsers use, protocol included. |
-| `TZ` | no | Affects how dates are displayed. |
+- **Settings → Services** (the household owner): Floppy's address, TMDB key, BookOrbit address and Hardcover token, Sonarr, Radarr, Jellyfin, and Resend email. Secrets are stored encrypted and never sent back to the browser; each service is checked when saved.
+- **Settings → Your accounts** (each person): their own Floppy token, Floppy calendar, and BookOrbit login.
+
+Optional environment variables: `ORIGIN` and `ADDRESS_HEADER` behind a reverse proxy or tunnel (see [DEPLOY.md](DEPLOY.md#security)); `SEEK_TOKEN_KEY` to keep the encryption key outside `/data`. A Seek upgraded from the older env-based setup copies its old variables in on first boot, after which they can be removed — see [`.env.example`](.env.example).
 
 ### Security
 
-**Seek holds your Floppy API token and proxies every call server-side**, so the browser never sees it — but that also means anyone who can reach Seek can control your library. On a trusted LAN that is fine and `SEEK_PASSPHRASE` can stay empty.
+Seek proxies every Floppy call server-side, so no browser ever sees a token — and everyone signs in with their own account and acts only with their own linked credentials. Creating the first account needs the setup code from the server log, so a stranger who finds a fresh install can't claim it.
 
-Before exposing Seek to the internet, set `SEEK_PASSPHRASE` and `ORIGIN`. With the gate on:
-
-- one passphrase per device, then a year-long signed cookie — you do not log in again
-- sessions expire server-side, so a copied cookie dies rather than lasting forever
-- failed attempts are throttled, escalating to a two-hour lockout
+- a year-long signed session per device, revocable by changing the password or "Sign out everywhere"
+- failed sign-ins are throttled, escalating to a two-hour lockout
 - the cookie is marked `Secure` automatically when the request is HTTPS
 
 See [DEPLOY.md](DEPLOY.md#security) for the full setup, including a Cloudflare Tunnel walkthrough and the `ORIGIN` trap that will otherwise 403 your own login form.
@@ -99,7 +78,7 @@ See [DEPLOY.md](DEPLOY.md#security) for the full setup, including a Cloudflare T
 
 ```sh
 npm install
-cp .env.example .env    # fill in FLOPPY_URL and FLOPPY_TOKEN
+cp .env.example .env    # nothing to fill in; set services up in the app
 npm run dev             # http://<your-lan-ip>:8100
 ```
 

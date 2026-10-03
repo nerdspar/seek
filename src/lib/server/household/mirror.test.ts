@@ -43,18 +43,17 @@ const play = (mediaId: string, season: number, episode: number, at: number, inst
 
 beforeEach(async () => {
 	process.env.SEEK_TOKEN_KEY = 'test-token-key';
-	process.env.FLOPPY_TOKEN = 'owner-env-token';
 	useDatabase(openDatabase(':memory:'));
 	owner = await users.createOwner({ email: 'o@x.co', name: 'Scott', password: 'password-1' });
 	const { token } = users.createInvite(owner, 'w@x.co');
 	wife = await users.acceptInvite(token, { name: 'Wife', password: 'password-2' });
+	users.setFloppyToken(owner.id, 'flp_owner');
 	users.setFloppyToken(wife.id, 'flp_wife');
 	share(owner.householdId, owner.id, { source: 'tmdb', mediaId: '95350', title: 'Lanterns' });
 });
 afterEach(() => {
 	useDatabase(null);
 	delete process.env.SEEK_TOKEN_KEY;
-	delete process.env.FLOPPY_TOKEN;
 });
 
 describe('playsFromHistory', () => {

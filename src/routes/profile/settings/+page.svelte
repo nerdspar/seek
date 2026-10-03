@@ -4,6 +4,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import AccountSettings from '$lib/components/settings/AccountSettings.svelte';
 	import LinkedAccounts from '$lib/components/settings/LinkedAccounts.svelte';
+	import ServicesSettings from '$lib/components/settings/ServicesSettings.svelte';
 	import type { Accent, Appearance, MarkDirection, Prefs, ArrPref } from '$lib/server/prefs';
 	import { setNoticesEnabled } from '$lib/notices.svelte';
 	import { pushStatus, subscribe, unsubscribe, sendTest, type PushStatus } from '$lib/push';
@@ -243,7 +244,13 @@
 
 <main>
 
-	{#if page.url.searchParams.get('welcome')}
+	{#if !data.floppyReady && data.services}
+		<p class="welcome">
+			Welcome to Seek. First, tell it where your apps are: open <a href="#services">Services</a> and add
+			Floppy’s address (and TMDB’s key). Then link your own Floppy under
+			<a href="#accounts">Your accounts</a>.
+		</p>
+	{:else if page.url.searchParams.get('welcome')}
 		<p class="welcome">
 			Welcome to Seek. Link your own Floppy{data.account.bookorbit ? ' and BookOrbit' : ''} under
 			<a href="#accounts">Your accounts</a> — that's where your shows{data.account.bookorbit ? ' and books' : ''}
@@ -540,6 +547,10 @@
 
 	<h2 class="group">Connections</h2>
 
+	{#if data.services}
+		<ServicesSettings services={data.services} openFirst={data.floppyReady ? null : 'floppy'} />
+	{/if}
+
 	<LinkedAccounts account={data.account} />
 
 	{#if anyArr}
@@ -622,8 +633,8 @@
 			</a>
 		{:else}
 			<p class="hint">
-				Set <code>FLOPPY_PUBLIC_URL</code> to link out to Floppy's own settings — notifications
-				are configured there, not here.
+				Add Floppy’s “Address from your phone” under Services to link out to Floppy’s own settings —
+				notifications are configured there, not here.
 			</p>
 		{/if}
 	</section>

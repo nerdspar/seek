@@ -5,9 +5,18 @@ import { startScheduler } from '$lib/server/scheduler';
 import { warmEveryone } from '$lib/server/warmup';
 import { getUser, userCount } from '$lib/server/users';
 import { runAs, NotLinkedError } from '$lib/server/userctx';
+import { NotConfiguredError, floppyConfigured } from '$lib/server/env';
+import { announceSetupCode } from '$lib/server/session';
+import { upgradeFromEnv } from '$lib/server/upgrade';
 
-/* The daily-digest timer. No-ops unless VAPID keys are set, so it costs nothing
-   on an instance that has not turned notifications on. */
+/* An upgraded deployment's env config moves into Seek (Settings → Services and
+   the owner's account) before anything reads it. Idempotent; see upgrade.ts. */
+upgradeFromEnv();
+
+/* A fresh install: print the code that unlocks creating the owner account. */
+if (userCount() === 0) announceSetupCode();
+
+/* The scheduler: digest/at-air pushes, anime sync, shared-show mirroring. */
 startScheduler();
 
 /* Fire the expensive lookups once at startup, for every account, so nobody's
@@ -54,6 +63,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (path.startsWith('/api/')) return new Response('Unauthorized', { status: 401 });
 		const next = path === '/' ? '' : `?next=${encodeURIComponent(path + event.url.search)}`;
 		redirect(303, `/login${next}`);
+	} else if (
+		event.locals.user?.role === 'owner' &&
+		!floppyConfigured() &&
+		!path.startsWith('/api/') &&
+		!path.startsWith('/profile/settings') &&
+		!isPublic(path) &&
+		path !== '/logout' &&
+		event.request.method === 'GET'
+	) {
+		// Nothing works until Seek knows where Floppy is: finish setting up first.
+		redirect(303, '/profile/settings?welcome=1#services');
 	}
 
 	const render = async () => {
@@ -103,5 +123,6 @@ export const handle: Handle = async ({ event, resolve }) => {
    covers streamed promises too, which are how most tabs load. */
 export const handleError: HandleServerError = ({ error }) => {
 	if (error instanceof NotLinkedError) return { message: error.message, notLinked: error.service };
+	if (error instanceof NotConfiguredError) return { message: error.message };
 	return { message: 'Internal Error' };
 };

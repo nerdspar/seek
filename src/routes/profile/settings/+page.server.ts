@@ -1,11 +1,11 @@
 import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
-import { FLOPPY_PUBLIC_URL } from '$lib/server/env';
+import { FLOPPY_PUBLIC_URL, floppyConfigured } from '$lib/server/env';
 import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
 import { householdName, linkedStatus, listMembers, listPendingInvites } from '$lib/server/users';
 import { mailConfigured } from '$lib/server/mail';
-import { tokenKeyConfigured } from '$lib/server/crypto';
+import { settingsForDisplay } from '$lib/server/services';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import type { PageServerLoad } from './$types';
@@ -38,14 +38,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 				invites: me.role === 'owner' ? listPendingInvites(me.householdId) : []
 			},
 			linked: linkedStatus(me.id),
-			canStore: tokenKeyConfigured(),
-			bookorbit: bookorbitConfigured(),
-			// The owner runs on the deployment's env config until they link their own.
-			envFallback: {
-				floppy: me.role === 'owner' && Boolean(env.FLOPPY_TOKEN),
-				calendar: me.role === 'owner' && Boolean(env.FLOPPY_CALENDAR_TOKEN),
-				bookorbit: me.role === 'owner' && Boolean(env.BOOKORBIT_USER && env.BOOKORBIT_PASSWORD)
-			}
-		}
+			bookorbit: bookorbitConfigured()
+		},
+		// The household's service settings — owner only (keys never leave the server).
+		services: me.role === 'owner' ? settingsForDisplay() : null,
+		floppyReady: floppyConfigured()
 	};
 };

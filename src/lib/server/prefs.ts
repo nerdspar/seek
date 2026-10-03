@@ -6,11 +6,11 @@
  * a default sort kept in the browser would mean the first paint shows one order
  * and then reshuffles after hydration.
  */
-import { env } from '$env/dynamic/private';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { scopeId, currentUser } from './userctx';
 import { getPrefsJson, setPrefsJson, getOwner } from './users';
+import { dataDir } from './db';
 
 export type MarkDirection = 'rtl' | 'ltr';
 
@@ -72,7 +72,7 @@ export type Prefs = {
 	 *  all-day streaming drop. Independent of the daily digest. */
 	notifyAtTime: boolean;
 	/** Where Sonarr/Radarr files new adds and at what quality (§ requests). Null
-	 *  until picked in Settings; the connection itself lives in env. */
+	 *  until picked in Settings; the connection itself is in Settings → Services. */
 	sonarr: ArrPref | null;
 	radarr: ArrPref | null;
 	/** Show the download-management layer (edit settings, per-episode/season
@@ -152,7 +152,7 @@ export const DEFAULT_SORT: SortKey = 'recently_watched';
 
 /* The pre-accounts store. Still read for work outside any user context, and as
    the owner's starting point the first time they sign in. */
-const file = () => join(env.SEEK_DATA_DIR || '/data', 'preferences.json');
+const file = () => join(dataDir(), 'preferences.json');
 
 /* Per user (userctx scope id); 0 is the legacy file. */
 const cache = new Map<number, Prefs>();

@@ -7,8 +7,9 @@
  *  What that costs is handled here: tokens carry an age the server enforces, and
  *  failed attempts are throttled hard enough that guessing is not a strategy.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { env } from '$env/dynamic/private';
+import { sessionSecret } from './secrets';
 
 export const COOKIE = 'seek_session';
 
@@ -17,16 +18,34 @@ export const COOKIE = 'seek_session';
  *  so the same limit is enforced on the token itself. */
 export const SESSION_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 
-function secret(): string {
-	const s = env.SEEK_SESSION_SECRET;
-	if (!s) throw new Error('SEEK_SESSION_SECRET is required — it signs the session cookie.');
-	return s;
+const secret = () => sessionSecret();
+
+/* ── First-run setup code ─────────────────────────────────────────────────────
+   Creating the owner account needs proof that you're whoever deployed Seek —
+   otherwise a stranger who finds a fresh instance through the tunnel could
+   claim it. That proof is a code only the server's log shows (TrueNAS → Apps →
+   Seek → Logs), made fresh each boot. A deployment that still sets
+   SEEK_PASSPHRASE (from before accounts) uses that instead. */
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I
+let generatedCode: string | null = null;
+
+export function setupCode(): string {
+	if (env.SEEK_PASSPHRASE) return env.SEEK_PASSPHRASE;
+	generatedCode ??= Array.from({ length: 8 }, (_, i) => (i === 4 ? '-' : '') + ALPHABET[randomInt(ALPHABET.length)]).join('');
+	return generatedCode;
 }
 
-/** True when the bootstrap setup page must be unlocked with SEEK_PASSPHRASE.
- *  Since accounts replaced the shared passphrase, that is its only remaining job:
- *  proving the person creating the owner account is whoever deployed Seek. */
-export const setupTokenRequired = () => Boolean(env.SEEK_PASSPHRASE);
+/** True when the setup code is the old SEEK_PASSPHRASE rather than a logged one. */
+export const setupCodeIsPassphrase = () => Boolean(env.SEEK_PASSPHRASE);
+
+/** Print the setup code where the person deploying will see it. */
+export function announceSetupCode(): void {
+	if (setupCodeIsPassphrase()) {
+		console.log('[seek] First-run setup: open Seek and enter your SEEK_PASSPHRASE as the setup code.');
+	} else {
+		console.log(`[seek] First-run setup code: ${setupCode()}  (open Seek in a browser to create your account)`);
+	}
+}
 
 /* A session names a user and that user's session version. Bumping the version
    in the database (password change, sign out everywhere) kills every cookie
@@ -61,9 +80,11 @@ export function verify(token: string | undefined): SessionClaims | null {
 	return { userId, version };
 }
 
-export function passphraseMatches(input: string): boolean {
-	const expected = env.SEEK_PASSPHRASE ?? '';
-	const a = Buffer.from(input);
+/** Does this match the setup code? Case and spacing forgiven for a typed code. */
+export function setupCodeMatches(input: string): boolean {
+	const expected = setupCode();
+	const typed = setupCodeIsPassphrase() ? input : input.trim().toUpperCase().replace(/\s+/g, '');
+	const a = Buffer.from(typed);
 	const b = Buffer.from(expected);
 	// Length leaks either way; the compare itself stays constant-time.
 	if (a.length !== b.length) return false;

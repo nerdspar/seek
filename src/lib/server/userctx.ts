@@ -11,13 +11,12 @@
  * - Upcoming takes this user's calendar token; the books client takes this
  *   user's BookOrbit login.
  *
- * The security rule: the household owner may fall back to the env credentials
- * (the pre-accounts config — your deployment keeps working with nothing linked).
- * A member never falls back. A member with nothing linked gets NotLinkedError,
- * never the owner's library.
+ * The security rule: nobody runs on anyone else's credentials. Each person —
+ * owner included — uses only what they linked under Your accounts (an upgraded
+ * deployment's old env tokens are copied onto the owner's account once, see
+ * upgrade.ts). Nothing linked means NotLinkedError, never someone else's library.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { env } from '$env/dynamic/private';
 import { getCredentials, type Credentials, type User } from './users';
 
 type Ctx = { user: User; creds?: Credentials };
@@ -56,19 +55,17 @@ export class NotLinkedError extends Error {
 	}
 }
 
-const isOwner = (ctx: Ctx) => ctx.user.role === 'owner';
-
-/**
- * The Floppy token for whoever this work is for. Outside any user context
- * (legacy single-user paths) it is the env token, exactly as before accounts.
- */
-export function floppyToken(): string {
+/** Work that touches someone's accounts must say whose; outside any user
+ *  context there is nobody to act for. */
+function ctxOrThrow(): Ctx {
 	const ctx = als.getStore();
-	if (!ctx) {
-		if (!env.FLOPPY_TOKEN) throw new Error('Missing required env var FLOPPY_TOKEN. See .env.example.');
-		return env.FLOPPY_TOKEN;
-	}
-	const token = creds(ctx).floppyToken ?? (isOwner(ctx) ? env.FLOPPY_TOKEN || null : null);
+	if (!ctx) throw new Error('No user context — run this as someone (runAs).');
+	return ctx;
+}
+
+/** The Floppy token for whoever this work is for. */
+export function floppyToken(): string {
+	const token = creds(ctxOrThrow()).floppyToken;
 	if (!token) throw new NotLinkedError('floppy');
 	return token;
 }
@@ -76,8 +73,7 @@ export function floppyToken(): string {
 /** The Floppy calendar (iCal) token, or null when this person has none. */
 export function calendarToken(): string | null {
 	const ctx = als.getStore();
-	if (!ctx) return env.FLOPPY_CALENDAR_TOKEN || null;
-	return creds(ctx).calendarToken ?? (isOwner(ctx) ? env.FLOPPY_CALENDAR_TOKEN || null : null);
+	return ctx ? creds(ctx).calendarToken : null;
 }
 
 export type BookOrbitLogin = { username: string; password: string; libraryId: number | null };
@@ -85,12 +81,7 @@ export type BookOrbitLogin = { username: string; password: string; libraryId: nu
 /** This person's BookOrbit login, or null when they have none. */
 export function bookorbitLogin(): BookOrbitLogin | null {
 	const ctx = als.getStore();
-	const envLogin =
-		env.BOOKORBIT_USER && env.BOOKORBIT_PASSWORD
-			? { username: env.BOOKORBIT_USER, password: env.BOOKORBIT_PASSWORD, libraryId: null }
-			: null;
-	if (!ctx) return envLogin;
-	return creds(ctx).bookorbit ?? (isOwner(ctx) ? envLogin : null);
+	return ctx ? creds(ctx).bookorbit : null;
 }
 
 /** Who a cache entry belongs to. 0 = no user context (boot / legacy paths). */

@@ -4,8 +4,7 @@ import {
 	verifyPassword,
 	encryptSecret,
 	decryptSecret,
-	tokenKeyConfigured,
-	newOpaqueToken,
+		newOpaqueToken,
 	hashToken
 } from './crypto';
 
@@ -59,10 +58,10 @@ describe('secret encryption', () => {
 		expect(() => decryptSecret('not-a-secret')).toThrow(/format/);
 	});
 
-	it('requires SEEK_TOKEN_KEY', () => {
-		delete process.env.SEEK_TOKEN_KEY;
-		expect(tokenKeyConfigured()).toBe(false);
-		expect(() => encryptSecret('x')).toThrow(/SEEK_TOKEN_KEY/);
+	it('a different key cannot read what another key wrote', () => {
+		const stored = encryptSecret('flp_secret');
+		process.env.SEEK_TOKEN_KEY = 'some-other-key';
+		expect(() => decryptSecret(stored)).toThrow();
 	});
 });
 

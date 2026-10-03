@@ -36,17 +36,17 @@ afterEach(() => {
 });
 
 describe('credential resolution', () => {
-	it('outside any user context, uses the env config (pre-accounts behaviour)', () => {
+	it('outside any user context there is nobody to act for — env tokens are never used', () => {
 		expect(currentUser()).toBeNull();
-		expect(floppyToken()).toBe('env-owner-token');
-		expect(calendarToken()).toBe('env-cal');
-		expect(bookorbitLogin()).toEqual({ username: 'env-bo', password: 'env-bo-pw', libraryId: null });
+		expect(() => floppyToken()).toThrow(/No user context/);
+		expect(calendarToken()).toBeNull();
+		expect(bookorbitLogin()).toBeNull();
 	});
 
-	it('the owner falls back to env until they link their own', () => {
+	it('the owner uses only what they linked, like everyone else', () => {
 		runAs(owner, () => {
 			expect(currentUser()?.id).toBe(owner.id);
-			expect(floppyToken()).toBe('env-owner-token');
+			expect(() => floppyToken()).toThrow(NotLinkedError);
 			users.setFloppyToken(owner.id, 'flp_owner_own');
 			refreshCredentials();
 			expect(floppyToken()).toBe('flp_owner_own');

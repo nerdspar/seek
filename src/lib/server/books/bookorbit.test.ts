@@ -1,10 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /* bookorbit.ts keeps a module-level session + list cache, so every test imports
-   a fresh copy to stay isolated. */
+   a fresh copy to stay isolated. BookOrbit is only ever called *as someone*, so
+   every call runs as a signed-in owner whose linked login is the test's
+   BOOKORBIT_USER / BOOKORBIT_PASSWORD (no login when those are unset). */
 async function load() {
 	vi.resetModules();
-	return import('./bookorbit');
+	const db = await import('../db');
+	db.useDatabase(db.openDatabase(':memory:'));
+	const users = await import('../users');
+	const ctx = await import('../userctx');
+	const mod = await import('./bookorbit');
+	const owner = await users.createOwner({ email: 'o@x.co', name: 'O', password: 'password-1' });
+	const { BOOKORBIT_USER: username, BOOKORBIT_PASSWORD: password } = process.env;
+	if (username && password) users.setBookOrbit(owner.id, { username, password, libraryId: null });
+	// Functions run as the owner; classes (BookOrbitError) pass through untouched.
+	return new Proxy(mod, {
+		get(target, key) {
+			const v = Reflect.get(target, key);
+			return typeof v === 'function' && typeof key === 'string' && /^[a-z]/.test(key)
+				? (...args: unknown[]) => ctx.runAs(owner, () => (v as (...a: unknown[]) => unknown)(...args))
+				: v;
+		}
+	});
 }
 
 const json = (body: unknown, status = 200) =>
@@ -37,7 +55,7 @@ describe('bookorbit client', () => {
 		const bo = await load();
 		expect(bo.bookorbitConfigured()).toBe(true);
 		expect(bo.bookorbitLinked()).toBe(true);
-		delete process.env.BOOKORBIT_PASSWORD;
+		(await import('../users')).setBookOrbit(1, null);
 		expect(bo.bookorbitLinked()).toBe(false);
 		delete process.env.BOOKORBIT_URL;
 		expect(bo.bookorbitConfigured()).toBe(false);

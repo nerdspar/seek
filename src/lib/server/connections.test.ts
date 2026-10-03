@@ -84,6 +84,6 @@ describe('checkBookOrbitLogin', () => {
 		delete process.env.BOOKORBIT_URL;
 		const r = await checkBookOrbitLogin('scott', 'pw');
 		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.error).toMatch(/BOOKORBIT_URL/);
+		if (!r.ok) expect(r.error).toMatch(/Settings → Services/);
 	});
 });

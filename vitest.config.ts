@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * Unit tests run in plain Node — no SvelteKit runtime. `$env/dynamic/private` is
@@ -11,7 +13,17 @@ import { fileURLToPath } from 'node:url';
 export default defineConfig({
 	test: {
 		include: ['src/**/*.{test,spec}.ts'],
-		environment: 'node'
+		environment: 'node',
+		/* Never touch a real /data: each worker gets a private in-memory database
+		   (opened lazily), and anything Seek writes to its data directory — the
+		   generated secrets file — lands in a throwaway temp folder. */
+		env: {
+			SEEK_DB_PATH: ':memory:',
+			// Fixed so tests don't generate (and write) their own.
+			SEEK_SESSION_SECRET: 'test-session-secret',
+			SEEK_TOKEN_KEY: 'test-token-key',
+			SEEK_DATA_DIR: join(tmpdir(), 'seek-vitest')
+		}
 	},
 	resolve: {
 		alias: {

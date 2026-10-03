@@ -38,7 +38,7 @@ describe('mail', () => {
 
 	it('refuses to send when not configured', async () => {
 		delete process.env.RESEND_API_KEY;
-		await expect(sendMail(resetMail('a@b.co', 'https://x'))).rejects.toThrow(/not configured/);
+		await expect(sendMail(resetMail('a@b.co', 'https://x'))).rejects.toThrow(/not set up/);
 	});
 
 	it('escapes names in the HTML so an invite can’t inject markup', () => {
