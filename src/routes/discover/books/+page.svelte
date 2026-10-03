@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setSegment } from '$lib/segment';
 	import SearchField from '$lib/components/SearchField.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import TabBar from '$lib/components/TabBar.svelte';
@@ -14,6 +15,8 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	// Remember the segment, so the other tab opens on it too.
+	$effect(() => setSegment('book'));
 
 	type Card = DiscoveryCard;
 

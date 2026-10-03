@@ -7,9 +7,12 @@ import {
 	arrivedEntries,
 	bookKey,
 	favoriteGenres,
+	librarySeeds,
 	myBooks,
 	notYours,
 	recommendationSeeds,
+	topGenres,
+	withShelf,
 	type BookCard,
 	type BookRail,
 	type EntryStatus,
@@ -17,8 +20,9 @@ import {
 	type ReadingBook
 } from '$lib/books';
 import { bookorbitLinked, getAllBooks, setBookRating, setReadStatus } from './bookorbit';
-import { authorBooks, bookDetail, genreBooks, searchBooks, seriesAfter } from './hardcover';
+import { authorBooks, bookDetail, genreBooks, readShelf, searchBooks, seriesAfter } from './hardcover';
 import { memo } from '../memo';
+import { hardcoverUserToken } from '../userctx';
 import { entryStatuses, listEntries, removeEntry } from './entries';
 
 /** What the UI needs to badge a discovery card you already own. */
@@ -137,6 +141,9 @@ export async function settleArrivals(library: ReadingBook[]): Promise<ReadingBoo
  *   author — for your most-loved, most recent finishes;
  * - "Because you like <genre>": the most-read recent books in the genres you
  *   read most (genres from BookOrbit, or Hardcover for books it hasn't tagged).
+ * What you've read and rated on your own Hardcover account (Your accounts)
+ * counts too. With nothing finished or loved anywhere yet, it grows from the
+ * books you added to the library most recently ("More like …").
  * Nothing you already have is recommended. Cached per person for a few hours;
  * empty (not an error) when there's nothing to grow from yet.
  */
@@ -151,9 +158,18 @@ export async function myBookList(): Promise<MyBook[]> {
 	return myBooks(library, listEntries());
 }
 
+/** Your Hardcover shelves, when you've linked your own token; [] otherwise or
+ *  if Hardcover is unreachable — recommendations just grow from less. */
+async function myShelf(): Promise<MyBook[]> {
+	const token = hardcoverUserToken();
+	return token ? readShelf(token).catch(() => []) : [];
+}
+
 async function buildPersonalRails(): Promise<BookRail[]> {
-	const books = await myBookList();
-	const seeds = recommendationSeeds(books);
+	const [own, shelf] = await Promise.all([myBookList(), myShelf()]);
+	const books = withShelf(own, shelf);
+	const loved = recommendationSeeds(books);
+	const seeds = loved.length ? loved : librarySeeds(books);
 	if (!seeds.length) return [];
 
 	// A Hardcover id for each seed (BookOrbit may not have matched it yet).
@@ -179,7 +195,7 @@ async function buildPersonalRails(): Promise<BookRail[]> {
 		if (author) authorsUsed.add(author.toLowerCase());
 		rails.push({
 			key: `read-${book.key}`,
-			title: `Because you read ${book.title}`,
+			title: loved.length ? `Because you read ${book.title}` : `More like ${book.title}`,
 			subtitle: next.length ? 'What comes next, and more by the same author.' : `More by ${author}.`,
 			books: unique
 		});
@@ -194,7 +210,10 @@ async function buildPersonalRails(): Promise<BookRail[]> {
 			if (d?.genres.length) extra.set(book.key, d.genres);
 		})
 	);
-	for (const genre of favoriteGenres(books, extra)) {
+	const genres = favoriteGenres(books, extra);
+	// Nothing read yet: the genres of what you own (and the seeds' looked-up ones).
+	if (!genres.length) genres.push(...topGenres(seeds.map((b) => ({ ...b, genres: [...b.genres, ...(extra.get(b.key) ?? [])] })), 2));
+	for (const genre of genres) {
 		const { recent, popular } = await genreBooks(genre).catch(() => ({ recent: [], popular: [] }));
 		const picks = notYours([...recent, ...popular], books).filter((c) => !used.has(c.hardcoverId)).slice(0, 15);
 		if (picks.length < 3) continue;

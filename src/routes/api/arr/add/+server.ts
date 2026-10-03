@@ -8,6 +8,9 @@ import {
 	type Service
 } from '$lib/server/arr';
 import { getPrefs } from '$lib/server/prefs';
+import { addMedia } from '$lib/server/search';
+import { FloppyError } from '$lib/server/floppy';
+import { expire, invalidate } from '$lib/server/memo';
 import type { RequestHandler } from './$types';
 
 type Body = {
@@ -29,6 +32,21 @@ type Body = {
  * has been made yet, the first of each the service offers is used, so the button
  * still works before anyone visits Settings.
  */
+async function addToLibrary(mediaType: 'tv' | 'movie', tmdbId: string): Promise<boolean> {
+	try {
+		await addMedia(mediaType, 'tmdb', tmdbId);
+	} catch (err) {
+		if (!(err instanceof FloppyError && err.status === 409)) return false;
+	}
+	// The same caches /api/library refreshes when you add from Seek.
+	expire('watchlist:');
+	invalidate('tracked:');
+	expire('discover:');
+	invalidate('recent:');
+	invalidate(`show:tmdb:${tmdbId}`);
+	return true;
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	const body = (await request.json().catch(() => ({}))) as Body;
 	const tmdbId = body.tmdbId != null ? String(body.tmdbId) : '';
@@ -65,7 +83,11 @@ export const POST: RequestHandler = async ({ request }) => {
 			tags: body.tags ?? saved?.tags ?? [],
 			search: Boolean(body.search)
 		});
-		return json(result);
+		/* Downloading something means you mean to watch it: it goes into your
+		   Floppy library too (Planning), like a book download goes on your list.
+		   Already there is fine; a Floppy hiccup never fails the download. */
+		const tracked = await addToLibrary(body.mediaType === 'movie' ? 'movie' : 'tv', tmdbId);
+		return json({ ...result, tracked });
 	} catch (err) {
 		if (err instanceof ArrUnreachable) error(503, `${service} is unreachable; nothing was added.`);
 		if (err instanceof ArrError) error(err.status === 404 ? 404 : 502, err.message);

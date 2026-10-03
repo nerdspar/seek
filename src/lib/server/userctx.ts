@@ -84,6 +84,13 @@ export function bookorbitLogin(): BookOrbitLogin | null {
 	return ctx ? creds(ctx).bookorbit : null;
 }
 
+/** This person's own Hardcover token (their reading history there), or null.
+ *  Catalog queries use the household's token; this one only reads "me". */
+export function hardcoverUserToken(): string | null {
+	const ctx = als.getStore();
+	return ctx ? creds(ctx).hardcoverToken : null;
+}
+
 /** Who a cache entry belongs to. 0 = no user context (boot / legacy paths). */
 export function scopeId(): number {
 	return als.getStore()?.user.id ?? 0;

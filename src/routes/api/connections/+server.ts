@@ -5,8 +5,10 @@ import {
 	setBookOrbit,
 	setBookOrbitLibrary,
 	setCalendarToken,
-	setFloppyToken
+	setFloppyToken,
+	setHardcoverToken
 } from '$lib/server/users';
+import { checkHardcoverToken } from '$lib/server/books/hardcover';
 import {
 	checkBookOrbitLogin,
 	checkCalendarToken,
@@ -70,6 +72,14 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			forgetCurrentUserData();
 			return json({ linked: linkedStatus(me.id), libraries: check.libraries });
 		}
+		case 'hardcover': {
+			const token = String(body.token ?? '');
+			const check = await checkHardcoverToken(token);
+			if (!check.ok) return fail(check.error);
+			setHardcoverToken(me.id, token);
+			forgetCurrentUserData();
+			return json({ linked: linkedStatus(me.id), username: check.username });
+		}
 		default:
 			return fail('Unknown service.');
 	}
@@ -93,6 +103,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const check = await checkBookOrbitLogin(creds.bookorbit.username, creds.bookorbit.password);
 			return json(check.ok ? { ok: true } : check);
 		}
+		case 'hardcover':
+			if (!creds.hardcoverToken) return json({ ok: false, error: 'Not linked.' });
+			return json(await checkHardcoverToken(creds.hardcoverToken));
 		default:
 			return fail('Unknown service.');
 	}
@@ -123,6 +136,9 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 			break;
 		case 'bookorbit':
 			setBookOrbit(me.id, null);
+			break;
+		case 'hardcover':
+			setHardcoverToken(me.id, null);
 			break;
 		default:
 			return fail('Unknown service.');

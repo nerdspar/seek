@@ -462,17 +462,83 @@ export function mapBookRequest(raw: unknown): BookRequest {
 export function bookRequestBody(
 	book: Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>,
 	mediaKind: RequestMediaKind,
-	targetLibraryId: number | null
+	targetLibraryId: number | null,
+	isbns: EditionIsbns | null = null
 ) {
+	/* The ISBN of the edition being asked for: sources are searched by ISBN
+	   first, and a download whose ISBN matches is filed without review. A
+	   different edition's ISBN never counts against one, so it's safe to send;
+	   the other editions ride along as extra ISBNs to search for. */
+	const primary = isbns ? (mediaKind === 'audiobook' ? isbns.audio : (isbns.ebook ?? isbns.physical)) : null;
+	const others = isbns ? [isbns.ebook, isbns.physical, isbns.audio].filter((i): i is string => Boolean(i) && i !== primary) : [];
 	return {
 		title: book.title,
 		mediaKind,
 		authors: book.author ? [book.author] : [],
 		...(book.year ? { publishedYear: book.year } : {}),
 		...(book.coverUrl ? { coverUrl: book.coverUrl } : {}),
+		...(primary ? { isbn13: primary } : {}),
 		providerKey: 'hardcover',
 		providerId: String(book.hardcoverId),
+		...(others.length
+			? {
+					metadataSources: [...new Set(others)].map((isbn13) => ({
+						providerKey: 'hardcover',
+						providerId: String(book.hardcoverId),
+						providerLabel: 'Hardcover',
+						isbn10: null,
+						isbn13
+					}))
+				}
+			: {}),
 		...(targetLibraryId ? { targetLibraryId } : {})
+	};
+}
+
+/** A book's ISBN-13 per edition type (Hardcover's default editions). */
+export type EditionIsbns = { ebook: string | null; physical: string | null; audio: string | null };
+
+/* ── Reviewing a download BookOrbit wasn't sure about ─────────────────────── */
+
+export type ReviewRow = { field: 'Title' | 'Author' | 'ISBN'; requested: string | null; imported: string | null; verdict: 'match' | 'mismatch' | 'unknown' };
+export type DownloadReview = {
+	score: number | null;
+	threshold: number | null;
+	/** BookOrbit's reason, e.g. "scored 30, below the 70 needed to file it automatically". */
+	reason: string | null;
+	rows: ReviewRow[];
+	files: { name: string; format: string | null; sizeBytes: number | null }[];
+	/** False when there's no library to file it into. */
+	canFile: boolean;
+	/** The file is gone from the Book Dock (filed or discarded elsewhere). */
+	gone: boolean;
+};
+
+const FIELD_NAMES: Record<string, ReviewRow['field']> = { title: 'Title', authors: 'Author', isbn13: 'ISBN' };
+
+export function mapReview(raw: unknown): DownloadReview {
+	const r = rec(raw);
+	const v = r.verification ? rec(r.verification) : null;
+	return {
+		score: v ? num(v.score) : null,
+		threshold: v ? num(v.threshold) : null,
+		reason: v ? str(v.reason) : null,
+		rows: (v && Array.isArray(v.rows) ? v.rows : []).map((x) => {
+			const row = rec(x);
+			const verdict = str(row.verdict);
+			return {
+				field: FIELD_NAMES[str(row.field) ?? ''] ?? 'Title',
+				requested: str(row.requested),
+				imported: str(row.imported),
+				verdict: verdict === 'match' || verdict === 'mismatch' ? verdict : 'unknown'
+			};
+		}),
+		files: (Array.isArray(r.files) ? r.files : []).map((x) => {
+			const f = rec(x);
+			return { name: str(f.fileName) ?? 'file', format: str(f.format), sizeBytes: num(f.fileSize) };
+		}),
+		canFile: r.canFile !== false,
+		gone: r.bookDockFileId === null || r.bookDockFileId === undefined
 	};
 }
 
@@ -572,6 +638,76 @@ export function recommendationSeeds(books: MyBook[], max = 4): MyBook[] {
 	return liked
 		.sort((a, b) => (b.myRating ?? 3) - (a.myRating ?? 3) || when(b).localeCompare(when(a)))
 		.slice(0, max);
+}
+
+/**
+ * Nothing finished or loved yet? Grow from what you chose to own instead: the
+ * library books you added most recently (not ones you gave up on).
+ */
+export function librarySeeds(books: MyBook[], max = 3): MyBook[] {
+	return books
+		.filter((b) => b.source === 'library' && b.status !== 'abandoned')
+		.sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''))
+		.slice(0, max);
+}
+
+/* Hardcover's user_books.status_id. 6 ("ignored") and anything new is skipped. */
+const SHELF_STATUS: Record<number, BookReadStatus> = {
+	1: 'want_to_read',
+	2: 'reading',
+	3: 'read',
+	4: 'on_hold',
+	5: 'abandoned'
+};
+
+/**
+ * Your books on Hardcover (`me { user_books { … } }`) as MyBooks — what you've
+ * read and rated there, for recommendations only. Ratings (half-stars) round.
+ */
+export function mapHardcoverShelf(raw: unknown): MyBook[] {
+	if (!Array.isArray(raw)) return [];
+	const out: MyBook[] = [];
+	for (const r of raw) {
+		const ub = rec(r);
+		const status = SHELF_STATUS[num(ub.status_id) ?? 0];
+		const book = rec(ub.book);
+		const id = num(book.id);
+		if (!status || !id) continue;
+		const card = mapHardcoverBook(book);
+		const rating = num(ub.rating);
+		const finished = str(ub.last_read_date);
+		out.push({
+			key: `hc:${id}`,
+			source: 'entry',
+			libraryId: null,
+			hardcoverId: id,
+			title: card.title,
+			authors: card.author ? [card.author] : [],
+			coverUrl: card.coverUrl,
+			year: card.year,
+			status,
+			myRating: rating ? Math.round(rating) : null,
+			pages: null,
+			progress: null,
+			seriesName: null,
+			seriesIndex: null,
+			genres: tagNames(book.cached_tags, 'Genre', 6),
+			formats: [],
+			addedAt: null,
+			activeAt: finished,
+			startedAt: null,
+			finishedAt: finished
+		});
+	}
+	return out;
+}
+
+/** Your books plus the Hardcover shelf books Seek doesn't already have (by
+ *  Hardcover id, or title + author). Your own copy's status always wins. */
+export function withShelf(books: MyBook[], shelf: MyBook[]): MyBook[] {
+	const ids = new Set(books.map((b) => b.hardcoverId).filter(Boolean));
+	const keys = new Set(books.map((b) => bookKey(b.title, b.authors[0])));
+	return [...books, ...shelf.filter((b) => !ids.has(b.hardcoverId) && !keys.has(bookKey(b.title, b.authors[0])))];
 }
 
 /** The genres you read most, weighting books you rated highly. */

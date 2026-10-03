@@ -30,7 +30,8 @@ describe('importEnvCredentials', () => {
 		expect(users.getCredentials(owner.id)).toEqual({
 			floppyToken: 'flp_env',
 			calendarToken: 'cal_env',
-			bookorbit: { username: 'scott', password: 'pw', libraryId: null }
+			bookorbit: { username: 'scott', password: 'pw', libraryId: null },
+			hardcoverToken: null
 		});
 		expect(importEnvCredentials()).toEqual([]);
 	});

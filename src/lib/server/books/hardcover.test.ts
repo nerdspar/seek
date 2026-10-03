@@ -141,3 +141,31 @@ describe('bookDetail', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 });
+
+describe('your own Hardcover account', () => {
+	it('checks a token by asking who it belongs to, using that token', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(ok({ me: [{ username: 'nerdspar' }] }));
+		vi.stubGlobal('fetch', fetchMock);
+		const hc = await load();
+		expect(await hc.checkHardcoverToken('mine')).toEqual({ ok: true, username: 'nerdspar' });
+		expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer mine');
+	});
+
+	it('explains a refused or empty token', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 } as Response));
+		const hc = await load();
+		expect(await hc.checkHardcoverToken('bad')).toEqual({ ok: false, error: 'Hardcover refused that token.' });
+		expect(await hc.checkHardcoverToken('  ')).toMatchObject({ ok: false });
+	});
+
+	it('reads the shelf with the person’s token, not the household’s', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			ok({ me: [{ user_books: [{ status_id: 3, rating: 5, last_read_date: '2026-01-02', book: book(7) }] }] })
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		const hc = await load();
+		const shelf = await hc.readShelf('Bearer theirs');
+		expect(shelf.map((b) => [b.hardcoverId, b.status, b.myRating])).toEqual([[7, 'read', 5]]);
+		expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer theirs');
+	});
+});

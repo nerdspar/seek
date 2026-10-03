@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setSegment } from '$lib/segment';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { flip } from 'svelte/animate';
 	import { prefersReducedMotion } from 'svelte/motion';
@@ -20,6 +21,8 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	// Remember the segment, so the other tab opens on it too.
+	$effect(() => setSegment(data.mediaType === 'movie' ? 'movie' : 'tv'));
 
 	let note = $state<string | null>(null);
 

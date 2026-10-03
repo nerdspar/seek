@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import type { Snippet } from 'svelte';
 	import { SERVICE_GROUPS, type ServiceGroup } from '$lib/serviceFields';
 	import StatusDot, { type DotState } from './StatusDot.svelte';
 
@@ -8,7 +9,13 @@
 	 *  never sent back here: a secret shows only as "set", and is sent again only
 	 *  when it's being replaced. */
 	type Display = Record<string, { value?: string; set: boolean }>;
-	let { services, openFirst = null }: { services: Display; openFirst?: string | null } = $props();
+	type Props = {
+		services: Display;
+		openFirst?: string | null;
+		/** More settings under a service's form (Sonarr/Radarr: defaults for new titles). */
+		extra?: Snippet<[string]>;
+	};
+	let { services, openFirst = null, extra }: Props = $props();
 
 	let current = $state<Display>({});
 	$effect.pre(() => {
@@ -178,6 +185,9 @@
 						<p class="msg" class:bad={!result.ok}>{result.ok ? '✓ ' : ''}{result.message}</p>
 					{/if}
 				</form>
+				{#if extra && current[g.needs[0]]?.set}
+					<div class="extra">{@render extra(g.id)}</div>
+				{/if}
 			{/if}
 		</div>
 	{/each}
@@ -223,5 +233,6 @@
 	}
 	.primary:disabled { opacity: 0.5; }
 	.msg { margin: 0; font-size: 13px; color: var(--text); }
+	.extra { margin: 14px 2px 4px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
 	.msg.bad { color: #ff8a8a; }
 </style>

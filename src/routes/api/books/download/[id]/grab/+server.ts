@@ -1,5 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { grabRelease, searchReleases } from '$lib/server/books/bookorbit';
+import { getEntry, saveEntry } from '$lib/server/books/entries';
+import type { BookRequest } from '$lib/books';
 import { relayRefusal } from '$lib/server/books/http';
 import { emptySearchReason, pickBestRelease } from '$lib/books';
 import type { RequestHandler } from './$types';
@@ -20,6 +22,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		const best = pickBestRelease(search.releases);
 		if (!best) return json({ grabbed: false, reason: emptySearchReason(search), search });
 		const req = await grabRelease(id, best).catch(relayRefusal);
+		onYourList(req);
 		return json({ grabbed: true, release: best, request: req });
 	}
 
@@ -27,5 +30,16 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const guid = typeof body.guid === 'string' ? body.guid : '';
 	if (!Number.isInteger(indexerId) || indexerId <= 0 || !guid) error(400, 'Pick a release.');
 	const req = await grabRelease(id, { indexerId, guid }).catch(relayRefusal);
+	onYourList(req);
 	return json({ grabbed: true, request: req });
 };
+
+/** A download is under way: the book goes on your want-to-read list (unless
+ *  you already track it). Only now — opening the sheet and walking away doesn't. */
+function onYourList(req: BookRequest) {
+	if (!req.hardcoverId || getEntry(req.hardcoverId)) return;
+	saveEntry(
+		{ hardcoverId: req.hardcoverId, title: req.title, author: req.author, coverUrl: req.coverUrl, year: null },
+		{ status: 'want_to_read' }
+	);
+}

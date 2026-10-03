@@ -4,11 +4,11 @@
 	import {
 		emptySearchReason,
 		requestActive,
-		requestCancellable,
 		requestLabel,
 		type BookCard,
 		type BookRelease,
 		type BookRequest,
+		type DownloadReview,
 		type ReleaseSearch,
 		type RequestMediaKind
 	} from '$lib/books';
@@ -16,9 +16,14 @@
 	/**
 	 * Download a book — the ebook or the audiobook — through BookOrbit (its
 	 * download sources are your Prowlarr indexers). Automatic grabs the best
-	 * match; Choose lists what your sources found. Then it watches: searching,
-	 * downloading %, adding to your library — and when something can't be found
-	 * or fails, it says so in words, never just stops.
+	 * match; Choose lists what your sources found. Then it watches: downloading,
+	 * adding to your library — and when BookOrbit isn't sure the download is the
+	 * right book, the comparison and the decision (file it / discard it) are
+	 * right here. Anything that can't be found or fails says why, in words.
+	 *
+	 * Nothing is asked of BookOrbit until you choose Automatic or Choose, and if
+	 * you close the sheet without grabbing anything, the request is called off
+	 * and hidden again — so it never sits "approved" for a book you didn't get.
 	 */
 	type Props = {
 		book: Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>;
@@ -30,14 +35,18 @@
 	};
 	let { book, kind, existing = null, onclose, onchange }: Props = $props();
 
-	type Step = 'starting' | 'ready' | 'searching' | 'choose' | 'grabbing' | 'watching' | 'queued' | 'error';
+	type Step = 'ready' | 'searching' | 'choose' | 'grabbing' | 'watching' | 'queued';
 	// Where it starts is decided once; the sheet is keyed per book by its callers.
 	const initial = untrack(() => existing);
-	let step = $state<Step>(initial ? 'watching' : 'starting');
+	let step = $state<Step>(initial ? 'watching' : 'ready');
 	let request = $state<BookRequest | null>(initial);
 	let search = $state<ReleaseSearch | null>(null);
 	let problem = $state<string | null>(null);
 	let note = $state<string | null>(null);
+	let bookorbitUrl = $state<string | null>(null);
+	/* A request this sheet made that nothing has been grabbed for yet — the one
+	   to call off if you leave. */
+	let unused = $state(false);
 
 	const reason = async (res: Response) =>
 		((await res.json().catch(() => null)) as { message?: string } | null)?.message ?? `HTTP ${res.status}`;
@@ -45,33 +54,35 @@
 		fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 	const kindWord = $derived(kind === 'audiobook' ? 'audiobook' : 'ebook');
 
-	/* 1. Start: a self-serve request (or, without that permission, an ordinary one). */
-	$effect(() => {
-		if (step !== 'starting') return;
-		void (async () => {
-			try {
-				const res = await post('/api/books/download', { ...book, mediaKind: kind });
-				if (!res.ok) throw new Error(await reason(res));
-				const out = (await res.json()) as { request: BookRequest; joined: boolean; selfServe: boolean };
-				request = out.request;
-				onchange?.();
-				if (out.joined) note = 'Someone already asked for this one — you’re on that request too.';
-				if (!out.selfServe) step = 'queued';
-				else if (['grabbed', 'downloading', 'importing', 'available', 'needs_review'].includes(out.request.status)) step = 'watching';
-				else step = 'ready';
-			} catch (e) {
-				problem = (e as Error).message;
-				step = 'error';
-			}
-		})();
-	});
+	/** Make the request (once): self-serve, or — without that permission — one
+	 *  that waits for approval. Returns false when there's nothing more to do here. */
+	async function ensureRequest(): Promise<boolean> {
+		if (request) return true;
+		const res = await post('/api/books/download', { ...book, mediaKind: kind });
+		if (!res.ok) throw new Error(await reason(res));
+		const out = (await res.json()) as { request: BookRequest; joined: boolean; selfServe: boolean; bookorbitUrl: string | null };
+		request = out.request;
+		bookorbitUrl = out.bookorbitUrl;
+		if (out.joined) note = 'Someone already asked for this one — you’re on that request too.';
+		if (!out.selfServe) {
+			step = 'queued';
+			onchange?.();
+			return false;
+		}
+		if (['grabbed', 'downloading', 'importing', 'available', 'needs_review'].includes(out.request.status)) {
+			step = 'watching';
+			return false;
+		}
+		unused = !out.joined;
+		return true;
+	}
 
 	async function automatic() {
-		if (!request) return;
 		step = 'searching';
 		problem = null;
 		try {
-			const res = await post(`/api/books/download/${request.id}/grab`, { auto: true });
+			if (!(await ensureRequest())) return;
+			const res = await post(`/api/books/download/${request!.id}/grab`, { auto: true });
 			if (!res.ok) throw new Error(await reason(res));
 			const out = (await res.json()) as { grabbed: boolean; reason?: string; request?: BookRequest; release?: BookRelease; search?: ReleaseSearch };
 			if (!out.grabbed) {
@@ -81,6 +92,7 @@
 				step = search?.releases.length ? 'choose' : 'ready';
 				return;
 			}
+			unused = false;
 			request = out.request ?? request;
 			note = out.release ? `Downloading “${out.release.title}” from ${out.release.source}.` : null;
 			step = 'watching';
@@ -92,11 +104,11 @@
 	}
 
 	async function choose() {
-		if (!request) return;
 		step = 'searching';
 		problem = null;
 		try {
-			const res = await post(`/api/books/download/${request.id}/search`);
+			if (!(await ensureRequest())) return;
+			const res = await post(`/api/books/download/${request!.id}/search`);
 			if (!res.ok) throw new Error(await reason(res));
 			search = (await res.json()) as ReleaseSearch;
 			if (!search.releases.length) problem = emptySearchReason(search);
@@ -114,6 +126,7 @@
 		try {
 			const res = await post(`/api/books/download/${request.id}/grab`, { indexerId: r.indexerId, guid: r.guid });
 			if (!res.ok) throw new Error(await reason(res));
+			unused = false;
 			request = ((await res.json()) as { request: BookRequest }).request;
 			note = `Downloading “${r.title}” from ${r.source}.`;
 			step = 'watching';
@@ -124,35 +137,74 @@
 		}
 	}
 
-	/* Watch it until it settles: downloaded and added, or failed (with why). */
+	/** Leaving without grabbing anything calls the request off (best-effort). */
+	function close() {
+		if (unused && request) void post(`/api/books/download/${request.id}/abandon`).catch(() => {});
+		onclose();
+	}
+
+	/* Watch it until it settles: added to the library, held for review, or failed. */
 	$effect(() => {
 		if (step !== 'watching' || !request) return;
 		const id = request.id;
 		let live = true;
+		let timer: ReturnType<typeof setTimeout>;
 		const tick = async () => {
 			if (!live) return;
 			try {
 				const res = await fetch(`/api/books/requests/${id}`);
 				if (res.ok) {
-					const next = ((await res.json()) as { request: BookRequest }).request;
-					const settled = !requestActive(next.status);
-					if (next.status !== request?.status && settled) onchange?.();
+					const body = (await res.json()) as { request: BookRequest; bookorbitUrl: string | null };
+					const next = body.request;
+					bookorbitUrl = body.bookorbitUrl ?? bookorbitUrl;
+					if (next.status !== request?.status && (next.status === 'available' || next.status === 'needs_review')) onchange?.();
 					request = next;
-					if (settled) return;
+					// Held for review is a stop too: it waits on you, not on the download.
+					if (!requestActive(next.status) || next.status === 'needs_review') return;
 				}
 			} catch {
 				/* a missed poll is fine; try again */
 			}
 			if (live) timer = setTimeout(tick, 3000);
 		};
-		let timer = setTimeout(tick, 1500);
+		timer = setTimeout(tick, 1500);
 		return () => {
 			live = false;
 			clearTimeout(timer);
 		};
 	});
 
-	async function cancel() {
+	/* ── Held for review: what you asked for vs what arrived ──────────────── */
+	let review = $state<DownloadReview | null>(null);
+	let deciding = $state(false);
+	$effect(() => {
+		if (request?.status !== 'needs_review' || review) return;
+		const id = request.id;
+		fetch(`/api/books/download/${id}/review`)
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((b) => (review = b.review))
+			.catch(() => (problem = 'Couldn’t load what BookOrbit found — open it in BookOrbit to decide.'));
+	});
+
+	async function decide(action: 'file' | 'discard') {
+		if (!request || deciding) return;
+		deciding = true;
+		problem = null;
+		try {
+			const res = await post(`/api/books/download/${request.id}/review`, { action });
+			if (!res.ok) throw new Error(await reason(res));
+			request = ((await res.json()) as { request: BookRequest }).request;
+			review = null;
+			note = action === 'file' ? 'Filed into your library.' : 'Discarded. Try another release if you like.';
+			onchange?.();
+		} catch (e) {
+			problem = `Couldn't ${action === 'file' ? 'file it' : 'discard it'} — ${(e as Error).message}`;
+		} finally {
+			deciding = false;
+		}
+	}
+
+	async function stop() {
 		if (!request) return;
 		try {
 			const res = await post(`/api/books/requests/${request.id}/cancel`);
@@ -160,25 +212,30 @@
 			request = ((await res.json()) as { request: BookRequest }).request;
 			onchange?.();
 		} catch (e) {
-			problem = `Couldn't cancel — ${(e as Error).message}`;
+			problem = `Couldn't stop it — ${(e as Error).message}`;
 		}
 	}
 
 	const size = (b: number | null) =>
 		b === null ? null : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`;
 	const pct = (p: number) => `${Math.round(p * 100)}%`;
+	const statusText = (r: BookRequest) =>
+		r.status === 'available'
+			? '✓ In your library'
+			: r.status === 'importing'
+				? 'Downloaded — adding to your library'
+				: r.status === 'needs_review'
+					? 'Downloaded — is this the right book?'
+					: requestLabel(r.status);
+	const inBookOrbit = $derived(bookorbitUrl && request ? `${bookorbitUrl}/requests/${request.id}` : null);
 </script>
 
-<Sheet label={`Download ${kindWord}`} {onclose} scrollable>
+<Sheet label={`Download ${kindWord}`} onclose={close} scrollable>
 	<div class="pad">
 		<h2>Download {kindWord}</h2>
 		<p class="sub">{book.title}{book.author ? ` · ${book.author}` : ''}</p>
 
-		{#if step === 'starting'}
-			<p class="state">Getting ready…</p>
-		{:else if step === 'error'}
-			<p class="bad">{problem}</p>
-		{:else if step === 'queued' && request}
+		{#if step === 'queued' && request}
 			<div class="status">
 				<span class="label">{requestLabel(request.status)}</span>
 				<span class="hint">Your BookOrbit account can’t download directly, so this went to whoever approves requests. It’ll show on your list as it moves.</span>
@@ -218,32 +275,66 @@
 			<button class="link" onclick={choose}>Search again</button>
 		{:else if step === 'watching' && request}
 			<div class="status">
-				<span class="label">{request.status === 'available' ? '✓ In your library' : requestLabel(request.status)}</span>
-				{#if request.progress !== null && requestActive(request.status)}
+				<span class="label">{statusText(request)}</span>
+				{#if request.progress !== null && (request.status === 'grabbed' || request.status === 'downloading')}
 					<span class="track"><span class="fill" style:width={pct(request.progress)}></span></span>
 					<span class="hint tnum">{pct(request.progress)} downloaded</span>
-				{:else if requestActive(request.status)}
+				{:else if requestActive(request.status) && request.status !== 'needs_review'}
 					<span class="hint">Watching it — you can close this; it carries on.</span>
 				{/if}
 				{#if request.status === 'failed' || request.status === 'rejected'}
 					<span class="bad">{request.reason ?? 'It didn’t work out.'}</span>
 				{/if}
-				{#if request.status === 'needs_review'}
-					<span class="hint">BookOrbit wasn’t sure the download is this book — check it in BookOrbit’s Requests.</span>
-				{/if}
 			</div>
+
+			{#if request.status === 'needs_review'}
+				<!-- BookOrbit held it: show its comparison, and let you decide here. -->
+				<div class="review">
+					{#if review?.reason}<p class="why">BookOrbit isn’t sure: {review.reason}.</p>{/if}
+					{#if review?.rows.length}
+						<table>
+							<thead><tr><th></th><th>You asked for</th><th>Arrived</th></tr></thead>
+							<tbody>
+								{#each review.rows as row (row.field)}
+									<tr class={row.verdict}>
+										<th scope="row">{row.verdict === 'match' ? '✓' : row.verdict === 'mismatch' ? '✕' : '–'} {row.field}</th>
+										<td>{row.requested ?? 'Not set'}</td>
+										<td>{row.imported ?? '—'}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+					{#if review?.files.length}
+						<p class="files">{review.files.map((f) => `${f.name}${f.sizeBytes ? ` · ${size(f.sizeBytes)}` : ''}`).join(' · ')}</p>
+					{/if}
+					{#if review?.gone}
+						<p class="hint">The download is no longer in BookOrbit’s Book Dock — it was filed or discarded there.</p>
+					{:else}
+						<div class="decide">
+							<button class="primary small" disabled={deciding || (review !== null && !review.canFile)} onclick={() => decide('file')}>It’s right — file it</button>
+							<button class="danger small" disabled={deciding} onclick={() => decide('discard')}>Wrong book — discard</button>
+						</div>
+						{#if review && !review.canFile}<p class="hint">There’s no library to file it into — choose one in BookOrbit.</p>{/if}
+					{/if}
+				</div>
+			{/if}
+
 			<div class="row">
-				{#if request.status === 'failed'}
-					<button class="link" onclick={() => (step = 'ready')}>Try another release</button>
+				{#if request.status === 'failed' || request.status === 'cancelled'}
+					<button class="link" onclick={() => { request = null; review = null; note = null; step = 'ready'; }}>Try again</button>
 				{/if}
-				{#if requestCancellable(request.status) && request.status !== 'failed'}
-					<button class="link danger" onclick={cancel}>Cancel download</button>
+				{#if request.status === 'grabbed' || request.status === 'downloading'}
+					<button class="link danger" onclick={stop}>Stop download</button>
+				{:else if request.status === 'approved' || request.status === 'searching' || request.status === 'pending'}
+					<button class="link danger" onclick={stop}>Cancel request</button>
 				{/if}
+				{#if inBookOrbit}<a class="link" href={inBookOrbit} target="_blank" rel="noreferrer">Open in BookOrbit ↗</a>{/if}
 			</div>
 		{/if}
 
 		{#if note}<p class="note">{note}</p>{/if}
-		{#if problem && step !== 'error'}<p class="bad">{problem}</p>{/if}
+		{#if problem}<p class="bad">{problem}</p>{/if}
 	</div>
 </Sheet>
 
@@ -277,7 +368,23 @@
 	.hint { font-size: 12.5px; color: var(--text-dim); line-height: 1.4; }
 	.track { height: 6px; border-radius: 3px; background: var(--surface); overflow: hidden; }
 	.fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
-	.row { display: flex; gap: 18px; margin-top: 10px; }
-	.link { font-size: 13.5px; font-weight: 600; color: var(--signal-solid); }
+	.review { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); }
+	.why { margin: 0 0 10px; font-size: 13px; line-height: 1.45; }
+	table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+	th, td { padding: 6px 4px; text-align: left; vertical-align: top; border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+	thead th { border-top: none; font-weight: 600; color: var(--text-dim); }
+	tbody th { white-space: nowrap; font-weight: 600; }
+	tr.mismatch td:last-child { color: #ff8a8a; }
+	tr.match th { color: var(--signal-solid); }
+	.files { margin: 8px 0 0; font-size: 12px; color: var(--text-dim); word-break: break-word; }
+	.decide { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+	.primary.small, .danger.small {
+		display: inline-flex; align-items: center; width: auto; margin: 0; padding: 0 14px; min-height: 40px;
+		border-radius: 10px; font-size: 13.5px; font-weight: 650;
+	}
+	.danger.small { background: transparent; color: #ff8a8a; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #ff8a8a 60%, transparent); }
+	button:disabled { opacity: 0.5; }
+	.row { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 10px; }
+	.link { font-size: 13.5px; font-weight: 600; color: var(--signal-solid); text-decoration: none; }
 	.link.danger { color: #ff8a8a; }
 </style>

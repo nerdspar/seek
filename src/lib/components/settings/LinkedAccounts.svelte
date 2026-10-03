@@ -9,6 +9,7 @@
 		floppy: boolean;
 		calendar: boolean;
 		bookorbit: { username: string; libraryId: number | null } | null;
+		hardcover: boolean;
 	};
 	type Props = {
 		account: {
@@ -19,7 +20,7 @@
 	let { account }: Props = $props();
 	const linked = $derived(account.linked);
 
-	type Service = 'floppy' | 'calendar' | 'bookorbit';
+	type Service = 'floppy' | 'calendar' | 'bookorbit' | 'hardcover';
 	let open = $state<Service | null>(null);
 	let busy = $state(false);
 	let msg = $state<{ service: Service; ok: boolean; text: string } | null>(null);
@@ -148,9 +149,15 @@
 			label: 'BookOrbit',
 			what: 'Your books, reading progress and goals',
 			how: 'Your own BookOrbit username and password.'
+		},
+		{
+			id: 'hardcover',
+			label: 'Hardcover (optional)',
+			what: 'Recommendations from what you’ve read there',
+			how: 'In Hardcover: Settings → API (hardcover.app/account/api), copy your token. Seek only reads your shelves and ratings — books you’ve marked Read or rated 4★+ become “Because you read…”. Importing your Goodreads or StoryGraph history into Hardcover gives it the most to go on.'
 		}
 	];
-	const visible = $derived(SERVICES.filter((s) => s.id !== 'bookorbit' || account.bookorbit));
+	const visible = $derived(SERVICES.filter((s) => (s.id !== 'bookorbit' && s.id !== 'hardcover') || account.bookorbit));
 </script>
 
 <section id="accounts">
@@ -194,7 +201,7 @@
 						<input
 							bind:value={token}
 							type="password"
-							placeholder={s.id === 'floppy' ? 'flp_…' : 'Calendar feed link or token'}
+							placeholder={s.id === 'floppy' ? 'flp_…' : s.id === 'hardcover' ? 'Hardcover API token' : 'Calendar feed link or token'}
 							autocomplete="off"
 							autocapitalize="off"
 							autocorrect="off"

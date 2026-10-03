@@ -6,7 +6,9 @@ const authorBooks = vi.fn();
 const seriesAfter = vi.fn();
 const genreBooks = vi.fn();
 const bookDetail = vi.fn();
+const readShelf = vi.fn();
 vi.mock('./hardcover', () => ({
+	readShelf: (...a: unknown[]) => readShelf(...a),
 	searchBooks: (...a: unknown[]) => searchBooks(...a),
 	authorBooks: (...a: unknown[]) => authorBooks(...a),
 	seriesAfter: (...a: unknown[]) => seriesAfter(...a),
@@ -30,6 +32,9 @@ vi.mock('./entries', () => ({
 	listEntries: () => wishes.map((w) => ({ status: 'want_to_read', myRating: null, ...w })),
 	removeEntry: (id: number) => removeEntry(id)
 }));
+
+let myToken: string | null = null;
+vi.mock('../userctx', async (orig) => ({ ...(await orig<object>()), hardcoverUserToken: () => myToken }));
 
 import { markOwned, indexLibrary, matchHardcover, settleArrivals, personalRails } from './discovery';
 import { invalidateEveryone } from '../memo';
@@ -142,7 +147,8 @@ describe('personalRails', () => {
 	beforeEach(() => {
 		invalidateEveryone('books:personal');
 		wishes = [];
-		for (const m of [authorBooks, seriesAfter, genreBooks, bookDetail]) m.mockReset();
+		myToken = null;
+		for (const m of [authorBooks, seriesAfter, genreBooks, bookDetail, readShelf]) m.mockReset();
 	});
 	const c = (id: number, title = `B${id}`, author = 'Brandon Sanderson') => card(id, title, author);
 
@@ -162,9 +168,36 @@ describe('personalRails', () => {
 		expect(seriesAfter).toHaveBeenCalledWith(100);
 	});
 
-	it('is empty (not an error) when you have not finished anything yet', async () => {
-		library = [mine({ id: 1, status: 'reading' })];
+	it('is empty (not an error) when there is nothing to grow from yet', async () => {
+		library = [];
 		expect(await personalRails()).toEqual([]);
 		expect(authorBooks).not.toHaveBeenCalled();
+		expect(readShelf).not.toHaveBeenCalled(); // no token of your own linked
+	});
+
+	it('with nothing finished, grows from what you added to the library lately', async () => {
+		library = [mine({ id: 1, title: 'Mistborn', authors: ['Brandon Sanderson'], status: 'unread', hardcoverId: 100, genres: ['Fantasy'], addedAt: '2026-09-01' } as never)];
+		seriesAfter.mockResolvedValue([]);
+		authorBooks.mockResolvedValue([c(103), c(104), c(105)]);
+		genreBooks.mockResolvedValue({ recent: [c(200, 'A', 'X'), c(201, 'B', 'Y'), c(202, 'C', 'Z')], popular: [] });
+		const rails = await personalRails();
+		expect(rails.map((r) => r.title)).toEqual(['More like Mistborn', 'Because you like Fantasy']);
+	});
+
+	it('grows from your own Hardcover shelf, and never recommends what is on it', async () => {
+		library = [];
+		myToken = 'mine';
+		readShelf.mockResolvedValue([
+			{ key: 'hc:300', source: 'entry', hardcoverId: 300, title: 'Dune', authors: ['Frank Herbert'], status: 'read', myRating: 5, genres: [], finishedAt: null, activeAt: null },
+			{ key: 'hc:301', source: 'entry', hardcoverId: 301, title: 'Dune Messiah', authors: ['Frank Herbert'], status: 'want_to_read', myRating: null, genres: [] }
+		]);
+		seriesAfter.mockResolvedValue([c(301, 'Dune Messiah', 'Frank Herbert'), c(302, 'Children of Dune', 'Frank Herbert')]);
+		authorBooks.mockResolvedValue([c(303, 'X', 'Frank Herbert'), c(304, 'Y', 'Frank Herbert')]);
+		bookDetail.mockResolvedValue(null);
+		genreBooks.mockResolvedValue({ recent: [], popular: [] });
+		const rails = await personalRails();
+		expect(readShelf).toHaveBeenCalledWith('mine');
+		expect(rails[0].title).toBe('Because you read Dune');
+		expect(rails[0].books.map((b) => b.hardcoverId)).toEqual([302, 303, 304]);
 	});
 });

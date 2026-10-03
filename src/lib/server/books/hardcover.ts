@@ -14,9 +14,12 @@ import {
 	mapHardcoverBook,
 	mapHardcoverDetail,
 	mapHardcoverHit,
+	mapHardcoverShelf,
+	type MyBook,
 	type BookCard,
 	type BookDetail,
-	type BookRail
+	type BookRail,
+	type EditionIsbns
 } from '$lib/books';
 
 const ENDPOINT = 'https://api.hardcover.app/v1/graphql';
@@ -31,16 +34,21 @@ export class HardcoverError extends Error {
 }
 
 /** The settings page hands out the token with or without the "Bearer " prefix. */
-function authorization(): string {
-	const t = HARDCOVER_TOKEN().trim();
+function authorization(token: string): string {
+	const t = token.trim();
 	return /^bearer\s/i.test(t) ? t : `Bearer ${t}`;
 }
 
 async function hc<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
 	if (!hardcoverConfigured()) throw new HardcoverError('not configured (HARDCOVER_TOKEN)');
+	return hcAs<T>(HARDCOVER_TOKEN(), query, variables);
+}
+
+/** A query as a given token's owner — the household's, or someone's own. */
+async function hcAs<T>(token: string, query: string, variables?: Record<string, unknown>): Promise<T> {
 	const res = await fetch(ENDPOINT, {
 		method: 'POST',
-		headers: { Authorization: authorization(), 'Content-Type': 'application/json', Accept: 'application/json' },
+		headers: { Authorization: authorization(token), 'Content-Type': 'application/json', Accept: 'application/json' },
 		body: JSON.stringify({ query, variables }),
 		signal: AbortSignal.timeout(15_000)
 	});
@@ -282,4 +290,68 @@ export async function upcomingBooks(ids: number[], authors: string[], from: Date
 		out.push({ ...card, releaseDate: date });
 	}
 	return out;
+}
+
+const ISBN_QUERY = `query Isbns($id: Int!) {
+  books_by_pk(id: $id) {
+    default_ebook_edition { isbn_13 }
+    default_physical_edition { isbn_13 }
+    default_audio_edition { isbn_13 }
+  }
+}`;
+const isbnCache = new TTLCache<EditionIsbns>(24 * 60 * 60 * 1000, 500);
+
+/** A book's ISBN-13 for its default ebook, print and audio editions — sent with
+ *  a download request so sources can be searched, and the result checked, by
+ *  ISBN. Never throws: no ISBNs just means a title-and-author search. */
+export async function bookIsbns(id: number): Promise<EditionIsbns | null> {
+	const key = String(id);
+	const hit = isbnCache.get(key);
+	if (hit) return hit;
+	try {
+		type Ed = { isbn_13?: string | null } | null;
+		const data = await hc<{ books_by_pk: { default_ebook_edition: Ed; default_physical_edition: Ed; default_audio_edition: Ed } | null }>(
+			ISBN_QUERY,
+			{ id }
+		);
+		const b = data.books_by_pk;
+		const out: EditionIsbns = {
+			ebook: b?.default_ebook_edition?.isbn_13 ?? null,
+			physical: b?.default_physical_edition?.isbn_13 ?? null,
+			audio: b?.default_audio_edition?.isbn_13 ?? null
+		};
+		isbnCache.set(key, out);
+		return out;
+	} catch {
+		return null;
+	}
+}
+
+/* ── Your own Hardcover account ─────────────────────────────────────────────── */
+
+/** Whose token is this? Checked before it's linked. */
+export async function checkHardcoverToken(
+	token: string
+): Promise<{ ok: true; username: string } | { ok: false; error: string }> {
+	if (!token.trim()) return { ok: false, error: 'Paste your Hardcover API token.' };
+	try {
+		const data = await hcAs<{ me: { username?: string }[] }>(token, 'query { me { username } }');
+		const username = data.me?.[0]?.username;
+		return username ? { ok: true, username } : { ok: false, error: 'Hardcover didn\'t recognise that token.' };
+	} catch (e) {
+		const m = (e as Error).message;
+		return { ok: false, error: /HTTP 40[13]|JWT|invalid/i.test(m) ? 'Hardcover refused that token.' : m };
+	}
+}
+
+/* Depth 3: me → user_books → book (contributors/tags are JSON). Read and loved
+   first, so the limit keeps what recommendations grow from. */
+const SHELF_QUERY = `query { me { user_books(order_by: [{rating: desc_nulls_last}, {last_read_date: desc_nulls_last}], limit: 300) {
+  status_id rating last_read_date book { id title release_year cached_contributors cached_tags image { url } }
+} } }`;
+
+/** Everything on someone's Hardcover shelves, with their status and rating. */
+export async function readShelf(token: string): Promise<MyBook[]> {
+	const data = await hcAs<{ me: { user_books?: unknown }[] }>(token, SHELF_QUERY);
+	return mapHardcoverShelf(data.me?.[0]?.user_books);
 }

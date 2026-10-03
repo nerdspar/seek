@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setSegment } from '$lib/segment';
 	import { goto, invalidateAll } from '$app/navigation';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
@@ -6,7 +7,6 @@
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import BookFilterSheet from '$lib/components/BookFilterSheet.svelte';
-	import AddBookSheet from '$lib/components/AddBookSheet.svelte';
 	import ShelvesSheet from '$lib/components/ShelvesSheet.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import {
@@ -28,6 +28,8 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	// Remember the segment, so the other tab opens on it too.
+	$effect(() => setSegment('book'));
 
 	/* The sheet: a book from your list, or a Hardcover card (from the + search or
 	   a request on its way). */
@@ -132,7 +134,6 @@
 	}
 	let sortOpen = $state(false);
 	let filterOpen = $state(false);
-	let addOpen = $state(false);
 	let shelvesOpen = $state(false);
 
 	/* A shelf filter needs that shelf's books (BookOrbit knows; we ask). */
@@ -305,23 +306,13 @@
 					onclose={() => (filterOpen = false)}
 				/>
 			{/if}
-			{#if addOpen}
-				<AddBookSheet
-					books={all}
-					onpick={(pick) => {
-						addOpen = false;
-						if ('book' in pick) openBook = pick.book;
-						else openCard = pick.card;
-					}}
-					onclose={() => (addOpen = false)}
-				/>
-			{/if}
+
 		{:catch err}
 			<div class="empty"><h2>Can't reach BookOrbit</h2><p>{err.message}</p></div>
 		{/await}
 	</main>
 
-	<button class="fab" onclick={() => (addOpen = true)} aria-label="Add a book">
+	<button class="fab" onclick={() => goto('/books/search')} aria-label="Add a book">
 		<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg>
 	</button>
 

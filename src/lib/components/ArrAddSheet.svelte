@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmTitle } from '$lib/status.svelte';
 	import Sheet from './Sheet.svelte';
 	import { notify } from '$lib/notices.svelte';
 	import {
@@ -42,8 +43,10 @@
 	$effect(() => {
 		if (!ready || inited) return;
 		const d = opts.default;
-		rootFolderPath = d?.rootFolderPath || opts.rootFolders[0]?.path || '';
-		qualityProfileId = d?.qualityProfileId ?? opts.profiles[0]?.id ?? -1;
+		/* A saved "—" (choose each time) leaves the field unpicked; with no
+		   defaults saved at all, the first option keeps a first add one tap. */
+		rootFolderPath = d ? d.rootFolderPath : (opts.rootFolders[0]?.path ?? '');
+		qualityProfileId = d ? d.qualityProfileId : (opts.profiles[0]?.id ?? -1);
 		monitor = d?.monitor || defaultMonitor(item.mediaType);
 		selected = new Set(d?.tags ?? []);
 		inited = true;
@@ -88,6 +91,8 @@
 			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
 
 			markInArr(item.mediaType, item.tmdbId);
+			// It's in your Floppy library now too: every + on screen shows it at once.
+			if (body.tracked) confirmTitle('tmdb', item.tmdbId, { tracked: true });
 			haptic();
 			void notify(
 				body.alreadyAdded
@@ -123,6 +128,7 @@
 			<label class="field">
 				<span class="flabel">Quality profile</span>
 				<select bind:value={qualityProfileId}>
+					{#if qualityProfileId < 0}<option value={-1} disabled>Choose…</option>{/if}
 					{#each opts.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 				</select>
 			</label>
@@ -130,6 +136,7 @@
 			<label class="field">
 				<span class="flabel">Root folder</span>
 				<select bind:value={rootFolderPath}>
+					{#if !rootFolderPath}<option value="" disabled>Choose…</option>{/if}
 					{#each opts.rootFolders as rf (rf.path)}<option value={rf.path}>{rf.path}</option>{/each}
 				</select>
 			</label>

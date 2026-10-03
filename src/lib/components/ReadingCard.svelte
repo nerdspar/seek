@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import type { ReadingSnapshot } from '$lib/server/books/bookorbit';
 
-	/** Profile → Reading: this person's year in books, from their BookOrbit —
-	 *  goal, finished and in progress, streak, the month's challenge, achievements. */
+	/** Profile → Reading, below the range numbers: this year's goal and the
+	 *  habits BookOrbit tracks — streak, the month's challenge, achievements.
+	 *  Always the current year, whatever range is picked above (that's what the
+	 *  header says, so the two never read as the same number). */
 	let { snap }: { snap: ReadingSnapshot } = $props();
 
 	const goal = $derived(snap.goal && snap.goal.goalBooks > 0 ? snap.goal : null);
@@ -22,8 +23,8 @@
 
 <section class="reading">
 	<div class="head">
-		<h2>Reading</h2>
-		<button class="link" onclick={() => goto('/books')}>Reading list ›</button>
+		<h2>{new Date().getFullYear()} goal & streaks</h2>
+		<span class="src">From BookOrbit</span>
 	</div>
 
 	{#if goal}
@@ -37,10 +38,8 @@
 	{/if}
 
 	<ul class="tiles">
-		<li><span class="n tnum">{snap.summary?.completedBooks ?? '—'}</span><span class="l">Finished</span></li>
-		<li><span class="n tnum">{snap.summary?.inProgressBooks ?? '—'}</span><span class="l">Reading</span></li>
 		<li><span class="n tnum">{snap.streak?.current ?? '—'}</span><span class="l">Day streak</span></li>
-		<li><span class="n tnum">{snap.streak?.longest ?? '—'}</span><span class="l">Longest</span></li>
+		<li><span class="n tnum">{snap.streak?.longest ?? '—'}</span><span class="l">Longest streak</span></li>
 	</ul>
 
 	{#if week.length}
@@ -82,7 +81,7 @@
 	.reading { margin: 0 0 22px; }
 	.head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
 	h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
-	.link { font-size: 13px; font-weight: 600; color: var(--signal-solid); }
+	.src { font-size: 12px; color: var(--text-dim); }
 
 	.goal {
 		display: flex; flex-direction: column; gap: 8px;
@@ -92,7 +91,7 @@
 	.track { height: 6px; border-radius: 3px; background: var(--surface-raised); overflow: hidden; }
 	.fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
 
-	.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
+	.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
 	.tiles li {
 		display: flex; flex-direction: column; align-items: center; gap: 2px;
 		padding: 12px 4px; border-radius: 14px; background: var(--surface);

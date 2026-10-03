@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { listMyRequests, requestBook } from '$lib/server/books/bookorbit';
 import { getEntry, saveEntry } from '$lib/server/books/entries';
 import { relayRefusal } from '$lib/server/books/http';
+import { bookIsbns } from '$lib/server/books/hardcover';
 import type { RequestHandler } from './$types';
 
 /** Your book requests (BookOrbit fetches them: approval → Prowlarr → library). */
@@ -28,7 +29,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		year: Number.isInteger(body.year) ? (body.year as number) : null
 	};
 	try {
-		const out = await requestBook(book, mediaKind);
+		const out = await requestBook(book, mediaKind, await bookIsbns(book.hardcoverId));
 		if (!getEntry(book.hardcoverId)) saveEntry(book, { status: 'want_to_read' });
 		return json(out);
 	} catch (e) {

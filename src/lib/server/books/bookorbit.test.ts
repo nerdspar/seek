@@ -729,3 +729,57 @@ describe('downloading it yourself', () => {
 		expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ indexerId: 2, releaseGuid: 'abc' });
 	});
 });
+
+describe('abandoning and reviewing downloads', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	it('cancels and hides a request you walked away from', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json({ id: 3, status: 'approved' }))
+			.mockResolvedValueOnce(json({ id: 3, status: 'cancelled' }))
+			.mockResolvedValueOnce(json({ id: 3, status: 'cancelled' }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		await bo.abandonRequest(3);
+		expect(fetchMock.mock.calls.slice(2).map((c) => c[0])).toEqual([
+			'https://bo.test/api/v1/book-requests/3/cancel',
+			'https://bo.test/api/v1/book-requests/3/dismiss'
+		]);
+	});
+
+	it('leaves a request alone once something is downloading', async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(json(LOGIN)).mockResolvedValueOnce(json({ id: 3, status: 'downloading' }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		await bo.abandonRequest(3);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('files or discards a held import', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json({ id: 3, status: 'available', matchedBookId: 50 }))
+			.mockResolvedValueOnce(json({ id: 4, status: 'failed' }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect((await bo.fileHeldImport(3)).status).toBe('available');
+		expect((await bo.discardHeldImport(4)).status).toBe('failed');
+		expect(fetchMock.mock.calls.slice(1).map((c) => c[0])).toEqual([
+			'https://bo.test/api/v1/book-request-fulfilment/3/force-file',
+			'https://bo.test/api/v1/book-request-fulfilment/4/discard-import'
+		]);
+	});
+});

@@ -78,8 +78,8 @@
 		</div>
 		{#if both}
 			<div class="segments" role="tablist">
-				<button role="tab" aria-selected={data.view === 'watching'} class:active={data.view === 'watching'} onclick={() => goto(href(data.range, 'watching'), { noScroll: true })}>Watching</button>
-				<button role="tab" aria-selected={data.view === 'reading'} class:active={data.view === 'reading'} onclick={() => goto(href(data.range, 'reading'), { noScroll: true })}>Reading</button>
+				<button role="tab" aria-selected={data.view === 'watching'} class:active={data.view === 'watching'} onclick={() => goto(href(data.range, 'watching'), { noScroll: true, replaceState: true })}>Watching</button>
+				<button role="tab" aria-selected={data.view === 'reading'} class:active={data.view === 'reading'} onclick={() => goto(href(data.range, 'reading'), { noScroll: true, replaceState: true })}>Reading</button>
 			</div>
 		{/if}
 		<div class="chips">
@@ -94,15 +94,8 @@
 
 	<main use:tabReselect={{ tab: 'profile' }}>
 		{#if data.view === 'reading'}
-			<!-- Reading: your year in books (BookOrbit), then what you read in the
-			     chosen range — from your library and your own books alike. -->
-			{#if data.reading}
-				{#await data.reading then snap}
-					<ReadingCard {snap} />
-				{:catch}
-					<!-- BookOrbit unreachable: the numbers below still stand. -->
-				{/await}
-			{/if}
+			<!-- Reading, laid out like Watching: the chosen range first (from your
+			     library and your own books alike), then this year's goal and streaks. -->
 			{#await data.books then books}
 				{@const rs = readingStats(books ?? [], data.range as ReadingRange)}
 				<section class="headline">
@@ -144,6 +137,13 @@
 					<div class="empty"><h2>No books here yet</h2><p>Mark a book Read (from Watchlist → Books) and it shows up here.</p></div>
 				{/if}
 			{/await}
+			{#if data.reading}
+				{#await data.reading then snap}
+					<ReadingCard {snap} />
+				{:catch}
+					<!-- BookOrbit unreachable: the numbers above still stand. -->
+				{/await}
+			{/if}
 		{:else}
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->

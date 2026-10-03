@@ -11,6 +11,16 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	let subtitle = $state<string | null>(null);
+	$effect(() => {
+		subtitle = null;
+		const offset = data.offset;
+		const size = data.pageSize;
+		data.result
+			?.then((r) => (subtitle = r.total ? `${offset + 1}–${Math.min(offset + size, r.total)} of ${r.total} days` : null))
+			.catch(() => {});
+	});
 	const both = $derived((data.media.tv || data.media.movie) && data.media.book);
 	let openBook = $state<MyBook | null>(null);
 	const today = new Date();
@@ -53,25 +63,15 @@
 	}
 </script>
 
-{#if data.view === 'reading' || !data.result}
-	<PageHeader title="Diary" onback={() => history.back()} />
-{:else}
-{#await data.result then r}
-	<PageHeader
-		title="Diary"
-		subtitle={r.total ? `${data.offset + 1}–${Math.min(data.offset + data.pageSize, r.total)} of ${r.total} days` : null}
-		onback={() => history.back()}
-	/>
-{:catch}
-	<PageHeader title="Diary" onback={() => history.back()} />
-{/await}
-{/if}
+<!-- One header, on screen from the first frame — only its subtitle arrives
+     later, so nothing below it moves when the history loads. -->
+<PageHeader title="Diary" {subtitle} onback={() => history.back()} />
 
 <main>
 	{#if both}
 		<div class="segments" role="tablist">
-			<button role="tab" aria-selected={data.view === 'watching'} class:active={data.view === 'watching'} onclick={() => goto('/profile/diary')}>Watching</button>
-			<button role="tab" aria-selected={data.view === 'reading'} class:active={data.view === 'reading'} onclick={() => goto('/profile/diary?view=reading')}>Reading</button>
+			<button role="tab" aria-selected={data.view === 'watching'} class:active={data.view === 'watching'} onclick={() => goto('/profile/diary', { replaceState: true })}>Watching</button>
+			<button role="tab" aria-selected={data.view === 'reading'} class:active={data.view === 'reading'} onclick={() => goto('/profile/diary?view=reading', { replaceState: true })}>Reading</button>
 		</div>
 	{/if}
 
@@ -115,7 +115,12 @@
 	{:then r}
 		{@const newestDate = r.days[0]?.date ?? ''}
 		<div class="jump">
-			<input type="date" bind:value={jumpTo} max={newestDate} aria-label="Jump to date" />
+			<label class="jumpfield">
+				<span class="jumplabel">Jump to</span>
+				<input type="date" class:blank={!jumpTo} bind:value={jumpTo} max={newestDate} aria-label="Jump to date" />
+				<!-- An empty date field shows nothing on iOS; say what it's for. -->
+				{#if !jumpTo}<span class="ph" aria-hidden="true">a date…</span>{/if}
+			</label>
 			<button onclick={jump} disabled={!jumpTo || jumping}>{jumping ? 'Finding…' : 'Go'}</button>
 			{#if data.offset > 0}
 				<button class="latest" onclick={() => go(0)}>Latest</button>
@@ -206,12 +211,18 @@
 	.skdays { display: flex; flex-direction: column; gap: 6px; }
 	.jumperr { margin: 0 var(--gutter) 8px; font-size: 12.5px; color: #ff8a8a; }
 	.jump { display: flex; gap: 8px; margin-bottom: 14px; }
-	.jump input {
-		flex: 1; min-width: 0; height: 38px; padding: 0 12px;
-		border: none; border-radius: var(--radius);
-		background: var(--surface); color: var(--text);
+	.jumpfield {
+		position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+		height: 38px; padding: 0 0 0 12px; border-radius: var(--radius); background: var(--surface);
+	}
+	.jumplabel { flex: none; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+	.jumpfield input {
+		flex: 1; min-width: 0; height: 100%; padding: 0 12px 0 0;
+		border: none; background: transparent; color: var(--text);
 		font: inherit; font-size: 15px; outline: none;
 	}
+	.jumpfield input.blank { color: transparent; }
+	.ph { position: absolute; left: 76px; font-size: 15px; color: var(--text-dim); pointer-events: none; }
 	.jump button {
 		flex: none; min-height: 38px; padding: 0 14px; border-radius: var(--radius);
 		background: var(--surface-raised); font-size: 13px; font-weight: 600;

@@ -65,15 +65,14 @@
 		| 'watchlist'
 		| 'appearance'
 		| 'discover'
-		| 'notifications'
-		| 'downloads';
+		| 'notifications';
 	const isOwner = $derived(data.account.me.role === 'owner');
 	const INDEX = $derived<{ title: string; rows: { id: SectionId; title: string; hint?: string; show: boolean }[] }[]>([
 		{
 			title: 'You',
 			rows: [
 				{ id: 'account', title: 'Account', hint: `${data.account.me.name} · ${data.account.me.email}`, show: true },
-				{ id: 'accounts', title: 'Your accounts', hint: 'Floppy, calendar, BookOrbit', show: true }
+				{ id: 'accounts', title: 'Your accounts', hint: 'Floppy, calendar, BookOrbit, Hardcover', show: true }
 			]
 		},
 		{
@@ -90,8 +89,7 @@
 				{ id: 'watchlist', title: 'Watchlist', hint: 'Swipe, default tab, watching with', show: true },
 				{ id: 'appearance', title: 'Appearance', hint: 'Theme, accent, show page', show: true },
 				{ id: 'discover', title: 'Discover', hint: 'Streaming services, chips', show: true },
-				{ id: 'notifications', title: 'Notifications', hint: 'Daily digest, airing alerts', show: true },
-				{ id: 'downloads', title: 'Sonarr & Radarr', hint: 'Download management and defaults', show: anyArr }
+				{ id: 'notifications', title: 'Notifications', hint: 'Daily digest, airing alerts', show: true }
 			]
 		}
 	]);
@@ -104,8 +102,7 @@
 		watchlist: 'Watchlist',
 		appearance: 'Appearance',
 		discover: 'Discover',
-		notifications: 'Notifications',
-		downloads: 'Sonarr & Radarr'
+		notifications: 'Notifications'
 	};
 	/* Old links used #accounts / #services anchors on the one long page. */
 	const section = $derived.by<SectionId | null>(() => {
@@ -319,6 +316,54 @@
 	}
 </script>
 
+{#snippet arrDefaults(group: string)}
+	{#if (group === 'sonarr' || group === 'radarr') && arrOptions && arrOptions[group].configured}
+		{@const s = ARR_SERVICES.find((x) => x.key === group)!}
+		{@const opts = arrOptions[s.key]}
+		{@const pref = local[s.key]}
+		{@const mt = s.key === 'radarr' ? 'movie' : 'tv'}
+		<div class="arrsvc">
+			<p class="arrname">Defaults for new titles <span class="hint">· {s.kind}</span></p>
+			{#if !opts.rootFolders.length && !opts.profiles.length}
+				<p class="hint">Couldn’t reach {s.label} — check its address and API key above.</p>
+			{:else}
+				<label class="row">
+					<span class="rowtext"><span class="label">Monitor</span></span>
+					<select class="hour arrsel" value={pref ? (pref.monitor ?? '') : defaultMonitor(mt)} onchange={(e) => setArr(s.key, { monitor: e.currentTarget.value })}>
+						<option value="">— Service default</option>
+						{#each monitorOptions(mt) as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
+					</select>
+				</label>
+				<label class="row">
+					<span class="rowtext"><span class="label">Quality profile</span></span>
+					<select class="hour arrsel" value={pref?.qualityProfileId ?? -1} onchange={(e) => setArr(s.key, { qualityProfileId: Number(e.currentTarget.value) })}>
+						<option value={-1}>— Choose each time</option>
+						{#each opts.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+					</select>
+				</label>
+				<label class="row">
+					<span class="rowtext"><span class="label">Root folder</span></span>
+					<select class="hour arrsel" value={pref?.rootFolderPath ?? ''} onchange={(e) => setArr(s.key, { rootFolderPath: e.currentTarget.value })}>
+						<option value="">— Choose each time</option>
+						{#each opts.rootFolders as rf (rf.path)}<option value={rf.path}>{rf.path}</option>{/each}
+					</select>
+				</label>
+				{#if opts.tags.length}
+					<div class="arrtags">
+						<span class="label">Default tags</span>
+						<div class="chips">
+							{#each opts.tags as t (t.id)}
+								<button type="button" class="tag" class:on={(pref?.tags ?? []).includes(t.label)} onclick={() => toggleArrTag(s.key, t.label)}>{t.label}</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+				<p class="hint">Pre-filled when you add a title; you can still change them per title. “—” leaves it for you to pick each time.</p>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
 <PageHeader title={current ? current.title : 'Settings'} onback={() => goto(current ? '/profile/settings' : '/profile')} />
 
 <main>
@@ -392,7 +437,7 @@
 	</section>
 
 	{:else if section === 'services' && data.services}
-		<ServicesSettings services={data.services} openFirst={data.floppyReady ? null : 'floppy'} />
+		<ServicesSettings services={data.services} openFirst={data.floppyReady ? null : 'floppy'} extra={arrDefaults} />
 	{:else if section === 'media'}
 		<section>
 			<p class="hint lead">Choose what Seek is for. Anything you turn off disappears from Watchlist, Discover, Upcoming and Profile — nothing is deleted.</p>
@@ -414,6 +459,23 @@
 			{#if mediaMsg}<p class="hint msg">{mediaMsg}</p>{/if}
 		</section>
 	{:else if section === 'watchlist'}
+		{#if anyArr}
+			<section>
+				<h3>Sonarr & Radarr</h3>
+			<button
+					class="row"
+					role="switch"
+					aria-checked={local.arrManage !== false}
+					onclick={() => patch({ arrManage: !(local.arrManage !== false) })}
+				>
+					<span class="rowtext">
+						<span class="label">Download management</span>
+						<span class="hint">Edit settings, search, grab, and manage files. Off shows just the add button.</span>
+					</span>
+					<span class="toggle" class:on={local.arrManage !== false}><span class="knob"></span></span>
+				</button>
+			</section>
+		{/if}
 
 	<section>
 		<h3>Swipe to mark watched</h3>
@@ -677,75 +739,6 @@
 		{/if}
 	</section>
 
-
-	{:else if section === 'downloads'}
-	{#if anyArr}
-		<section>
-			<h3>Send to Sonarr / Radarr</h3>
-
-			<!-- Master switch for the download-management layer. Off leaves just the
-			     "Add to Sonarr/Radarr" button and hides every edit / search / file
-			     control across the app. Per person (a household member starts off). -->
-			<button
-				class="row"
-				role="switch"
-				aria-checked={local.arrManage !== false}
-				onclick={() => patch({ arrManage: !(local.arrManage !== false) })}
-			>
-				<span class="rowtext">
-					<span class="label">Download management</span>
-					<span class="hint">Edit settings, search, grab, and manage files. Off shows just the add button.</span>
-				</span>
-				<span class="toggle" class:on={local.arrManage !== false}><span class="knob"></span></span>
-			</button>
-
-			{#each ARR_SERVICES as s (s.key)}
-				{#if arrOptions && arrOptions[s.key].configured}
-					{@const opts = arrOptions[s.key]}
-					{@const pref = local[s.key]}
-					{@const mt = s.key === 'radarr' ? 'movie' : 'tv'}
-					<div class="arrsvc">
-						<p class="arrname">{s.label} <span class="hint">· {s.kind}</span></p>
-						{#if !opts.rootFolders.length && !opts.profiles.length}
-							<p class="hint">Couldn’t reach {s.label} — check its URL and API key.</p>
-						{:else}
-							<label class="row">
-								<span class="rowtext"><span class="label">Monitor</span></span>
-								<select class="hour arrsel" value={pref?.monitor ?? defaultMonitor(mt)} onchange={(e) => setArr(s.key, { monitor: e.currentTarget.value })}>
-									{#each monitorOptions(mt) as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
-								</select>
-							</label>
-							<label class="row">
-								<span class="rowtext"><span class="label">Quality profile</span></span>
-								<select class="hour arrsel" value={pref?.qualityProfileId ?? -1} onchange={(e) => setArr(s.key, { qualityProfileId: Number(e.currentTarget.value) })}>
-									{#if !pref}<option value={-1} disabled selected>Choose…</option>{/if}
-									{#each opts.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-								</select>
-							</label>
-							<label class="row">
-								<span class="rowtext"><span class="label">Root folder</span></span>
-								<select class="hour arrsel" value={pref?.rootFolderPath ?? ''} onchange={(e) => setArr(s.key, { rootFolderPath: e.currentTarget.value })}>
-									{#if !pref?.rootFolderPath}<option value="" disabled selected>Choose…</option>{/if}
-									{#each opts.rootFolders as rf (rf.path)}<option value={rf.path}>{rf.path}</option>{/each}
-								</select>
-							</label>
-							{#if opts.tags.length}
-								<div class="arrtags">
-									<span class="label">Default tags</span>
-									<div class="chips">
-										{#each opts.tags as t (t.id)}
-											<button type="button" class="tag" class:on={(pref?.tags ?? []).includes(t.label)} onclick={() => toggleArrTag(s.key, t.label)}>{t.label}</button>
-										{/each}
-									</div>
-								</div>
-							{/if}
-						{/if}
-					</div>
-				{/if}
-			{/each}
-			<p class="hint">These are the defaults. When you add a title you can change Monitor, Quality, Root folder and Tags (and add new tags) for that title, and choose whether to search right away.</p>
-		</section>
-	{/if}
 
 	{/if}
 

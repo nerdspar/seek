@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { getSegment, tabHref } from '$lib/segment';
 
 	type Tab = 'watchlist' | 'upcoming' | 'discover' | 'profile';
 
@@ -20,6 +21,8 @@
 			window.dispatchEvent(new CustomEvent('tabreselect', { detail: tab.id }));
 			return;
 		}
+		// Watchlist and Discover open on the segment you were last on.
+		if (tab.id === 'watchlist' || tab.id === 'discover') return void goto(tabHref(tab.id, getSegment()));
 		if (tab.href) return void goto(tab.href);
 		onunbuilt?.(tab.label);
 	}

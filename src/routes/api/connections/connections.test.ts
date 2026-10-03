@@ -11,10 +11,12 @@ vi.mock('$lib/server/connections', () => ({
 }));
 vi.mock('$lib/server/warmup', () => ({ warmInBackground: vi.fn() }));
 vi.mock('$lib/server/books/bookorbit', () => ({ bookorbitConfigured: () => true }));
+const checkHardcoverToken = vi.fn();
+vi.mock('$lib/server/books/hardcover', () => ({ checkHardcoverToken: (...a: unknown[]) => checkHardcoverToken(...a) }));
 
 import { openDatabase, useDatabase } from '$lib/server/db';
 import * as users from '$lib/server/users';
-import { POST } from './+server';
+import { DELETE, POST, PUT } from './+server';
 
 let me: users.User;
 const test = async (service: string) => {
@@ -30,6 +32,7 @@ beforeEach(async () => {
 	me = await users.createOwner({ email: 'o@x.co', name: 'O', password: 'password-1' });
 	checkFloppyToken.mockReset();
 	checkBookOrbitLogin.mockReset();
+	checkHardcoverToken.mockReset();
 });
 afterEach(() => useDatabase(null));
 
@@ -51,5 +54,28 @@ describe('POST /api/connections (Test)', () => {
 
 	it('says when there is nothing linked to test', async () => {
 		expect(await test('calendar')).toEqual({ ok: false, error: 'Not linked.' });
+	});
+});
+
+describe('your own Hardcover token', () => {
+	const call = async (handler: typeof PUT, body: unknown) =>
+		handler({ request: new Request('http://x/api/connections', { method: 'PUT', body: JSON.stringify(body) }), locals: { user: me } } as never);
+
+	it('is checked, then stored encrypted; unlinking forgets it', async () => {
+		checkHardcoverToken.mockResolvedValue({ ok: true, username: 'nerdspar' });
+		const res = await call(PUT, { service: 'hardcover', token: 'hc_mine' });
+		expect(await res.json()).toMatchObject({ linked: { hardcover: true }, username: 'nerdspar' });
+		expect(users.getCredentials(me.id).hardcoverToken).toBe('hc_mine');
+
+		await call(DELETE, { service: 'hardcover' });
+		expect(users.getCredentials(me.id).hardcoverToken).toBeNull();
+		expect(users.linkedStatus(me.id).hardcover).toBe(false);
+	});
+
+	it('refuses a token Hardcover does not accept, storing nothing', async () => {
+		checkHardcoverToken.mockResolvedValue({ ok: false, error: 'Hardcover refused that token.' });
+		const res = await call(PUT, { service: 'hardcover', token: 'nope' });
+		expect(res.status).toBe(400);
+		expect(users.getCredentials(me.id).hardcoverToken).toBeNull();
 	});
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setSegment } from '$lib/segment';
 	import SearchField from '$lib/components/SearchField.svelte';
 	import NotLinked from '$lib/components/NotLinked.svelte';
 	import { notLinkedOf } from '$lib/notLinked';
@@ -17,6 +18,8 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	// Remember the segment, so the other tab opens on it too.
+	$effect(() => setSegment(data.mediaType === 'movie' ? 'movie' : 'tv'));
 
 	let note = $state<string | null>(null);
 

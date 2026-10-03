@@ -27,9 +27,14 @@ import {
 	pickBestRelease,
 	emptySearchReason,
 	recommendationSeeds,
+	librarySeeds,
+	mapHardcoverShelf,
+	withShelf,
 	favoriteGenres,
 	readingStats,
 	bookDiary,
+	bookRequestBody,
+	mapReview,
 	notYours,
 	type BookEntry,
 	type MyBook,
@@ -475,6 +480,56 @@ describe('release search', () => {
 	});
 });
 
+describe('your Hardcover shelf', () => {
+	const ub = (id: number, status_id: number, { book, ...over }: Record<string, unknown> = {}) => ({
+		status_id,
+		rating: null,
+		last_read_date: null,
+		...over,
+		book: {
+			id,
+			title: `Book ${id}`,
+			cached_contributors: [{ author: { name: 'Ann Author' }, primary: true }],
+			cached_tags: { Genre: [{ tag: 'Fantasy' }, { tag: 'fantasy' }, { tag: 'Adventure' }] },
+			...((book as object) ?? {})
+		}
+	});
+
+	it('maps read, rated and shelved books; skips statuses it does not know', () => {
+		const shelf = mapHardcoverShelf([
+			ub(1, 3, { rating: 4.5, last_read_date: '2026-05-01' }),
+			ub(2, 1),
+			ub(3, 2),
+			ub(4, 5),
+			ub(5, 6),
+			{ status_id: 3, book: null }
+		]);
+		expect(shelf.map((b) => [b.key, b.status])).toEqual([
+			['hc:1', 'read'],
+			['hc:2', 'want_to_read'],
+			['hc:3', 'reading'],
+			['hc:4', 'abandoned']
+		]);
+		expect(shelf[0]).toMatchObject({
+			hardcoverId: 1,
+			authors: ['Ann Author'],
+			myRating: 5,
+			finishedAt: '2026-05-01',
+			genres: ['Fantasy', 'Adventure'],
+			source: 'entry',
+			libraryId: null
+		});
+	});
+
+	it('adds only what Seek does not already know about — your own books win', () => {
+		const mine = myBooks([owned(1, 'unread', 'Book 1', 'Ann Author', 1)], []);
+		const merged = withShelf(mine, mapHardcoverShelf([ub(1, 3), ub(7, 3, { book: { id: 99, title: 'Book 1' } }), ub(8, 3)]));
+		// hc:1 matches by Hardcover id, #99 by title+author; only #8 is new.
+		expect(merged.map((b) => b.key)).toEqual(['lib:1', 'hc:8']);
+		expect(merged[0].status).toBe('unread');
+	});
+});
+
 describe('what recommendations grow from', () => {
 	const lib = [
 		owned(1, 'read', 'Mistborn', 'Brandon Sanderson', 5, { rating: 5, genres: ['Fantasy'], readStatus: { status: 'read', finishedAt: '2026-01-01T00:00:00Z' } }),
@@ -487,6 +542,19 @@ describe('what recommendations grow from', () => {
 	it('grows from what you finished or loved, loved first', () => {
 		// Both loved: the more recently active one leads; the 2-star read comes last.
 		expect(recommendationSeeds(books).map((b) => b.title)).toEqual(['Loved paper copy', 'Mistborn', 'Dune']);
+	});
+
+	it('falls back to the newest books in your library when nothing is finished or loved', () => {
+		const unread = myBooks(
+			[
+				owned(1, 'unread', 'Old', 'A', 1, { addedAt: '2025-01-01T00:00:00Z' }),
+				owned(2, 'unread', 'New', 'B', 2, { addedAt: '2026-09-01T00:00:00Z' }),
+				owned(3, 'abandoned', 'Gave up', 'C', 3, { addedAt: '2026-10-01T00:00:00Z' })
+			],
+			[entry(9, 'Just a wish', { status: 'want_to_read' })]
+		);
+		expect(recommendationSeeds(unread)).toEqual([]);
+		expect(librarySeeds(unread).map((b) => b.title)).toEqual(['New', 'Old']);
 	});
 
 	it('weights genres by your ratings, ignoring books you have not started', () => {
@@ -535,5 +603,47 @@ describe('reading over time', () => {
 			'Finished B',
 			'Finished C'
 		]);
+	});
+});
+
+describe('download request details', () => {
+	const book = { hardcoverId: 379760, title: '1984', author: 'George Orwell', coverUrl: null, year: 1949 };
+	const isbns = { ebook: '9780547249643', physical: '9786057462220', audio: '9780140862539' };
+
+	it("asks for the edition's ISBN and searches the others too", () => {
+		const ebook = bookRequestBody(book, 'ebook', 3, isbns);
+		expect(ebook).toMatchObject({ isbn13: '9780547249643', targetLibraryId: 3 });
+		expect(ebook.metadataSources?.map((m) => m.isbn13)).toEqual(['9786057462220', '9780140862539']);
+		expect(bookRequestBody(book, 'audiobook', null, isbns).isbn13).toBe('9780140862539');
+		expect(bookRequestBody(book, 'ebook', null, { ebook: null, physical: '978X', audio: null }).isbn13).toBe('978X');
+		const bare = bookRequestBody(book, 'ebook', null);
+		expect('isbn13' in bare || 'metadataSources' in bare).toBe(false);
+	});
+
+	it("reads BookOrbit's review: why it's waiting, side by side", () => {
+		const r = mapReview({
+			requestId: 9,
+			bookDockFileId: 4,
+			canFile: true,
+			verification: {
+				score: 30,
+				threshold: 70,
+				reason: 'imported "Nineteen Eighty-Four" scored 30, below the 70 needed',
+				rows: [
+					{ field: 'title', requested: '1984', imported: 'Nineteen Eighty-Four', verdict: 'mismatch' },
+					{ field: 'authors', requested: 'George Orwell', imported: 'George Orwell', verdict: 'match' },
+					{ field: 'isbn13', requested: null, imported: '9780899663685', verdict: 'unknown' }
+				]
+			},
+			files: [{ fileName: '1984 (v5.0).epub', fileSize: 297000, format: 'epub', role: 'primary' }]
+		});
+		expect(r).toMatchObject({ score: 30, threshold: 70, canFile: true, gone: false });
+		expect(r.rows.map((x) => [x.field, x.verdict])).toEqual([
+			['Title', 'mismatch'],
+			['Author', 'match'],
+			['ISBN', 'unknown']
+		]);
+		expect(r.files[0]).toEqual({ name: '1984 (v5.0).epub', format: 'epub', sizeBytes: 297000 });
+		expect(mapReview({ bookDockFileId: null, verification: null, files: [] }).gone).toBe(true);
 	});
 });

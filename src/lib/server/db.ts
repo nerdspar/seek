@@ -160,6 +160,11 @@ export const MIGRATIONS: string[] = [
 	INSERT INTO book_entries (user_id, hardcover_id, title, author, cover_url, year, status, added_at, updated_at)
 		SELECT user_id, hardcover_id, title, author, cover_url, year, 'want_to_read', added_at, added_at FROM wishlist;
 	DROP TABLE wishlist;
+	`,
+	// v6 — your own Hardcover token (optional, encrypted): what you've read and
+	// rated there seeds your book recommendations.
+	`
+	ALTER TABLE users ADD COLUMN hardcover_token_enc TEXT;
 	`
 ];
 

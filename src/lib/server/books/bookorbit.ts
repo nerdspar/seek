@@ -29,7 +29,10 @@ import {
 	type BookRequest,
 	type RequestMediaKind,
 	type ReleaseSearch,
-	mapReleaseSearch
+	type EditionIsbns,
+	type DownloadReview,
+	mapReleaseSearch,
+	mapReview
 } from '$lib/books';
 
 /** A BookOrbit instance exists. Whether *this person* is linked is separate. */
@@ -345,11 +348,12 @@ async function requestDestination(): Promise<number | null> {
  */
 export async function requestBook(
 	book: Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>,
-	mediaKind: RequestMediaKind
+	mediaKind: RequestMediaKind,
+	isbns: EditionIsbns | null = null
 ): Promise<{ request: BookRequest; joined: boolean }> {
 	const res = await bo<{ request: unknown; subscribed?: boolean }>('/book-requests', {
 		method: 'POST',
-		body: bookRequestBody(book, mediaKind, await requestDestination())
+		body: bookRequestBody(book, mediaKind, await requestDestination(), isbns)
 	});
 	requestCache.delete(scopeKey('books:requests'));
 	return { request: mapBookRequest(res.request), joined: Boolean(res.subscribed) };
@@ -402,12 +406,13 @@ export async function canSelfServe(): Promise<boolean> {
  */
 export async function startDownload(
 	book: Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>,
-	mediaKind: RequestMediaKind
+	mediaKind: RequestMediaKind,
+	isbns: EditionIsbns | null = null
 ): Promise<{ request: BookRequest; joined: boolean; selfServe: boolean }> {
 	const selfServe = await canSelfServe().catch(() => false);
 	const res = await bo<{ request: unknown; subscribed?: boolean }>('/book-requests', {
 		method: 'POST',
-		body: { ...bookRequestBody(book, mediaKind, await requestDestination()), ...(selfServe ? { selfServe: true } : {}) }
+		body: { ...bookRequestBody(book, mediaKind, await requestDestination(), isbns), ...(selfServe ? { selfServe: true } : {}) }
 	});
 	requestCache.delete(scopeKey('books:requests'));
 	return { request: mapBookRequest(res.request), joined: Boolean(res.subscribed), selfServe };
@@ -429,6 +434,41 @@ export async function grabRelease(id: number, release: { indexerId: number; guid
 	});
 	requestCache.delete(scopeKey('books:requests'));
 	return getRequest(id);
+}
+
+/**
+ * Opened a download and walked away without grabbing anything: call the
+ * request off and hide it from your BookOrbit list, so it doesn't sit there as
+ * "approved" for a book you never downloaded. Best-effort.
+ */
+export async function abandonRequest(id: number): Promise<void> {
+	const req = await getRequest(id);
+	if (!['approved', 'pending', 'searching'].includes(req.status)) return;
+	await bo<unknown>(`/book-requests/${id}/cancel`, { method: 'POST' });
+	await bo<unknown>(`/book-requests/${id}/dismiss`, { method: 'POST' }).catch(() => {});
+	requestCache.delete(scopeKey('books:requests'));
+}
+
+/* ── A download BookOrbit wasn't sure was the right book ──────────────────── */
+
+/** Why it's waiting, side by side: what you asked for vs what arrived. */
+export async function getReview(id: number): Promise<DownloadReview> {
+	return mapReview(await bo<unknown>(`/book-request-fulfilment/${id}/review`));
+}
+
+/** It's the right book after all: file it into the library. */
+export async function fileHeldImport(id: number): Promise<BookRequest> {
+	const out = mapBookRequest(await bo<unknown>(`/book-request-fulfilment/${id}/force-file`, { method: 'POST', timeoutMs: 60_000 }));
+	requestCache.delete(scopeKey('books:requests'));
+	dropBooksCache();
+	return out;
+}
+
+/** It's the wrong book: remove the download (the request is marked failed). */
+export async function discardHeldImport(id: number): Promise<BookRequest> {
+	const out = mapBookRequest(await bo<unknown>(`/book-request-fulfilment/${id}/discard-import`, { method: 'POST' }));
+	requestCache.delete(scopeKey('books:requests'));
+	return out;
 }
 
 /** Call off one of your requests (stops a download that's under way). */

@@ -1,5 +1,13 @@
+<script module lang="ts">
+	/* Sheets stack: one opened from inside another (a book's status picker) must
+	   sit above it, scrim and all, so a tap outside closes the top one and the one
+	   underneath can't be tapped through. Each sheet takes the next layer. */
+	let depth = 0;
+</script>
+
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { onDestroy } from 'svelte';
 
 	/**
 	 * Bottom sheet you can drag down from anywhere to dismiss.
@@ -80,6 +88,11 @@
 	   just-rendered scrim and would dismiss the sheet instantly. Ignore scrim taps
 	   for a moment after it mounts so the opening gesture can't close it. */
 	const openedAt = Date.now();
+	const layer = ++depth;
+	onDestroy(() => {
+		depth--;
+	});
+	const z = 70 + layer * 2;
 	function scrimClose() {
 		if (Date.now() - openedAt < 400) return;
 		close();
@@ -211,7 +224,8 @@
 	}
 
 	function onkeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') close();
+		// Escape closes the top sheet only.
+		if (e.key === 'Escape' && layer === depth) close();
 	}
 
 	// The scrim fades in step with the drag, so the gesture feels connected to it.
@@ -222,6 +236,7 @@
 
 <div
 	class="scrim"
+	style:z-index={z}
 	style:opacity={scrimOpacity}
 	role="button"
 	tabindex="-1"
@@ -232,6 +247,7 @@
 
 <div
 	class="sheet"
+	style:z-index={z + 1}
 	class:settling={!dragging}
 	bind:this={pane}
 	class:scrollable

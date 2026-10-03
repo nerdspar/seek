@@ -164,8 +164,6 @@
 			</p>
 		{/if}
 	</div>
-{:else if devices}
-	<p class="sent">To send books to your Kindle, add it in BookOrbit → Settings → Email.</p>
 {/if}
 {#if saveError}<p class="err">{saveError}</p>{/if}
 
