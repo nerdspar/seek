@@ -1,15 +1,16 @@
+import { redirect } from '@sveltejs/kit';
 import { getDiscoverRows } from '$lib/server/discover';
 import { memo } from '$lib/server/memo';
 import { DEFAULT_PRESET_LABELS, getProviders, tmdbConfigured } from '$lib/server/tmdb';
 import { getPrefs } from '$lib/server/prefs';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
+import { landing, mediaOn } from '$lib/media';
 import { knownServices, normaliseService } from '$lib/server/watchlist';
 import type { MediaType } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('type') as MediaType | null;
-	const mediaType: MediaType = requested === 'movie' ? 'movie' : 'tv';
 
 	/* Lets other pages hand Discover a search to run. Tapping a cast member is
 	   the reason: an actor's name means nothing to Floppy's title search, and
@@ -21,6 +22,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	   whatever the current built-in list is. */
 	const prefs = await getPrefs();
 	const presets = prefs.moodPresets ?? DEFAULT_PRESET_LABELS();
+
+	/* Shows / movies / books each switch off per person: land on one that's on —
+	   book discovery when it's the only one. */
+	const media = mediaOn(prefs, hardcoverConfigured());
+	const kind = landing(requested === 'movie' ? 'movie' : requested === 'tv' ? 'tv' : null, media);
+	if (kind === 'book') redirect(307, '/discover/books');
+	const mediaType: MediaType = kind;
 
 	/* Offer only services the library actually has, matched to TMDB provider ids.
 	   TMDB's raw list is mostly rental storefronts and obscure channels, and a
@@ -41,7 +49,8 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	return {
 		// The Books segment: your setting, and Hardcover to discover from.
-		books: prefs.booksEnabled && hardcoverConfigured(),
+		books: media.book,
+		media,
 		mediaType,
 		query,
 		presets,

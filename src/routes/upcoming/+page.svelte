@@ -11,7 +11,7 @@
 	import { tick } from 'svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import { coverThumb } from '$lib/books';
-	import { ALL_KINDS, kindOf, kindsFiltered, mergeUpcoming, type UpcomingKind, type UpcomingKinds } from '$lib/upcoming';
+	import { ALL_KINDS, kindOf, mergeUpcoming, type UpcomingKind, type UpcomingKinds } from '$lib/upcoming';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -82,11 +82,17 @@
 		{ id: 'movie', label: 'Movies' },
 		{ id: 'book', label: 'Books' }
 	];
-	const offeredKinds = $derived(KIND_LABELS.filter((k) => k.id !== 'book' || data.books));
+	// Only the kinds Seek is for (Settings → Shows, movies & books).
+	const offeredKinds = $derived(KIND_LABELS.filter((k) => data.media[k.id]));
+	const shownKinds = $derived<UpcomingKinds>({
+		tv: kinds.tv && data.media.tv,
+		movie: kinds.movie && data.media.movie,
+		book: kinds.book && data.media.book
+	});
 	function toggleKind(k: UpcomingKind) {
 		const next = { ...kinds, [k]: !kinds[k] };
 		// Never filter everything away.
-		if (!next.tv && !next.movie && !next.book) return;
+		if (!offeredKinds.some((o) => next[o.id])) return;
 		kinds = next;
 		try {
 			localStorage.setItem(KINDS_KEY, JSON.stringify(kinds));
@@ -144,9 +150,9 @@
 	<header>
 		<div class="titlerow">
 			<h1>Upcoming</h1>
-			<button class="filter" class:on={kindsFiltered(kinds)} aria-expanded={filterOpen} aria-label="Show TV, movies or books" onclick={() => (filterOpen = !filterOpen)}>
+			{#if offeredKinds.length > 1}<button class="filter" class:on={offeredKinds.some((o) => !kinds[o.id])} aria-expanded={filterOpen} aria-label="Show TV, movies or books" onclick={() => (filterOpen = !filterOpen)}>
 				<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
-			</button>
+			</button>{/if}
 		</div>
 		{#if filterOpen}
 			<div class="kinds" role="group" aria-label="Show">
@@ -168,14 +174,14 @@
 				{/each}
 			</div>
 		{:then calendar}
-			{@const items = mergeUpcoming(calendar, extras, kinds)}
+			{@const items = mergeUpcoming(calendar, extras, shownKinds)}
 			{@const groups = groupBy(items)}
 			{@const anchorKey = groups.find((g) => !g.past)?.key}
 			{@const upcomingCount = groups.reduce((n, g) => n + (g.past ? 0 : g.items.length), 0)}
 			{#if !items.length}
 				<div class="empty">
 					<h2>Nothing scheduled</h2>
-					<p>{kindsFiltered(kinds) ? 'Nothing for what you’re showing — the filter is up top.' : 'No upcoming episodes, films or books for anything you’re tracking.'}</p>
+					<p>{offeredKinds.some((o) => !kinds[o.id]) ? 'Nothing for what you’re showing — the filter is up top.' : 'No upcoming episodes, films or books for anything you’re tracking.'}</p>
 				</div>
 			{:else}
 			{#each groups as group (group.key)}

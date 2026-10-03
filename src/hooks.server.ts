@@ -73,7 +73,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.request.method === 'GET'
 	) {
 		// Nothing works until Seek knows where Floppy is: finish setting up first.
-		redirect(303, '/profile/settings?welcome=1#services');
+		redirect(303, '/profile/settings?s=services&welcome=1');
 	}
 
 	const render = async () => {

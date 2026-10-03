@@ -25,7 +25,7 @@
 <div class="notlinked">
 	<h2>{copy.title}</h2>
 	<p>{copy.body}</p>
-	<a class="go" href="/profile/settings#accounts">Open Settings</a>
+	<a class="go" href="/profile/settings?s=accounts">Open Settings</a>
 </div>
 
 <style>

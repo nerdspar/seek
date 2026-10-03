@@ -4,6 +4,8 @@ import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import { type Company, type AnimeFilter, animeTagQuery } from '$lib/server/tags';
 import { jellyfinConfigured } from '$lib/server/jellyfin';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
+import { hardcoverConfigured } from '$lib/server/books/hardcover';
+import { landing, mediaOn } from '$lib/media';
 import type { MediaType } from '$lib/types';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -15,7 +17,6 @@ const STATUSES = ['in_progress', 'planning', 'completed', 'paused', 'dropped', '
 
 export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('type') as MediaType | null;
-	const mediaType: MediaType = requested && TYPES.includes(requested) ? requested : 'tv';
 
 	/* Sort lives in server-side preferences (§4.5, §8) rather than the browser:
 	   a default kept client-side would render one order and reshuffle on hydrate.
@@ -23,6 +24,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	   putting them in the URL makes back/forward behave and keeps them shareable
 	   between the two segments. */
 	const prefs = await getPrefs();
+
+	/* Shows / movies / books each switch off per person: land on one that's on —
+	   the Books page when it's the only one. */
+	const media = mediaOn(prefs, bookorbitConfigured() || hardcoverConfigured());
+	const kind = landing(requested === 'movie' ? 'movie' : requested === 'tv' ? 'tv' : null, media);
+	if (kind === 'book') redirect(307, '/books');
+	const mediaType: MediaType = kind;
 
 	/* §8's default tab. Only redirect on a bare visit — never when the URL is
 	   already carrying filters or a segment, or a filtered link would bounce. */
@@ -80,7 +88,8 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	return {
 		// The Books segment: your setting, and a BookOrbit to read from.
-		books: prefs.booksEnabled && bookorbitConfigured(),
+		books: media.book,
+		media,
 		mediaType,
 		sortKey,
 		filters,

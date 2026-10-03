@@ -163,8 +163,8 @@
 <div class="app">
 	<header>
 		<div class="segments" role="tablist">
-			<button role="tab" aria-selected="false" onclick={() => goto('/?type=tv', { noScroll: true })}>TV Shows</button>
-			<button role="tab" aria-selected="false" onclick={() => goto('/?type=movie', { noScroll: true })}>Movies</button>
+			{#if data.media.tv}<button role="tab" aria-selected="false" onclick={() => goto('/?type=tv', { noScroll: true })}>TV Shows</button>{/if}
+			{#if data.media.movie}<button role="tab" aria-selected="false" onclick={() => goto('/?type=movie', { noScroll: true })}>Movies</button>{/if}
 			<button role="tab" aria-selected="true" class="active">Books</button>
 		</div>
 		<button class="hbtn" onclick={() => (sortOpen = true)} aria-label="Sort">
@@ -208,7 +208,7 @@
 		{#if !data.linked}
 			<p class="linkhint">
 				{#if data.canLink}
-					Link your BookOrbit login in <a href="/profile/settings#accounts">Settings → Your accounts</a> to see your library here. Books you add yourself work either way.
+					Link your BookOrbit login in <a href="/profile/settings?s=accounts">Settings → Your accounts</a> to see your library here. Books you add yourself work either way.
 				{:else}
 					Books you add with + are kept here.
 				{/if}

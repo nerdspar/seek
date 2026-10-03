@@ -81,8 +81,12 @@ export type Prefs = {
 	 *  a household member who only tracks watches never sees it. Per person — a
 	 *  member starts with it off. */
 	arrManage: boolean;
-	/** Show the Books segment in Watchlist and Discover (docs/books-plan.md).
-	 *  Only takes effect when a books backend is configured. */
+	/** What Seek is for, per person: shows, movies and books can each be turned
+	 *  off, and everything about them leaves Watchlist, Discover, Upcoming and
+	 *  Profile. At least one stays on (clamped). Books also needs a books
+	 *  backend configured (docs/books-plan.md). */
+	showsEnabled: boolean;
+	moviesEnabled: boolean;
 	booksEnabled: boolean;
 };
 
@@ -115,6 +119,8 @@ export const DEFAULTS: Prefs = {
 	sonarr: null,
 	radarr: null,
 	arrManage: true,
+	showsEnabled: true,
+	moviesEnabled: true,
 	booksEnabled: true
 };
 
@@ -161,8 +167,12 @@ const cache = new Map<number, Prefs>();
    an unrecognised value matches no rule at all and the page renders with no
    tokens — black text on a black background. Clamp on the way in and out. */
 function clamp(p: Prefs): Prefs {
+	// Turning everything off would leave an empty app; shows come back on.
+	const noneOn = !p.showsEnabled && !p.moviesEnabled && !p.booksEnabled;
 	return {
 		...p,
+		showsEnabled: noneOn ? true : p.showsEnabled !== false,
+		moviesEnabled: p.moviesEnabled !== false,
 		appearance: APPEARANCES.includes(p.appearance) ? p.appearance : DEFAULTS.appearance,
 		accent: ACCENTS.includes(p.accent) ? p.accent : DEFAULTS.accent,
 		digestHour:

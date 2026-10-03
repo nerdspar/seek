@@ -11,6 +11,7 @@ import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import { listEntries } from '$lib/server/books/entries';
 import { settleArrivals } from '$lib/server/books/discovery';
 import type { ReadingBook } from '$lib/books';
+import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -24,6 +25,8 @@ export const load: PageServerLoad = async () => {
 	if (!prefs.booksEnabled || (!bookorbitConfigured() && !hardcoverConfigured())) redirect(303, '/');
 	const linked = bookorbitLinked();
 	return {
+		// Which other segments to offer (shows / movies can be switched off).
+		media: mediaOn(prefs, bookorbitConfigured() || hardcoverConfigured()),
 		linked,
 		canLink: bookorbitConfigured(),
 		// Your own books that have since landed carry their status over on the way in.

@@ -31,6 +31,6 @@ export const actions: Actions = {
 		}
 		setSession(cookies, url, user);
 		// Straight to linking their own Floppy / BookOrbit — nothing works until then.
-		redirect(303, '/profile/settings?welcome=1#accounts');
+		redirect(303, '/profile/settings?s=accounts&welcome=1');
 	}
 };

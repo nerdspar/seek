@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 
-	/** Your account + the household (Settings, top). Owner-only controls — invite,
-	 *  remove, reset links — appear only for the owner. */
+	/** Your account, or the household (Settings has a page for each — `part`).
+	 *  Owner-only controls — invite, remove, reset links — appear only for the owner. */
 	type Member = { id: number; name: string; email: string; role: 'owner' | 'member'; emailVerified: boolean };
 	type Props = {
 		account: {
@@ -10,8 +10,9 @@
 			mail: boolean;
 			household: { name: string; members: Member[]; invites: { email: string; expiresAt: string }[] };
 		};
+		part: 'account' | 'household';
 	};
-	let { account }: Props = $props();
+	let { account, part }: Props = $props();
 	const me = $derived(account.me);
 	const isOwner = $derived(me.role === 'owner');
 
@@ -181,8 +182,7 @@
 		new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 </script>
 
-<h2 class="group">Account</h2>
-
+{#if part === 'account'}
 <section>
 	<h3>You</h3>
 	<form
@@ -250,8 +250,7 @@
 	</div>
 </section>
 
-<h2 class="group">Household</h2>
-
+{:else}
 <section>
 	<h3>{account.household.name}</h3>
 	<ul class="members">
@@ -362,17 +361,9 @@
 		</div>
 	</section>
 {/if}
+{/if}
 
 <style>
-	.group {
-		margin: 26px 0 12px;
-		padding-top: 18px;
-		border-top: 1px solid var(--surface-raised);
-		font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-		color: var(--text);
-	}
-	/* This component opens the Settings page, so its first group header sits flush. */
-	.group:first-of-type { margin-top: 4px; padding-top: 0; border-top: none; }
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	section { margin-bottom: 18px; }
 

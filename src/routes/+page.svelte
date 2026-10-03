@@ -442,7 +442,7 @@
 <div class="app">
 	<header>
 		<div class="segments" role="tablist">
-			{#each SEGMENTS as seg (seg.id)}
+			{#each SEGMENTS.filter((seg) => data.media[seg.id === 'movie' ? 'movie' : 'tv']) as seg (seg.id)}
 				<button
 					role="tab"
 					aria-selected={data.mediaType === seg.id}

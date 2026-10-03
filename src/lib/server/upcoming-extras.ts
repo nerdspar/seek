@@ -147,11 +147,11 @@ async function bookItems(now: number): Promise<UpcomingItem[]> {
  * alone — one failing never blanks the other. Cached for a few hours: release
  * dates move slowly.
  */
-export function getUpcomingExtras(opts: { books: boolean }): Promise<UpcomingItem[]> {
-	return memo(`upcoming:extras:${opts.books ? 'b' : ''}`, 3 * 60 * 60 * 1000, async () => {
+export function getUpcomingExtras(opts: { books: boolean; films: boolean }): Promise<UpcomingItem[]> {
+	return memo(`upcoming:extras:${opts.books ? 'b' : ''}${opts.films ? 'f' : ''}`, 3 * 60 * 60 * 1000, async () => {
 		const now = Date.now();
 		const [films, books] = await Promise.all([
-			filmItems(now).catch(() => []),
+			opts.films ? filmItems(now).catch(() => []) : Promise.resolve([]),
 			opts.books ? bookItems(now).catch(() => []) : Promise.resolve([])
 		]);
 		return [...films, ...books].sort((a, b) => a.start.localeCompare(b.start));

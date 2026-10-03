@@ -120,8 +120,8 @@
 			{/if}
 		</div>
 		<div class="segments" role="tablist">
-			<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=tv', { noScroll: true })}>TV</button>
-			<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=movie', { noScroll: true })}>Movies</button>
+			{#if data.media.tv}<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=tv', { noScroll: true })}>TV</button>{/if}
+			{#if data.media.movie}<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=movie', { noScroll: true })}>Movies</button>{/if}
 			<button role="tab" aria-selected="true" class="on">Books</button>
 		</div>
 	</header>

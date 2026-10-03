@@ -55,6 +55,6 @@ export const actions: Actions = {
 		setSession(cookies, url, owner);
 		warmInBackground(owner);
 		// A brand-new install has nothing to show until Floppy is connected.
-		redirect(303, floppyConfigured() ? '/' : '/profile/settings?welcome=1#services');
+		redirect(303, floppyConfigured() ? '/' : '/profile/settings?s=services&welcome=1');
 	}
 };

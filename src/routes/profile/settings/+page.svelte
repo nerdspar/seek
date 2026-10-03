@@ -12,8 +12,12 @@
 	import type { PageData } from './$types';
 
 	/** Preferences live server-side in /data (§8), so this edits them through the
-	 *  API rather than localStorage — the same values drive the server render. */
+	 *  API rather than localStorage — the same values drive the server render.
+	 *
+	 *  Laid out like iOS Settings: an index of sections, each its own page
+	 *  (`?s=<section>`), so no one page grows into a wall. */
 	let { data }: { data: PageData } = $props();
+
 	const prefs = $derived(data.prefs);
 	const defaultPresets = $derived(data.defaultPresets ?? []);
 	const floppyUrl = $derived(data.floppyUrl ?? null);
@@ -51,6 +55,81 @@
 		{ key: 'radarr', label: 'Radarr', kind: 'Movies' }
 	] as const;
 	const anyArr = $derived(!!arrOptions && (arrOptions.sonarr.configured || arrOptions.radarr.configured));
+
+	type SectionId =
+		| 'account'
+		| 'accounts'
+		| 'household'
+		| 'services'
+		| 'media'
+		| 'watchlist'
+		| 'appearance'
+		| 'discover'
+		| 'notifications'
+		| 'downloads';
+	const isOwner = $derived(data.account.me.role === 'owner');
+	const INDEX = $derived<{ title: string; rows: { id: SectionId; title: string; hint?: string; show: boolean }[] }[]>([
+		{
+			title: 'You',
+			rows: [
+				{ id: 'account', title: 'Account', hint: `${data.account.me.name} · ${data.account.me.email}`, show: true },
+				{ id: 'accounts', title: 'Your accounts', hint: 'Floppy, calendar, BookOrbit', show: true }
+			]
+		},
+		{
+			title: 'Household',
+			rows: [
+				{ id: 'household', title: 'Household', hint: 'Members, invites, shared shows', show: true },
+				{ id: 'services', title: 'Services', hint: 'Where Seek finds your apps', show: isOwner && Boolean(data.services) }
+			]
+		},
+		{
+			title: 'Seek',
+			rows: [
+				{ id: 'media', title: 'Shows, movies & books', hint: 'What Seek is for', show: true },
+				{ id: 'watchlist', title: 'Watchlist', hint: 'Swipe, default tab, watching with', show: true },
+				{ id: 'appearance', title: 'Appearance', hint: 'Theme, accent, show page', show: true },
+				{ id: 'discover', title: 'Discover', hint: 'Streaming services, chips', show: true },
+				{ id: 'notifications', title: 'Notifications', hint: 'Daily digest, airing alerts', show: true },
+				{ id: 'downloads', title: 'Sonarr & Radarr', hint: 'Download management and defaults', show: anyArr }
+			]
+		}
+	]);
+	const TITLES: Record<SectionId, string> = {
+		account: 'Account',
+		accounts: 'Your accounts',
+		household: 'Household',
+		services: 'Services',
+		media: 'Shows, movies & books',
+		watchlist: 'Watchlist',
+		appearance: 'Appearance',
+		discover: 'Discover',
+		notifications: 'Notifications',
+		downloads: 'Sonarr & Radarr'
+	};
+	/* Old links used #accounts / #services anchors on the one long page. */
+	const section = $derived.by<SectionId | null>(() => {
+		const s = page.url.searchParams.get('s') ?? page.url.hash.replace('#', '');
+		return s && s in TITLES ? (s as SectionId) : null;
+	});
+	const current = $derived(section ? { id: section, title: TITLES[section] } : null);
+
+	/* ── Shows / movies / books: what Seek is for (per person) ─────────────── */
+	const MEDIA = $derived([
+		{ key: 'showsEnabled', label: 'TV shows', hint: 'Shows in Watchlist, Discover, Upcoming and Profile' },
+		{ key: 'moviesEnabled', label: 'Movies', hint: 'Films in Watchlist, Discover, Upcoming and Profile' },
+		{ key: 'booksEnabled', label: 'Books', hint: data.booksAvailable ? 'Your reading list, book discovery and releases' : 'Needs BookOrbit or Hardcover under Services' }
+	] as const);
+	let mediaMsg = $state<string | null>(null);
+	function toggleMedia(key: 'showsEnabled' | 'moviesEnabled' | 'booksEnabled') {
+		const next = { showsEnabled: local.showsEnabled, moviesEnabled: local.moviesEnabled, booksEnabled: local.booksEnabled, [key]: !local[key] };
+		if (!next.showsEnabled && !next.moviesEnabled && !next.booksEnabled) {
+			mediaMsg = 'Keep at least one on.';
+			return;
+		}
+		mediaMsg = null;
+		void patch({ [key]: !local[key] });
+	}
 
 	/* Optimistic edit layered over the prop, so a save that fails simply reverts
 	   by clearing it. */
@@ -240,27 +319,101 @@
 	}
 </script>
 
-<PageHeader title="Settings" onback={() => goto('/profile')} />
+<PageHeader title={current ? current.title : 'Settings'} onback={() => goto(current ? '/profile/settings' : '/profile')} />
 
 <main>
-
 	{#if !data.floppyReady && data.services}
 		<p class="welcome">
-			Welcome to Seek. First, tell it where your apps are: open <a href="#services">Services</a> and add
-			Floppy’s address (and TMDB’s key). Then link your own Floppy under
-			<a href="#accounts">Your accounts</a>.
+			Welcome to Seek. First, tell it where your apps are: open <a href="?s=services">Services</a> and add
+			Floppy’s address (and TMDB’s key). Then link your own Floppy under <a href="?s=accounts">Your accounts</a>.
 		</p>
 	{:else if page.url.searchParams.get('welcome')}
 		<p class="welcome">
 			Welcome to Seek. Link your own Floppy{data.account.bookorbit ? ' and BookOrbit' : ''} under
-			<a href="#accounts">Your accounts</a> — that's where your shows{data.account.bookorbit ? ' and books' : ''}
+			<a href="?s=accounts">Your accounts</a> — that's where your shows{data.account.bookorbit ? ' and books' : ''}
 			come from.
 		</p>
 	{/if}
 
-	<AccountSettings account={data.account} />
+	{#if !current}
+		<!-- The index: one row per page, iOS-style. -->
+		{#each INDEX as group (group.title)}
+			{@const rows = group.rows.filter((r) => r.show)}
+			{#if rows.length}
+				<h2 class="group">{group.title}</h2>
+				<ul class="index">
+					{#each rows as r (r.id)}
+						<li>
+							<a href={`?s=${r.id}`} class="indexrow">
+								<span class="rowtext">
+									<span class="label">{r.title}</span>
+									{#if r.hint}<span class="hint">{r.hint}</span>{/if}
+								</span>
+								<svg class="chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6" /></svg>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{/each}
 
-	<h2 class="group">Watchlist</h2>
+		<h2 class="group">About</h2>
+	<section>
+		<div class="row">
+			<span class="rowtext">
+				<span class="label">Version</span>
+				<span class="hint">The build this instance is running</span>
+			</span>
+			<span class="count tnum">{(data.build ?? 'dev').slice(0, 7)}</span>
+		</div>
+	</section>
+	{:else if section === 'account'}
+		<AccountSettings account={data.account} part="account" />
+	{:else if section === 'household'}
+		<AccountSettings account={data.account} part="household" />
+	{:else if section === 'accounts'}
+		<LinkedAccounts account={data.account} />
+	<section>
+		<h3>Floppy</h3>
+		{#if floppyUrl}
+			<a class="out" href={floppyUrl} target="_blank" rel="noreferrer">
+				<span class="rowtext">
+					<span class="label">Floppy settings</span>
+					<span class="hint">Notifications and integrations live there (§9)</span>
+				</span>
+				<span class="chev">↗</span>
+			</a>
+		{:else}
+			<p class="hint">
+				Add Floppy’s “Address from your phone” under Services to link out to Floppy’s own settings —
+				notifications are configured there, not here.
+			</p>
+		{/if}
+	</section>
+
+	{:else if section === 'services' && data.services}
+		<ServicesSettings services={data.services} openFirst={data.floppyReady ? null : 'floppy'} />
+	{:else if section === 'media'}
+		<section>
+			<p class="hint lead">Choose what Seek is for. Anything you turn off disappears from Watchlist, Discover, Upcoming and Profile — nothing is deleted.</p>
+			{#each MEDIA as m (m.key)}
+				<button
+					class="row media"
+					role="switch"
+					aria-checked={local[m.key]}
+					disabled={!local[m.key] && false}
+					onclick={() => toggleMedia(m.key)}
+				>
+					<span class="rowtext">
+						<span class="label">{m.label}</span>
+						<span class="hint">{m.hint}</span>
+					</span>
+					<span class="toggle" class:on={local[m.key]}><span class="knob"></span></span>
+				</button>
+			{/each}
+			{#if mediaMsg}<p class="hint msg">{mediaMsg}</p>{/if}
+		</section>
+	{:else if section === 'watchlist'}
 
 	<section>
 		<h3>Swipe to mark watched</h3>
@@ -309,7 +462,7 @@
 		</button>
 	</section>
 
-	<h2 class="group">Appearance</h2>
+	{:else if section === 'appearance'}
 
 	<section>
 		<h3>Appearance</h3>
@@ -362,7 +515,7 @@
 		</button>
 	</section>
 
-	<h2 class="group">Discover</h2>
+	{:else if section === 'discover'}
 
 	{#if allServices.length}
 		<section>
@@ -447,26 +600,7 @@
 		{/if}
 	</section>
 
-	{#if data.booksAvailable}
-		<h2 class="group">Books</h2>
-
-		<section>
-			<button
-				class="row"
-				role="switch"
-				aria-checked={local.booksEnabled}
-				onclick={() => patch({ booksEnabled: !local.booksEnabled })}
-			>
-				<span class="rowtext">
-					<span class="label">Books</span>
-					<span class="hint">A Books segment in Watchlist and Discover</span>
-				</span>
-				<span class="toggle" class:on={local.booksEnabled}><span class="knob"></span></span>
-			</button>
-		</section>
-	{/if}
-
-	<h2 class="group">Notifications</h2>
+	{:else if section === 'notifications'}
 
 	<section>
 		{#if push && !push.supported}
@@ -543,16 +677,8 @@
 		{/if}
 	</section>
 
-	{#if failed}<p class="error">{failed}</p>{/if}
 
-	<h2 class="group">Connections</h2>
-
-	{#if data.services}
-		<ServicesSettings services={data.services} openFirst={data.floppyReady ? null : 'floppy'} />
-	{/if}
-
-	<LinkedAccounts account={data.account} />
-
+	{:else if section === 'downloads'}
 	{#if anyArr}
 		<section>
 			<h3>Send to Sonarr / Radarr</h3>
@@ -621,35 +747,9 @@
 		</section>
 	{/if}
 
-	<section>
-		<h3>Floppy</h3>
-		{#if floppyUrl}
-			<a class="out" href={floppyUrl} target="_blank" rel="noreferrer">
-				<span class="rowtext">
-					<span class="label">Floppy settings</span>
-					<span class="hint">Notifications and integrations live there (§9)</span>
-				</span>
-				<span class="chev">↗</span>
-			</a>
-		{:else}
-			<p class="hint">
-				Add Floppy’s “Address from your phone” under Services to link out to Floppy’s own settings —
-				notifications are configured there, not here.
-			</p>
-		{/if}
-	</section>
+	{/if}
 
-	<h2 class="group">About</h2>
-
-	<section>
-		<div class="row">
-			<span class="rowtext">
-				<span class="label">Version</span>
-				<span class="hint">The build this instance is running</span>
-			</span>
-			<span class="count tnum">{(data.build ?? 'dev').slice(0, 7)}</span>
-		</div>
-	</section>
+	{#if failed}<p class="error">{failed}</p>{/if}
 </main>
 
 <style>
@@ -672,6 +772,19 @@
 
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	section { margin-bottom: 18px; }
+
+	/* The index: grouped rows that open a page, like iOS Settings. */
+	.index { margin: 0 0 6px; padding: 0; list-style: none; border-radius: var(--radius); overflow: hidden; background: var(--surface-raised); }
+	.index li + li { border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+	.indexrow {
+		display: flex; align-items: center; gap: 12px;
+		min-height: var(--tap); padding: 10px 14px; color: var(--text); text-decoration: none;
+	}
+	.indexrow .rowtext { flex: 1; }
+	.indexrow .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.chevron { flex: none; color: var(--text-dim); }
+	.lead { margin: 0 0 12px; line-height: 1.45; }
+	.row.media + .row.media { margin-top: 6px; }
 
 	.arrsvc { margin-bottom: 12px; }
 	.arrname { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
