@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import Sheet from './Sheet.svelte';
 	import {
 		emptySearchReason,
@@ -30,8 +31,10 @@
 	let { book, kind, existing = null, onclose, onchange }: Props = $props();
 
 	type Step = 'starting' | 'ready' | 'searching' | 'choose' | 'grabbing' | 'watching' | 'queued' | 'error';
-	let step = $state<Step>(existing ? 'watching' : 'starting');
-	let request = $state<BookRequest | null>(existing);
+	// Where it starts is decided once; the sheet is keyed per book by its callers.
+	const initial = untrack(() => existing);
+	let step = $state<Step>(initial ? 'watching' : 'starting');
+	let request = $state<BookRequest | null>(initial);
 	let search = $state<ReleaseSearch | null>(null);
 	let problem = $state<string | null>(null);
 	let note = $state<string | null>(null);
