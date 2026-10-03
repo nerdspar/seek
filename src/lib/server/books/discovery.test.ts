@@ -4,6 +4,7 @@ import type { BookCard, ReadingBook } from '$lib/books';
 const searchBooks = vi.fn();
 vi.mock('./hardcover', () => ({ searchBooks: (...a: unknown[]) => searchBooks(...a) }));
 vi.mock('./bookorbit', () => ({ bookorbitLinked: () => true, getAllBooks: async () => [] }));
+vi.mock('./wishlist', () => ({ wishlistIds: () => new Set() }));
 
 import { markOwned, indexLibrary, matchHardcover } from './discovery';
 
@@ -35,6 +36,15 @@ describe('markOwned', () => {
 		);
 		expect(a.owned?.bookId).toBe(41);
 		expect(b.owned).toBeNull();
+	});
+});
+
+describe('markOwned wishlist', () => {
+	it('flags wished books, but owning one supersedes the wish', () => {
+		const idx = indexLibrary([mine({ hardcoverId: 2 })], new Set([1, 2]));
+		const [a, b, c] = markOwned([card(1), card(2), card(3)], idx);
+		expect([a.wished, b.wished, c.wished]).toEqual([true, false, false]);
+		expect(b.owned?.bookId).toBe(41);
 	});
 });
 

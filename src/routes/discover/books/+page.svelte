@@ -6,13 +6,13 @@
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import { tabReselect } from '$lib/tabReselect';
-	import { coverThumb, statusLabel, type BookCard, type ReadingBook } from '$lib/books';
+	import { coverThumb, cardBadge, type BookCard, type ReadingBook } from '$lib/books';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	type Owned = { bookId: number; status: ReadingBook['status']; progress: number | null };
-	type Card = BookCard & { owned?: Owned | null };
+	type Card = BookCard & { owned?: Owned | null; wished?: boolean };
 
 	let open = $state<Card | null>(null);
 
@@ -90,7 +90,7 @@
 						<li>
 							<button class="tile" onclick={() => (open = b)}>
 								<Poster src={coverThumb(b.coverUrl, 110)} width={110} height={165} radius={8} />
-								{#if b.owned}<span class="owned">{statusLabel(b.owned.status)}</span>{/if}
+								{#if cardBadge(b)}<span class="owned">{cardBadge(b)}</span>{/if}
 							</button>
 							<span class="cap">{b.title}</span>
 							<span class="sub">{[b.author, b.year].filter(Boolean).join(' · ')}</span>
@@ -125,7 +125,11 @@
 		hardcoverId={open.hardcoverId}
 		card={open}
 		onclose={() => (open = null)}
-		onchange={() => invalidateAll()}
+		onchange={() => {
+			void invalidateAll();
+			// Search results are fetched here, not loaded — refresh them too.
+			if (query.trim()) void run(query.trim());
+		}}
 	/>
 {/if}
 

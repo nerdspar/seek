@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
 import { bookorbitConfigured, getAllBooks, getReadingGoal } from '$lib/server/books/bookorbit';
+import { listWishlist } from '$lib/server/books/wishlist';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -15,6 +16,8 @@ export const load: PageServerLoad = async () => {
 	return {
 		library: getAllBooks(),
 		// The goal is a nicety: never let it fail the page.
-		goal: getReadingGoal().catch(() => null)
+		goal: getReadingGoal().catch(() => null),
+		// Books you want but don't own yet — Seek's own list, joins "Want to read".
+		wishlist: listWishlist()
 	};
 };

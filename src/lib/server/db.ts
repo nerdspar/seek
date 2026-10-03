@@ -75,6 +75,24 @@ export const MIGRATIONS: string[] = [
 		created_at  TEXT NOT NULL
 	);
 	CREATE INDEX push_subscriptions_user ON push_subscriptions(user_id);
+	`,
+
+	// v2 — the books wishlist: "want to read" for books you don't own yet.
+	// BookOrbit can only hold status for books in the library, so the rest of a
+	// person's reading wishlist (what Goodreads used to keep) lives here. Keyed
+	// by Hardcover id; the display fields are a snapshot so the list renders
+	// without calling Hardcover.
+	`
+	CREATE TABLE wishlist (
+		user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		hardcover_id  INTEGER NOT NULL,
+		title         TEXT NOT NULL,
+		author        TEXT,
+		cover_url     TEXT,
+		year          INTEGER,
+		added_at      TEXT NOT NULL,
+		PRIMARY KEY (user_id, hardcover_id)
+	);
 	`
 ];
 

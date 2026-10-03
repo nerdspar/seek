@@ -1,11 +1,11 @@
 <script lang="ts">
 	import Poster from './Poster.svelte';
-	import { coverThumb, statusLabel, type BookCard, type ReadingBook } from '$lib/books';
+	import { coverThumb, cardBadge, type BookCard, type ReadingBook } from '$lib/books';
 
 	/** One horizontal shelf of book covers (Discover → Books). Books you already
 	 *  own carry a small badge with your status. */
 	type Owned = { bookId: number; status: ReadingBook['status']; progress: number | null };
-	type Card = BookCard & { owned?: Owned | null };
+	type Card = BookCard & { owned?: Owned | null; wished?: boolean };
 	type Props = { title: string; subtitle?: string | null; books: Card[]; onopen: (book: Card) => void };
 	let { title, subtitle = null, books, onopen }: Props = $props();
 </script>
@@ -18,7 +18,7 @@
 			<li>
 				<button class="tile" onclick={() => onopen(b)}>
 					<Poster src={coverThumb(b.coverUrl, 110)} width={110} height={165} radius={8} />
-					{#if b.owned}<span class="owned">{statusLabel(b.owned.status)}</span>{/if}
+					{#if cardBadge(b)}<span class="owned">{cardBadge(b)}</span>{/if}
 				</button>
 				<span class="cap">{b.title}</span>
 				<span class="sub tnum">{[b.author, b.year].filter(Boolean).join(' · ')}</span>

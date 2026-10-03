@@ -10,8 +10,47 @@ import {
 	statusLabel,
 	normTitle,
 	bookKey,
-	coverThumb
+	coverThumb,
+	readingSections,
+	unownedWishes,
+	cardBadge
 } from './books';
+
+describe('readingSections', () => {
+	const owned = (id: number, status: string, title: string, author = 'A', hardcoverId: number | null = null) =>
+		({ ...mapReadingBook({ id, title, authors: [author], readStatus: { status } }), hardcoverId });
+	const wish = (hardcoverId: number, title: string, author = 'A') => ({
+		hardcoverId,
+		title,
+		author,
+		coverUrl: null,
+		year: null,
+		rating: null,
+		addedAt: '2026-10-03T00:00:00Z'
+	});
+
+	it('folds wishlisted books into Want to read, even with no owned ones there', () => {
+		const sections = readingSections([owned(1, 'reading', 'Dune')], [wish(50, 'Hyperion')]);
+		expect(sections.map((s) => [s.title, s.books.length, s.wishes.map((w) => w.title)])).toEqual([
+			['Reading', 1, []],
+			['Want to read', 0, ['Hyperion']]
+		]);
+	});
+
+	it('drops a wish once you own the book (by id or by title + author)', () => {
+		const lib = [owned(1, 'unread', 'Hyperion', 'Dan Simmons'), owned(2, 'unread', 'Other', 'A', 77)];
+		const left = unownedWishes([wish(50, 'Hyperion', 'Dan Simmons'), wish(77, 'Renamed'), wish(9, 'Still wanted')], lib);
+		expect(left.map((w) => w.title)).toEqual(['Still wanted']);
+	});
+});
+
+describe('cardBadge', () => {
+	it('shows your status when owned, the wish otherwise, else nothing', () => {
+		expect(cardBadge({ owned: { status: 'read' }, wished: true })).toBe('Read');
+		expect(cardBadge({ owned: null, wished: true })).toBe('Want to read');
+		expect(cardBadge({})).toBeNull();
+	});
+});
 
 describe('coverThumb', () => {
 	it('routes both cover sources through the thumbnailer at 2x', () => {

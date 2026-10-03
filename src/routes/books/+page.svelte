@@ -7,12 +7,30 @@
 	import NotLinked from '$lib/components/NotLinked.svelte';
 	import { notLinkedOf } from '$lib/notLinked';
 	import { tabReselect } from '$lib/tabReselect';
-	import { groupReading, type ReadingBook } from '$lib/books';
+	import { readingSections, type ReadingBook, type WishBook } from '$lib/books';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	let open = $state<ReadingBook | null>(null);
+	let openWish = $state<WishBook | null>(null);
+
+	/* A wishlisted book drawn as a reading-list row. It has no BookOrbit id, so
+	   its key is the (negated) Hardcover id — never collides with a library id. */
+	const asRow = (w: WishBook): ReadingBook => ({
+		id: -w.hardcoverId,
+		title: w.title,
+		authors: w.author ? [w.author] : [],
+		status: 'want_to_read',
+		progress: null,
+		rating: null,
+		pageCount: null,
+		year: w.year,
+		seriesName: null,
+		seriesIndex: null,
+		coverUrl: w.coverUrl,
+		hardcoverId: w.hardcoverId
+	});
 
 	/* Long finished lists would bury everything after them; they open on request. */
 	const CAP = 8;
@@ -53,20 +71,31 @@
 				{#each Array(5) as _, i (i)}<li><Skeleton height="98px" radius={14} /></li>{/each}
 			</ul>
 		{:then books}
-			{@const groups = groupReading(books)}
+			{@const groups = readingSections(books, data.wishlist)}
 			{@const library = unstarted(books)}
 			{#each groups as g (g.title)}
 				{@const all = expanded[g.title]}
+				{@const rows = [
+					...g.books.map((b) => ({ b, wish: null })),
+					...g.wishes.map((w) => ({ b: asRow(w), wish: w }))
+				]}
 				<section class="group">
-					<h2>{g.title} <span class="count tnum">{g.books.length}</span></h2>
+					<h2>{g.title} <span class="count tnum">{rows.length}</span></h2>
 					<ul class="rows">
-						{#each all ? g.books : g.books.slice(0, CAP) as b (b.id)}
-							<li><BookRow book={b} onopen={(x) => (open = x)} /></li>
+						{#each all ? rows : rows.slice(0, CAP) as r (r.b.id)}
+							<li>
+								{#if r.wish}
+									{@const w = r.wish}
+									<BookRow book={r.b} note="Not in your library yet" onopen={() => (openWish = w)} />
+								{:else}
+									<BookRow book={r.b} onopen={(x) => (open = x)} />
+								{/if}
+							</li>
 						{/each}
 					</ul>
-					{#if g.books.length > CAP}
+					{#if rows.length > CAP}
 						<button class="more" onclick={() => (expanded = { ...expanded, [g.title]: !all })}>
-							{all ? 'Show fewer' : `Show all ${g.books.length}`}
+							{all ? 'Show fewer' : `Show all ${rows.length}`}
 						</button>
 					{/if}
 				</section>
@@ -77,7 +106,7 @@
 					<h2>Nothing on your reading list yet</h2>
 					<p>
 						Mark books as reading or want-to-read in BookOrbit (or on your reader) and they'll show up
-						here. Find something new in Discover → Books.
+						here. Find something new in Discover → Books and tap Want to read.
 					</p>
 				</div>
 			{/if}
@@ -118,6 +147,15 @@
 		hardcoverId={open.hardcoverId}
 		library={open}
 		onclose={() => (open = null)}
+		onchange={() => invalidateAll()}
+	/>
+{/if}
+
+{#if openWish}
+	<BookSheet
+		hardcoverId={openWish.hardcoverId}
+		card={{ ...openWish, owned: null, wished: true }}
+		onclose={() => (openWish = null)}
 		onchange={() => invalidateAll()}
 	/>
 {/if}

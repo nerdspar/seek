@@ -77,6 +77,13 @@ const STATUS_LABELS: Record<BookReadStatus, string> = {
 
 export const statusLabel = (s: BookReadStatus) => STATUS_LABELS[s];
 
+/** The badge on a discovery cover: your status if you own it, else whether
+ *  it's on your wishlist, else nothing. */
+export function cardBadge(c: { owned?: { status: BookReadStatus } | null; wished?: boolean }): string | null {
+	if (c.owned) return statusLabel(c.owned.status);
+	return c.wished ? 'Want to read' : null;
+}
+
 /** The reading list's sections, in order. Books you own but haven't started
  *  ("unread") aren't a section — they're the library, browsed separately. */
 export const READING_SECTIONS: { title: string; statuses: BookReadStatus[] }[] = [
@@ -95,6 +102,30 @@ export function groupReading(
 		title: s.title,
 		books: books.filter((b) => s.statuses.includes(b.status))
 	})).filter((s) => s.books.length);
+}
+
+/** A wishlisted book — wanted, not owned (Seek's own list, per person). */
+export type WishBook = BookCard & { addedAt: string };
+
+/** Wishlist entries you still don't own. Once a book lands in the library the
+ *  library copy (with your real status) is the one to show. */
+export function unownedWishes(wishlist: WishBook[], library: ReadingBook[]): WishBook[] {
+	const ids = new Set(library.map((b) => b.hardcoverId).filter(Boolean));
+	const keys = new Set(library.map((b) => bookKey(b.title, b.authors[0])));
+	return wishlist.filter((w) => !ids.has(w.hardcoverId) && !keys.has(bookKey(w.title, w.author)));
+}
+
+export type ReadingSection = { title: string; books: ReadingBook[]; wishes: WishBook[] };
+
+/** The reading list: status sections from the library, with the wishlist's
+ *  not-yet-owned books folded into "Want to read". */
+export function readingSections(library: ReadingBook[], wishlist: WishBook[]): ReadingSection[] {
+	const wishes = unownedWishes(wishlist, library);
+	return READING_SECTIONS.map((s) => ({
+		title: s.title,
+		books: library.filter((b) => s.statuses.includes(b.status)),
+		wishes: s.title === 'Want to read' ? wishes : []
+	})).filter((s) => s.books.length || s.wishes.length);
 }
 
 /**

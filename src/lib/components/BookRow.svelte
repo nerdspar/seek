@@ -2,8 +2,10 @@
 	import Poster from './Poster.svelte';
 	import { coverThumb, statusLabel, type ReadingBook } from '$lib/books';
 
-	/** One book on the reading list: cover, title, author, and how far in you are. */
-	let { book, onopen }: { book: ReadingBook; onopen: (b: ReadingBook) => void } = $props();
+	/** One book on the reading list: cover, title, author, and how far in you are.
+	 *  `note` replaces the status line (a wishlisted book has no status yet). */
+	type Props = { book: ReadingBook; note?: string | null; onopen: (b: ReadingBook) => void };
+	let { book, note = null, onopen }: Props = $props();
 	const pct = $derived(book.progress !== null ? Math.round(book.progress * 100) : null);
 </script>
 
@@ -15,7 +17,9 @@
 		{#if book.seriesName}
 			<span class="series">{book.seriesName}{book.seriesIndex ? ` · ${book.seriesIndex}` : ''}</span>
 		{/if}
-		{#if pct !== null && pct > 0 && book.status !== 'read'}
+		{#if note}
+			<span class="status">{note}</span>
+		{:else if pct !== null && pct > 0 && book.status !== 'read'}
 			<span class="progress">
 				<span class="track"><span class="fill" style:width={`${pct}%`}></span></span>
 				<span class="pct tnum">{pct}%</span>

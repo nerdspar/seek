@@ -12,14 +12,14 @@
 	type Props = {
 		hardcoverId: number | null;
 		library?: ReadingBook | null;
-		card?: (BookCard & { owned?: Owned | null }) | null;
+		card?: (BookCard & { owned?: Owned | null; wished?: boolean }) | null;
 		onclose: () => void;
 		/** Called after your status on this book changed, so the list can refresh. */
 		onchange?: () => void;
 	};
 	let { hardcoverId, library = null, card = null, onclose, onchange }: Props = $props();
 
-	let detail = $state<(BookDetail & { owned: Owned | null }) | null>(null);
+	let detail = $state<(BookDetail & { owned: Owned | null; wished?: boolean }) | null>(null);
 	let loading = $state(false);
 	let failed = $state(false);
 
@@ -127,6 +127,43 @@
 			saving = false;
 		}
 	}
+
+	/* ── Wishlist: wanting a book you don't own (Seek's own, per person) ──── */
+	let wishPicked = $state<boolean | null>(null);
+	const wished = $derived(wishPicked ?? detail?.wished ?? card?.wished ?? false);
+
+	async function toggleWish() {
+		if (!resolvedId || saving) return;
+		const next = !wished;
+		const before = wishPicked;
+		wishPicked = next; // optimistic
+		saving = true;
+		saveError = null;
+		try {
+			const res = await fetch('/api/books/wishlist', {
+				method: next ? 'POST' : 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(
+					next
+						? {
+								hardcoverId: resolvedId,
+								title: detail?.title ?? card?.title,
+								author: detail?.author ?? card?.author ?? null,
+								coverUrl: detail?.coverUrl ?? card?.coverUrl ?? null,
+								year: detail?.year ?? card?.year ?? null
+							}
+						: { hardcoverId: resolvedId }
+				)
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			onchange?.();
+		} catch (e) {
+			wishPicked = before;
+			saveError = `Couldn't save — ${(e as Error).message}`;
+		} finally {
+			saving = false;
+		}
+	}
 </script>
 
 <Sheet label={title || 'Book'} {onclose} scrollable>
@@ -174,8 +211,12 @@
 				</div>
 			{/if}
 			{#if saveError}<p class="err">{saveError}</p>{/if}
-		{:else if hardcoverId}
+		{:else if resolvedId && !library}
+			<button class="wish" class:on={wished} aria-pressed={wished} disabled={saving} onclick={toggleWish}>
+				{wished ? '✓ On your want-to-read list' : '+ Want to read'}
+			</button>
 			<p class="notowned">Not in your library yet.</p>
+			{#if saveError}<p class="err">{saveError}</p>{/if}
 		{/if}
 
 		{#if resolvedId || loading}
@@ -225,6 +266,13 @@
 	.fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
 	.pct { flex: none; font-size: 12.5px; color: var(--text-dim); }
 	.notowned { margin: 14px 0 0; font-size: 13px; color: var(--text-dim); }
+	.wish {
+		width: 100%; min-height: 44px; margin-top: 16px; border-radius: 11px;
+		background: var(--signal); color: #fff; font-size: 14.5px; font-weight: 650;
+	}
+	.wish.on { background: var(--surface-raised); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--signal-solid); }
+	.wish:disabled { opacity: 0.7; }
+	.wish + .notowned { margin-top: 8px; text-align: center; }
 
 	.picker {
 		display: flex; gap: 3px; margin-top: 16px; padding: 3px;

@@ -10,5 +10,6 @@ export const GET: RequestHandler = async ({ params }) => {
 	if (!Number.isInteger(id) || id <= 0) error(400, 'Bad book id.');
 	const [detail, owned] = await Promise.all([bookDetail(id), ownedIndex()]);
 	if (!detail) error(404, 'Hardcover has no such book.');
-	return json({ ...detail, owned: markOwned([detail], owned)[0].owned });
+	const { owned: mine, wished } = markOwned([detail], owned)[0];
+	return json({ ...detail, owned: mine, wished });
 };

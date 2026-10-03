@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Database from 'better-sqlite3';
 import { openDatabase, useDatabase, MIGRATIONS, db, migrate } from './db';
 import * as users from './users';
 import { AccountError } from './users';
@@ -20,6 +21,21 @@ describe('migrations', () => {
 		expect(db().pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
 		migrate(db());
 		expect(db().pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+	});
+
+	it('upgrades an existing v1 database without losing accounts', async () => {
+		// A database as the first release left it: only v1 applied, one owner.
+		const old = new Database(':memory:');
+		old.pragma('foreign_keys = ON');
+		old.exec(MIGRATIONS[0]);
+		old.pragma('user_version = 1');
+		useDatabase(old);
+		await owner();
+
+		migrate(old);
+		expect(old.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+		expect(users.userCount()).toBe(1);
+		expect(old.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='wishlist'`).get()).toBeTruthy();
 	});
 });
 
