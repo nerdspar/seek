@@ -392,3 +392,113 @@ describe('book requests', () => {
 		expect(fetchMock.mock.calls[2][0]).toBe('https://bo.test/api/v1/book-requests/9/cancel');
 	});
 });
+
+describe('uploads', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	const session = (over: Record<string, unknown> = {}) => ({
+		id: '6f1c6a3e-0000-4000-8000-000000000001',
+		filename: 'dune.epub',
+		sizeBytes: 10,
+		receivedBytes: 0,
+		status: 'receiving',
+		...over
+	});
+
+	it('offers your libraries, defaulting to the only one', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockResolvedValueOnce(json(LOGIN))
+				.mockResolvedValueOnce(
+					json({
+						maxFileSizeBytes: 500,
+						chunkSizeBytes: 16,
+						supportedFormats: ['epub', 'pdf'],
+						canUploadToLibrary: true,
+						canUseBookDock: false,
+						libraries: [{ id: 3, name: 'Books', allowedFormats: ['epub'] }]
+					})
+				)
+		);
+		const bo = await load();
+		expect(await bo.uploadOptions()).toEqual({
+			maxBytes: 500,
+			formats: ['epub', 'pdf'],
+			libraries: [{ id: 3, name: 'Books', formats: ['epub'] }],
+			dock: false,
+			defaultLibraryId: 3
+		});
+	});
+
+	it('offers no libraries without upload permission', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockResolvedValueOnce(json(LOGIN))
+				.mockResolvedValueOnce(json({ canUploadToLibrary: false, canUseBookDock: true, libraries: [{ id: 3, name: 'B' }] }))
+		);
+		const bo = await load();
+		const o = await bo.uploadOptions();
+		expect(o.libraries).toEqual([]);
+		expect(o.dock).toBe(true);
+		expect(o.defaultLibraryId).toBeNull();
+	});
+
+	it('starts a session, sends a checksummed chunk at its offset, completes', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json(session()))
+			.mockResolvedValueOnce(json(session({ receivedBytes: 10 })))
+			.mockResolvedValueOnce(json(session({ receivedBytes: 10, status: 'processing' })));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+
+		const s = await bo.startUpload({ filename: 'dune.epub', size: 10, idempotencyKey: 'key-12345', target: { kind: 'library', libraryId: 3 } });
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+			filename: 'dune.epub',
+			sizeBytes: 10,
+			idempotencyKey: 'key-12345',
+			target: { kind: 'library', libraryId: 3 }
+		});
+
+		const bytes = new TextEncoder().encode('0123456789');
+		expect((await bo.sendChunk(s.id, 0, bytes, 'dune.epub')).received).toBe(10);
+		const [url, init] = fetchMock.mock.calls[2];
+		expect(url).toBe(`https://bo.test/api/v1/uploads/${s.id}/chunks`);
+		expect(init.body).toBeInstanceOf(FormData);
+		expect(init.headers['Content-Type']).toBeUndefined(); // fetch sets the boundary
+		expect(init.headers['upload-offset']).toBe('0');
+		expect(init.headers['upload-checksum']).toBe('84d89877f0d4041efb6bf91a16f0248f2fd573e6af05c19f96bedb9f882f7882');
+
+		expect((await bo.finishUpload(s.id)).status).toBe('processing');
+		expect(fetchMock.mock.calls[3][0]).toBe(`https://bo.test/api/v1/uploads/${s.id}/complete`);
+	});
+
+	it('reports why an upload was refused', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockResolvedValueOnce(json(LOGIN))
+				.mockResolvedValueOnce(json({ message: 'This library does not accept pdf files', code: 'UPLOAD_FORMAT_NOT_ALLOWED' }, 400))
+		);
+		const bo = await load();
+		await expect(
+			bo.startUpload({ filename: 'x.pdf', size: 1, idempotencyKey: 'key-12345', target: { kind: 'library', libraryId: 3 } })
+		).rejects.toMatchObject({ status: 400, code: 'UPLOAD_FORMAT_NOT_ALLOWED', message: 'This library does not accept pdf files' });
+	});
+});

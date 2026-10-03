@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
-import { BookOrbitError, listMyRequests, requestBook } from '$lib/server/books/bookorbit';
+import { listMyRequests, requestBook } from '$lib/server/books/bookorbit';
 import { addToWishlist } from '$lib/server/books/wishlist';
+import { relayRefusal } from '$lib/server/books/http';
 import type { RequestHandler } from './$types';
 
 /** Your book requests (BookOrbit fetches them: approval → Prowlarr → library). */
@@ -31,7 +32,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json(out);
 	} catch (e) {
 		// BookOrbit's refusals explain themselves ("Pick a destination library…").
-		if (e instanceof BookOrbitError && e.status < 500) error(e.status === 403 ? 403 : 400, e.message);
-		throw e;
+		relayRefusal(e);
 	}
 };

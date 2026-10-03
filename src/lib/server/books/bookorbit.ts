@@ -75,7 +75,7 @@ async function accessToken(): Promise<string> {
 	return fresh.token;
 }
 
-type ReqInit = { method?: string; body?: unknown; timeoutMs?: number };
+type ReqInit = { method?: string; body?: unknown; headers?: Record<string, string>; timeoutMs?: number };
 
 /** A refusal from BookOrbit, carrying its own explanation (it writes good ones —
  *  "Pick a destination library…") so the UI can show it instead of a status code. */
@@ -102,15 +102,18 @@ async function refusal(path: string, res: Response): Promise<BookOrbitError> {
 /** Authenticated BookOrbit request. Retries once on a 401 by re-logging in, so a
  *  server-side token expiry is invisible to the caller. */
 async function bo<T>(path: string, init: ReqInit = {}): Promise<T> {
+	// FormData goes as-is (fetch sets the multipart boundary); anything else is JSON.
+	const form = init.body instanceof FormData;
 	const send = async (token: string) =>
 		fetch(`${api()}${path}`, {
 			method: init.method ?? 'GET',
 			headers: {
 				Accept: 'application/json',
 				Authorization: `Bearer ${token}`,
-				...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {})
+				...(init.body !== undefined && !form ? { 'Content-Type': 'application/json' } : {}),
+				...init.headers
 			},
-			body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+			body: form ? (init.body as FormData) : init.body !== undefined ? JSON.stringify(init.body) : undefined,
 			signal: AbortSignal.timeout(init.timeoutMs ?? 15_000)
 		});
 
@@ -121,7 +124,8 @@ async function bo<T>(path: string, init: ReqInit = {}): Promise<T> {
 	}
 	if (!res.ok) throw await refusal(path, res);
 	if (res.status === 204) return undefined as T;
-	return res.json() as Promise<T>;
+	// A DELETE may answer with an empty body; anything else must be JSON.
+	return (init.method === 'DELETE' ? res.json().catch(() => undefined) : res.json()) as Promise<T>;
 }
 
 /* The library isn't huge and a per-status query filter wasn't exposed, so fetch
@@ -339,6 +343,125 @@ export async function cancelRequest(id: number): Promise<BookRequest> {
 	const out = mapBookRequest(await bo<unknown>(`/book-requests/${id}/cancel`, { method: 'POST' }));
 	requestCache.delete(scopeKey('books:requests'));
 	return out;
+}
+
+/* ── Uploads (what the old bookshelf app did) ─────────────────────────────────
+   BookOrbit's resumable upload sessions: open one for a file, send it in
+   chunks at stated offsets, then complete — BookOrbit validates, files and
+   imports it. Seek relays the chunks so the browser never holds a BookOrbit
+   token. Uploads land where *you* may put them, under your own account. */
+
+export type UploadDestination = { id: number; name: string; formats: string[] };
+export type UploadOptions = {
+	maxBytes: number;
+	/** What BookOrbit accepts, lower-case extensions. */
+	formats: string[];
+	libraries: UploadDestination[];
+	/** BookOrbit's Book Dock: an inbox to review metadata before filing. */
+	dock: boolean;
+	/** The library Seek will pick by default (your linked one, or the only one). */
+	defaultLibraryId: number | null;
+};
+
+export type UploadTarget = { kind: 'library'; libraryId: number } | { kind: 'book_dock' };
+export type UploadStatus = 'receiving' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'expired';
+export type UploadSession = {
+	id: string;
+	filename: string;
+	size: number;
+	received: number;
+	status: UploadStatus;
+	error: string | null;
+	bookId: number | null;
+};
+
+export function toUploadSession(raw: unknown): UploadSession {
+	const r = (raw ?? {}) as RawObj;
+	return {
+		id: s(r.id),
+		filename: s(r.filename),
+		size: n(r.sizeBytes),
+		received: n(r.receivedBytes),
+		status: (s(r.status) || 'receiving') as UploadStatus,
+		error: s(r.errorMessage) || null,
+		bookId: typeof r.bookId === 'number' ? r.bookId : null
+	};
+}
+
+/** What you can upload and where to. */
+export async function uploadOptions(): Promise<UploadOptions> {
+	const raw = await bo<RawObj>('/uploads/capabilities');
+	const libs = (Array.isArray(raw.libraries) ? raw.libraries : []) as RawObj[];
+	const libraries = raw.canUploadToLibrary
+		? libs.map((l) => ({
+				id: n(l.id),
+				name: s(l.name) || `Library ${n(l.id)}`,
+				formats: Array.isArray(l.allowedFormats) ? (l.allowedFormats as string[]) : []
+			}))
+		: [];
+	const mine = myLogin().libraryId;
+	const defaultLibraryId = libraries.find((l) => l.id === mine)?.id ?? (libraries.length === 1 ? libraries[0].id : null);
+	return {
+		maxBytes: n(raw.maxFileSizeBytes),
+		formats: Array.isArray(raw.supportedFormats) ? (raw.supportedFormats as string[]) : [],
+		libraries,
+		dock: Boolean(raw.canUseBookDock),
+		defaultLibraryId
+	};
+}
+
+/** Open an upload session for one file. The key makes a retried "start" (a
+ *  flaky phone connection) resume the same session instead of opening two. */
+export async function startUpload(file: {
+	filename: string;
+	size: number;
+	idempotencyKey: string;
+	target: UploadTarget;
+}): Promise<UploadSession> {
+	return toUploadSession(
+		await bo<unknown>('/uploads', {
+			method: 'POST',
+			body: { filename: file.filename, sizeBytes: file.size, idempotencyKey: file.idempotencyKey, target: file.target }
+		})
+	);
+}
+
+/** Send the bytes at `offset`. BookOrbit refuses a chunk at the wrong offset
+ *  or one whose checksum doesn't match, so nothing is silently corrupted. */
+export async function sendChunk(id: string, offset: number, bytes: Uint8Array, filename: string): Promise<UploadSession> {
+	const { createHash } = await import('node:crypto');
+	const form = new FormData();
+	form.append('file', new Blob([bytes as Uint8Array<ArrayBuffer>]), filename);
+	return toUploadSession(
+		await bo<unknown>(`/uploads/${id}/chunks`, {
+			method: 'POST',
+			body: form,
+			headers: {
+				'upload-offset': String(offset),
+				'upload-checksum': createHash('sha256').update(bytes).digest('hex')
+			},
+			timeoutMs: 120_000
+		})
+	);
+}
+
+/** All bytes are in: BookOrbit checks the file and starts importing it. */
+export async function finishUpload(id: string): Promise<UploadSession> {
+	const out = toUploadSession(await bo<unknown>(`/uploads/${id}/complete`, { method: 'POST', timeoutMs: 120_000 }));
+	dropBooksCache();
+	return out;
+}
+
+/** Where an upload is (importing finishes in the background after complete). */
+export async function uploadStatus(id: string): Promise<UploadSession> {
+	const out = toUploadSession(await bo<unknown>(`/uploads/${id}`));
+	if (out.status === 'completed') dropBooksCache();
+	return out;
+}
+
+/** Abandon an upload (BookOrbit discards what it received). */
+export async function cancelUpload(id: string): Promise<void> {
+	await bo<unknown>(`/uploads/${id}`, { method: 'DELETE' });
 }
 
 /** Raw cover bytes for a book, proxied to the browser (covers are auth-gated).

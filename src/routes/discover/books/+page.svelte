@@ -5,6 +5,7 @@
 	import Poster from '$lib/components/Poster.svelte';
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
+	import UploadSheet from '$lib/components/UploadSheet.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import { coverThumb, cardBadge, type BookCard, type ReadingBook } from '$lib/books';
 	import type { PageData } from './$types';
@@ -15,6 +16,7 @@
 	type Card = BookCard & { owned?: Owned | null; wished?: boolean };
 
 	let open = $state<Card | null>(null);
+	let uploading = $state(false);
 
 	/* ── Search the whole catalog. Debounced; a newer query cancels the older. ── */
 	let query = $state('');
@@ -54,7 +56,12 @@
 
 <div class="app">
 	<header>
-		<h1>Discover</h1>
+		<div class="titlerow">
+			<h1>Discover</h1>
+			{#if data.canUpload}
+				<button class="upload" onclick={() => (uploading = true)}>Upload</button>
+			{/if}
+		</div>
 		<div class="segments" role="tablist">
 			<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=tv', { noScroll: true })}>TV</button>
 			<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=movie', { noScroll: true })}>Movies</button>
@@ -133,9 +140,18 @@
 	/>
 {/if}
 
+{#if uploading}
+	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
+{/if}
+
 <style>
 	/* Identical to Discover's header so Books reads as its third segment. */
 	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+	.titlerow { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+	.upload {
+		min-height: 32px; padding: 0 14px; border-radius: 999px;
+		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--signal-solid);
+	}
 	.segments { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
 	.segments button {
 		min-height: 32px; padding: 0 18px; border-radius: 9px;

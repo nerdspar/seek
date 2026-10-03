@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
 import { discoverRails, hardcoverConfigured } from '$lib/server/books/hardcover';
 import { railsWithOwned } from '$lib/server/books/discovery';
+import { bookorbitLinked } from '$lib/server/books/bookorbit';
 import type { PageServerLoad } from './$types';
 
 /** Discover → Books: shelves from Hardcover's catalog, with the books you
@@ -9,5 +10,9 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async () => {
 	const prefs = await getPrefs();
 	if (!prefs.booksEnabled || !hardcoverConfigured()) redirect(303, '/discover');
-	return { rails: discoverRails().then(railsWithOwned) };
+	return {
+		rails: discoverRails().then(railsWithOwned),
+		// Uploading goes into BookOrbit as you, so it needs your login there.
+		canUpload: bookorbitLinked()
+	};
 };

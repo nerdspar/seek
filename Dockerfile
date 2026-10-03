@@ -27,6 +27,8 @@ ENV NODE_ENV=production
 # adapter-node reads these at runtime, so compose env alone configures the app.
 ENV PORT=8100
 ENV HOST=0.0.0.0
+# Book uploads arrive in 8 MB chunks (adapter-node's default cap is 512 KB).
+ENV BODY_SIZE_LIMIT=10M
 # The commit this image was built from, passed by CI. Surfaced at /api/health so
 # "am I running the latest?" has an answer. Defaults to "dev" for local builds.
 ARG GIT_SHA=dev
