@@ -6,6 +6,8 @@
 </script>
 
 <script lang="ts">
+	import NotLinked from '$lib/components/NotLinked.svelte';
+	import { notLinkedOf } from '$lib/notLinked';
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
@@ -143,10 +145,15 @@
 			<p class="count tnum">{upcomingCount} upcoming</p>
 			{/if}
 		{:catch err}
+			{@const missing = notLinkedOf(err)}
+			{#if missing}
+				<NotLinked service={missing} />
+			{:else}
 			<div class="empty">
 				<h2>Can't load the calendar</h2>
 				<p>{err.message}</p>
 			</div>
+			{/if}
 		{/await}
 	</main>
 

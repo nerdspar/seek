@@ -1,4 +1,6 @@
 <script lang="ts">
+	import NotLinked from '$lib/components/NotLinked.svelte';
+	import { notLinkedOf } from '$lib/notLinked';
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
@@ -104,7 +106,8 @@
 		</ul>
 		{/if}
 	{:catch err}
-		<div class="empty"><h2>Can't load your library</h2><p>{err.message}</p></div>
+		{@const missing = notLinkedOf(err)}
+		{#if missing}<NotLinked service={missing} />{:else}<div class="empty"><h2>Can't load your library</h2><p>{err.message}</p></div>{/if}
 	{/await}
 </main>
 

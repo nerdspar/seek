@@ -1,4 +1,6 @@
 <script lang="ts">
+	import NotLinked from '$lib/components/NotLinked.svelte';
+	import { notLinkedOf } from '$lib/notLinked';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import EpisodeSheet from '$lib/components/EpisodeSheet.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
@@ -472,8 +474,11 @@
 		/>
 	{/if}
 {:catch err}
+	{@const missing = notLinkedOf(err)}
 	<PageHeader title="" onback={() => history.back()} />
-	<main><div class="failed"><h2>Couldn't load that season</h2><p>{err.message}</p></div></main>
+	<main>
+		{#if missing}<NotLinked service={missing} />{:else}<div class="failed"><h2>Couldn't load that season</h2><p>{err.message}</p></div>{/if}
+	</main>
 {/await}
 
 {#if note && !toast}

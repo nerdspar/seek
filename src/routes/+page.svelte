@@ -10,6 +10,8 @@
 	import { pullToRefresh, PULL_THRESHOLD } from '$lib/pullToRefresh';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
+	import NotLinked from '$lib/components/NotLinked.svelte';
+	import { notLinkedOf, type LinkService } from '$lib/notLinked';
 	import FilterSheet, { type Filters } from '$lib/components/FilterSheet.svelte';
 	import { haptic } from '$lib/haptics';
 	import { queuedWrite } from '$lib/queue.svelte';
@@ -73,6 +75,8 @@
 	/** Null while the current filter combination is still loading. */
 	let resultCount = $state<number | null>(null);
 	let loadFailed = $state<string | null>(null);
+	/** Set when the load failed only because this person hasn't linked Floppy. */
+	let loadNotLinked = $state<LinkService | null>(null);
 
 	/* One effect owns the streamed page: a new payload supersedes any local
 	   ordering, drives the result count, and clears a stale error. data.page is a
@@ -80,6 +84,7 @@
 	$effect(() => {
 		resultCount = null;
 		loadFailed = null;
+		loadNotLinked = null;
 		let cancelled = false;
 		data.page
 			.then((p) => {
@@ -94,7 +99,8 @@
 			.catch((e) => {
 				if (cancelled) return;
 				resultCount = 0;
-				loadFailed = e instanceof Error ? e.message : String(e);
+				loadNotLinked = notLinkedOf(e);
+				loadFailed = e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e);
 			});
 		return () => {
 			cancelled = true;
@@ -504,7 +510,9 @@
 				{/each}
 			</ul>
 		{:then _resolved}
-		{#if loadFailed}
+		{#if loadNotLinked}
+			<NotLinked service={loadNotLinked} />
+		{:else if loadFailed}
 			<div class="empty">
 				<h2>Can't reach Floppy</h2>
 				<p>{loadFailed}</p>
@@ -541,7 +549,12 @@
 			<p class="count-note tnum">{rows.length} of {total}</p>
 		{/if}
 		{:catch err}
-			<div class="empty"><h2>Can't reach Floppy</h2><p>{err.message}</p></div>
+			{@const missing = notLinkedOf(err)}
+			{#if missing}
+				<NotLinked service={missing} />
+			{:else}
+				<div class="empty"><h2>Can't reach Floppy</h2><p>{err.message}</p></div>
+			{/if}
 		{/await}
 		</div>
 	</main>

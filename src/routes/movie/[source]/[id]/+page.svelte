@@ -1,4 +1,6 @@
 <script lang="ts">
+	import NotLinked from '$lib/components/NotLinked.svelte';
+	import { notLinkedOf } from '$lib/notLinked';
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
@@ -430,12 +432,17 @@
 		{/await}
 	</main>
 {:catch err}
+	{@const missing = notLinkedOf(err)}
 	<PageHeader title="" onback={() => history.back()} />
 	<main>
-		<div class="failed">
-			<h2>Couldn't load that film</h2>
-			<p>{err.message}</p>
-		</div>
+		{#if missing}
+			<NotLinked service={missing} />
+		{:else}
+			<div class="failed">
+				<h2>Couldn't load that film</h2>
+				<p>{err.message}</p>
+			</div>
+		{/if}
 	</main>
 {/await}
 

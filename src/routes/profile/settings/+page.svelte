@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import AccountSettings from '$lib/components/settings/AccountSettings.svelte';
+	import LinkedAccounts from '$lib/components/settings/LinkedAccounts.svelte';
 	import type { Accent, Appearance, MarkDirection, Prefs, ArrPref } from '$lib/server/prefs';
 	import { setNoticesEnabled } from '$lib/notices.svelte';
 	import { pushStatus, subscribe, unsubscribe, sendTest, type PushStatus } from '$lib/push';
@@ -239,6 +242,16 @@
 <PageHeader title="Settings" onback={() => goto('/profile')} />
 
 <main>
+
+	{#if page.url.searchParams.get('welcome')}
+		<p class="welcome">
+			Welcome to Seek. Link your own Floppy{data.account.bookorbit ? ' and BookOrbit' : ''} under
+			<a href="#accounts">Your accounts</a> — that's where your shows{data.account.bookorbit ? ' and books' : ''}
+			come from.
+		</p>
+	{/if}
+
+	<AccountSettings account={data.account} />
 
 	<h2 class="group">Watchlist</h2>
 
@@ -508,13 +521,15 @@
 
 	<h2 class="group">Connections</h2>
 
+	<LinkedAccounts account={data.account} />
+
 	{#if anyArr}
 		<section>
 			<h3>Send to Sonarr / Radarr</h3>
 
 			<!-- Master switch for the download-management layer. Off leaves just the
 			     "Add to Sonarr/Radarr" button and hides every edit / search / file
-			     control across the app. Seek-wide for now (per-user with household). -->
+			     control across the app. Per person (a household member starts off). -->
 			<button
 				class="row"
 				role="switch"
@@ -735,4 +750,11 @@
 	.reset { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
 
 	.error { margin: 8px 0 0; font-size: 13px; color: #ff8a8a; }
+
+	.welcome {
+		margin: 4px 0 18px; padding: 12px 14px;
+		border-radius: var(--radius); background: var(--surface-raised);
+		font-size: 14px; line-height: 1.45;
+	}
+	.welcome a { color: var(--signal-solid); font-weight: 600; }
 </style>
