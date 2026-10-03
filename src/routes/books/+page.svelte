@@ -21,6 +21,43 @@
 	let open = $state<ReadingBook | null>(null);
 	let openWish = $state<WishBook | null>(null);
 
+	/* ── Your yearly goal: tap to change it (or set one) ─────────────────── */
+	type Goal = { goalBooks: number; completedBooks: number; year: number };
+	let goalSaved = $state<Goal | null>(null);
+	let editingGoal = $state(false);
+	let goalInput = $state('');
+	let goalError = $state<string | null>(null);
+	let goalBusy = $state(false);
+
+	function editGoal(current: Goal | null) {
+		goalInput = current?.goalBooks ? String(current.goalBooks) : '';
+		goalError = null;
+		editingGoal = true;
+	}
+	async function saveGoal() {
+		const books = Number(goalInput);
+		if (!Number.isInteger(books) || books < 1 || books > 1000) {
+			goalError = 'Pick a number of books between 1 and 1000.';
+			return;
+		}
+		goalBusy = true;
+		goalError = null;
+		try {
+			const res = await fetch('/api/books/goal', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ books })
+			});
+			if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { message?: string } | null)?.message ?? `HTTP ${res.status}`);
+			goalSaved = (await res.json()).goal;
+			editingGoal = false;
+		} catch (e) {
+			goalError = `Couldn't save — ${(e as Error).message}`;
+		} finally {
+			goalBusy = false;
+		}
+	}
+
 	/* Your requests arrive on their own (they're a nicety — BookOrbit may be slow). */
 	let requests = $state<BookRequest[]>([]);
 	$effect(() => {
@@ -82,16 +119,32 @@
 	</header>
 
 	<main use:tabReselect={{ tab: 'watchlist' }}>
-		{#await data.goal then goal}
-			{#if goal && goal.goalBooks > 0}
+		{#await data.goal then loaded}
+			{@const goal = goalSaved ?? loaded}
+			{#if editingGoal}
+				<form class="goal" onsubmit={(e) => { e.preventDefault(); void saveGoal(); }}>
+					<label class="goaltext" for="goal-books">
+						<span class="label">Books to read in {goal?.year ?? new Date().getFullYear()}</span>
+					</label>
+					<div class="goaledit">
+						<!-- svelte-ignore a11y_autofocus -->
+						<input id="goal-books" type="number" inputmode="numeric" min="1" max="1000" bind:value={goalInput} autofocus />
+						<button type="submit" class="save" disabled={goalBusy}>Save</button>
+						<button type="button" class="cancel" onclick={() => (editingGoal = false)}>Cancel</button>
+					</div>
+					{#if goalError}<p class="goalerr">{goalError}</p>{/if}
+				</form>
+			{:else if goal && goal.goalBooks > 0}
 				{@const done = Math.min(goal.completedBooks, goal.goalBooks)}
-				<section class="goal">
+				<button class="goal" onclick={() => editGoal(goal)} aria-label="Change your reading goal">
 					<span class="goaltext">
 						<span class="label">{goal.year} reading goal</span>
 						<span class="hint tnum">{goal.completedBooks} of {goal.goalBooks} books</span>
 					</span>
 					<span class="track"><span class="fill" style:width={`${(done / goal.goalBooks) * 100}%`}></span></span>
-				</section>
+				</button>
+			{:else}
+				<button class="setgoal" onclick={() => editGoal(goal)}>+ Set a reading goal for {goal?.year ?? new Date().getFullYear()}</button>
 			{/if}
 		{/await}
 
@@ -222,6 +275,21 @@
 	.hint { font-size: 12.5px; color: var(--text-dim); }
 	.goal .track { height: 6px; border-radius: 3px; background: var(--surface-raised); overflow: hidden; }
 	.goal .fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
+	button.goal { width: 100%; text-align: left; }
+	.goaledit { display: flex; gap: 8px; }
+	.goaledit input {
+		flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: none; border-radius: 10px;
+		background: var(--surface-raised); color: var(--text); font: inherit; font-size: 16px; outline: none;
+	}
+	.goaledit button { flex: none; height: 40px; padding: 0 14px; border-radius: 10px; font-size: 14px; font-weight: 650; }
+	.goaledit .save { background: var(--signal); color: #fff; }
+	.goaledit .save:disabled { opacity: 0.6; }
+	.goaledit .cancel { background: var(--surface-raised); color: var(--text-dim); }
+	.goalerr { margin: 0; font-size: 12.5px; color: #ff8a8a; }
+	.setgoal {
+		display: block; width: 100%; margin: 6px 0 18px; padding: 12px 14px; border-radius: 14px;
+		background: var(--surface); text-align: left; font-size: 14px; font-weight: 600; color: var(--signal-solid);
+	}
 
 	.group { margin-bottom: 22px; }
 	.group h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }

@@ -207,6 +207,19 @@ export type StatsSummary = {
 /** This year's reading goal (books). */
 export const getReadingGoal = () => bo<ReadingGoal>('/dashboard/widgets/reading-goal');
 
+/**
+ * Set your yearly goal (books). BookOrbit keeps it in your dashboard settings,
+ * and replaces that object whole on save — so read it and change just the goal,
+ * leaving your BookOrbit dashboard layout as it was.
+ */
+export async function setReadingGoal(books: number): Promise<ReadingGoal> {
+	const me = await bo<{ settings?: { dashboardConfig?: Record<string, unknown> } }>('/auth/me');
+	const dashboardConfig = { ...(me.settings?.dashboardConfig ?? {}), readingGoal: books };
+	await bo<unknown>('/users/me/settings', { method: 'PATCH', body: { settings: { dashboardConfig } } });
+	invalidate('books:snapshot');
+	return getReadingGoal();
+}
+
 /** Headline reading stats for the Profile books section. */
 export const getStatsSummary = () => bo<StatsSummary>('/user-statistics/summary');
 
@@ -530,6 +543,40 @@ export async function shelfBooks(id: number): Promise<ReadingBook[]> {
 	}
 	const seen = new Set<number>();
 	return items.map(mapReadingBook).filter((b) => !seen.has(b.id) && seen.add(b.id));
+}
+
+/* ── Send to Kindle (BookOrbit's email-to-device) ─────────────────────────────
+   Your devices are the email recipients you set up in BookOrbit (a Kindle's
+   @kindle.com address, a Kobo, a person). BookOrbit picks the right format,
+   converts if it must, and mails it. */
+
+export type Device = { id: number; name: string; kind: string | null; isDefault: boolean };
+export type SendState = { status: 'pending' | 'sent' | 'failed'; to: string; error: string | null; at: string };
+
+export async function listDevices(): Promise<Device[]> {
+	const raw = await bo<RawObj[]>('/email/recipients');
+	return raw
+		.map((r) => ({ id: n(r.id), name: s(r.name) || s(r.email), kind: s(r.deviceType) || null, isDefault: Boolean(r.isDefault) }))
+		.sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+}
+
+/** The last time this book was sent, and how that went. */
+export async function lastSend(bookId: number): Promise<SendState | null> {
+	const raw = await bo<RawObj[] | { items?: RawObj[] }>(`/email/log?bookId=${bookId}&size=1`);
+	const row = (Array.isArray(raw) ? raw : (raw.items ?? []))[0];
+	if (!row) return null;
+	const status = s(row.status);
+	return {
+		status: status === 'sent' || status === 'failed' ? status : 'pending',
+		to: s(row.toName) || s(row.toEmail),
+		error: s(row.errorMessage) || null,
+		at: s(row.sentAt) || s(row.createdAt)
+	};
+}
+
+/** Queue the book to one of your devices. */
+export async function sendToDevice(bookId: number, deviceId: number): Promise<void> {
+	await bo<unknown>('/email/send', { method: 'POST', body: { bookIds: [bookId], recipientIds: [deviceId] } });
 }
 
 /** Raw cover bytes for a book, proxied to the browser (covers are auth-gated).

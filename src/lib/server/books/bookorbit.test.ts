@@ -596,3 +596,57 @@ describe('shelves', () => {
 		expect(fetchMock.mock.calls[2][0]).toBe('https://bo.test/api/v1/collections/5/books?page=1&size=100');
 	});
 });
+
+describe('goal and send to device', () => {
+	beforeEach(() => {
+		process.env.BOOKORBIT_URL = 'https://bo.test';
+		process.env.BOOKORBIT_USER = 'svc';
+		process.env.BOOKORBIT_PASSWORD = 'pw';
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		delete process.env.BOOKORBIT_URL;
+		delete process.env.BOOKORBIT_USER;
+		delete process.env.BOOKORBIT_PASSWORD;
+	});
+
+	it('changes only the goal, keeping the rest of your BookOrbit dashboard', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(json({ settings: { dashboardConfig: { widgets: [{ id: 'streak' }], readingGoal: 12 } } }))
+			.mockResolvedValueOnce(json({}))
+			.mockResolvedValueOnce(json({ goalBooks: 30, completedBooks: 4, year: 2026 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect(await bo.setReadingGoal(30)).toEqual({ goalBooks: 30, completedBooks: 4, year: 2026 });
+		const [url, init] = fetchMock.mock.calls[2];
+		expect(url).toBe('https://bo.test/api/v1/users/me/settings');
+		expect(init.method).toBe('PATCH');
+		expect(JSON.parse(init.body)).toEqual({ settings: { dashboardConfig: { widgets: [{ id: 'streak' }], readingGoal: 30 } } });
+	});
+
+	it('lists devices (default first), reports the last send, and sends to one', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(json(LOGIN))
+			.mockResolvedValueOnce(
+				json([
+					{ id: 1, name: 'Kobo', email: 'k@x', deviceType: 'kobo', isDefault: false },
+					{ id: 2, name: 'Kindle', email: 'me@kindle.com', deviceType: 'kindle', isDefault: true }
+				])
+			)
+			.mockResolvedValueOnce(json([{ status: 'failed', toName: 'Kindle', errorMessage: 'Too large', createdAt: '2026-10-01' }]))
+			.mockResolvedValueOnce(json({ queued: 1 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const bo = await load();
+		expect((await bo.listDevices()).map((d) => [d.id, d.kind])).toEqual([
+			[2, 'kindle'],
+			[1, 'kobo']
+		]);
+		expect(await bo.lastSend(41)).toEqual({ status: 'failed', to: 'Kindle', error: 'Too large', at: '2026-10-01' });
+		expect(fetchMock.mock.calls[2][0]).toBe('https://bo.test/api/v1/email/log?bookId=41&size=1');
+		await bo.sendToDevice(41, 2);
+		expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ bookIds: [41], recipientIds: [2] });
+	});
+});

@@ -212,6 +212,51 @@
 		}
 	}
 
+	/* ── Send to Kindle (or any device you set up in BookOrbit) ────────────── */
+	type Device = { id: number; name: string; kind: string | null };
+	type Sent = { status: 'pending' | 'sent' | 'failed'; to: string; error: string | null; at: string };
+	let devices = $state<Device[] | null>(null);
+	let lastSent = $state<Sent | null>(null);
+	let sending = $state<number | null>(null);
+
+	$effect(() => {
+		const id = ownedId;
+		if (!id) return;
+		let cancelled = false;
+		fetch(`/api/books/send?bookId=${id}`)
+			.then((r) => (r.ok ? r.json() : { devices: [], last: null }))
+			.then((b) => {
+				if (cancelled) return;
+				devices = b.devices;
+				lastSent = b.last;
+			})
+			.catch(() => !cancelled && (devices = []));
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	async function send(d: Device) {
+		if (!ownedId || sending) return;
+		sending = d.id;
+		saveError = null;
+		try {
+			const res = await fetch('/api/books/send', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ bookId: ownedId, deviceId: d.id })
+			});
+			if (!res.ok) throw new Error(await failure(res));
+			lastSent = { status: 'pending', to: d.name, error: null, at: new Date().toISOString() };
+		} catch (e) {
+			saveError = `Couldn't send — ${(e as Error).message}`;
+		} finally {
+			sending = null;
+		}
+	}
+	const sentWhen = (iso: string) =>
+		iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+
 	/* ── Wishlist: wanting a book you don't own (Seek's own, per person) ──── */
 	let wishPicked = $state<boolean | null>(null);
 	const wished = $derived(wishPicked ?? detail?.wished ?? card?.wished ?? false);
@@ -372,6 +417,29 @@
 					</div>
 				</div>
 			{/if}
+			{#if devices?.length}
+				<div class="shelves">
+					<span class="shelfhead">Send to</span>
+					<div class="chips">
+						{#each devices as d (d.id)}
+							<button class="chip" disabled={sending !== null} onclick={() => send(d)}>
+								{sending === d.id ? 'Sending…' : d.name}
+							</button>
+						{/each}
+					</div>
+					{#if lastSent}
+						<p class="sent" class:bad={lastSent.status === 'failed'}>
+							{lastSent.status === 'pending'
+								? `On its way to ${lastSent.to}`
+								: lastSent.status === 'sent'
+									? `Sent to ${lastSent.to} · ${sentWhen(lastSent.at)}`
+									: `Couldn't send to ${lastSent.to}${lastSent.error ? ` — ${lastSent.error}` : ''}`}
+						</p>
+					{/if}
+				</div>
+			{:else if devices}
+				<p class="sent">To send books to your Kindle, add it in BookOrbit → Settings → Email.</p>
+			{/if}
 			{#if saveError}<p class="err">{saveError}</p>{/if}
 		{:else if resolvedId && !library}
 			<button class="wish" class:on={wished} aria-pressed={wished} disabled={saving} onclick={toggleWish}>
@@ -478,6 +546,8 @@
 		flex: 1; min-width: 0; height: 32px; padding: 0 12px; border: none; border-radius: 999px;
 		background: var(--surface-raised); color: var(--text); font: inherit; font-size: 16px; outline: none;
 	}
+	.sent { margin: 8px 0 0; font-size: 12.5px; color: var(--text-dim); }
+	.sent.bad { color: #ff8a8a; }
 	.get { justify-content: center; }
 	.get button { flex: 1; color: var(--text); }
 	.req {
