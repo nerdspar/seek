@@ -93,6 +93,38 @@ export const MIGRATIONS: string[] = [
 		added_at      TEXT NOT NULL,
 		PRIMARY KEY (user_id, hardcover_id)
 	);
+	`,
+	// v3 — shared shows: watching one credits everyone in the household.
+	`
+	CREATE TABLE shared_shows (
+		household_id  INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		source        TEXT NOT NULL,
+		media_id      TEXT NOT NULL,
+		title         TEXT,
+		added_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+		created_at    TEXT NOT NULL,
+		PRIMARY KEY (household_id, source, media_id)
+	);
+	-- One row per play already carried from one person to another (or found to be
+	-- there already), so the reconciler never posts the same play twice.
+	CREATE TABLE mirror_log (
+		origin_user      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		origin_instance  INTEGER NOT NULL,
+		target_user      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		source           TEXT NOT NULL,
+		media_id         TEXT NOT NULL,
+		season           INTEGER NOT NULL,
+		episode          INTEGER NOT NULL,
+		played_at        TEXT NOT NULL,
+		outcome          TEXT NOT NULL,
+		created_at       TEXT NOT NULL,
+		PRIMARY KEY (origin_user, origin_instance, target_user)
+	);
+	-- How far back each person's history has been checked.
+	CREATE TABLE mirror_state (
+		user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		scanned_at  TEXT NOT NULL
+	);
 	`
 ];
 

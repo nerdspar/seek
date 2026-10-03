@@ -9,6 +9,7 @@ import type { WatchlistPage } from '$lib/server/watchlist';
 import { Status } from '$lib/types';
 import type { WatchlistRow } from '$lib/types';
 import type { MediaType } from '$lib/types';
+import { afterMark } from '$lib/server/household/run';
 import type { RequestHandler } from './$types';
 
 /**
@@ -139,6 +140,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			if (isMovie) await markMovieWatched(source, mediaId);
 			else await markEpisodeWatched(source, mediaId, season as number, episode as number);
 			markApplied(key);
+			// A shared show: carry the play to the rest of the household shortly.
+			if (!isMovie) afterMark(source, mediaId);
 		}
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) {

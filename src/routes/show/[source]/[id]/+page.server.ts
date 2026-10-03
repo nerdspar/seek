@@ -6,6 +6,9 @@ import { getItemTags, JOINT_TAG } from '$lib/server/tags';
 import { getShowExtras } from '$lib/server/tmdb';
 import { memo } from '$lib/server/memo';
 import type { PageServerLoad } from './$types';
+import { currentUser } from '$lib/server/userctx';
+import { mirrorMembers } from '$lib/server/household/mirror';
+import { isShared } from '$lib/server/household/shared';
 
 export const load: PageServerLoad = async ({ params }) => {
 	/* Streamed rather than awaited.
@@ -36,9 +39,18 @@ export const load: PageServerLoad = async ({ params }) => {
 		.then((d) => getTracking('tv', params.source, params.id, d.title))
 		.catch(() => UNTRACKED);
 
-	const joint = getItemTags('tv', params.source, params.id)
-		.then((tags) => tags.includes(JOINT_TAG))
-		.catch(() => false);
+	/* With two people on Floppy, "together" *is* the household's shared list
+	   (plays mirror between you; everyone's tag is kept in step with it), so a
+	   show your partner shared reads as together for you too. */
+	const me = currentUser();
+	const members = me ? mirrorMembers(me.householdId) : [];
+	const mirroring = members.length >= 2;
+	const shared = mirroring && me ? isShared(me.householdId, params.source, params.id) : false;
+	const joint = mirroring
+		? Promise.resolve(shared)
+		: getItemTags('tv', params.source, params.id)
+				.then((tags) => tags.includes(JOINT_TAG))
+				.catch(() => false);
 
 	return {
 		// Composed with tracking.floppyPath, which carries the slug Floppy requires.
@@ -49,6 +61,8 @@ export const load: PageServerLoad = async ({ params }) => {
 		extras,
 		tracking,
 		joint,
+		// Who "together" shares with, when mirroring is on (else null).
+		sharedWith: mirroring ? members.filter((m) => m.id !== me?.id).map((m) => m.name) : null,
 		seasonArtwork: prefs.seasonArtwork,
 		companyTracking: prefs.companyTracking
 	};

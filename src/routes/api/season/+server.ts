@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { expire, invalidate } from '$lib/server/memo';
 import { alreadyApplied, markApplied } from '$lib/server/idempotency';
+import { afterMark } from '$lib/server/household/run';
 import type { RequestHandler } from './$types';
 
 type Body = { source?: string; mediaId?: string; season?: number; episodes?: number; watched?: number };
@@ -105,6 +106,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Recorded only after the whole fill succeeds — a partial run stays retryable.
 	markApplied(key);
 	bustSeasonCaches(source, mediaId, season);
+	afterMark(source, mediaId);
 	return json({ ok: true, marked });
 };
 

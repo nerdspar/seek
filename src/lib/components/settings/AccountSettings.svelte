@@ -79,6 +79,28 @@
 		}
 	}
 
+	/* ── Shared shows (household mirroring) ───────────────────────────────── */
+	type SharedState = {
+		mirroring: boolean;
+		waitingOn: string[];
+		shows: { source: string; mediaId: string; title: string | null }[];
+	};
+	let sharedShows = $state<SharedState | null>(null);
+	$effect(() => {
+		fetch('/api/household/shared')
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => (sharedShows = d))
+			.catch(() => {});
+	});
+	async function unshareShow(show: { source: string; mediaId: string }) {
+		try {
+			await call('/api/household/shared', 'DELETE', show);
+			if (sharedShows) sharedShows.shows = sharedShows.shows.filter((s) => s.mediaId !== show.mediaId || s.source !== show.source);
+		} catch (e) {
+			memberMsg = (e as Error).message;
+		}
+	}
+
 	/* ── Household (owner) ──────────────────────────────────────────────── */
 	let inviteEmail = $state('');
 	let inviteBusy = $state(false);
@@ -260,6 +282,36 @@
 	{/if}
 	{#if memberMsg}<p class="hint msg">{memberMsg}</p>{/if}
 </section>
+
+{#if sharedShows && account.household.members.length > 1}
+	<section>
+		<h3>Shared shows</h3>
+		{#if !sharedShows.mirroring}
+			<p class="hint">
+				Mark a show <strong>Together</strong> and a play by either of you counts for both — once
+				{sharedShows.waitingOn.join(' and ')}
+				{sharedShows.waitingOn.length === 1 && sharedShows.waitingOn[0] !== 'you' ? 'links' : 'link'} a Floppy account under Connections.
+			</p>
+		{:else if !sharedShows.shows.length}
+			<p class="hint">
+				None yet. Mark a show <strong>Together</strong> on its page and plays of it count for you both —
+				including ones Jellyfin logs. Episodes one of you has already seen are filled in for the other.
+			</p>
+		{:else}
+			<ul class="members">
+				{#each sharedShows.shows as sh (sh.source + sh.mediaId)}
+					<li>
+						<a class="rowtext" href={`/show/${sh.source}/${sh.mediaId}`}>
+							<span class="label">{sh.title ?? `Show ${sh.mediaId}`}</span>
+						</a>
+						<button class="link" onclick={() => unshareShow(sh)}>Stop sharing</button>
+					</li>
+				{/each}
+			</ul>
+			<p class="hint msg">Plays of these count for everyone here. Stopping keeps what's already been shared.</p>
+		{/if}
+	</section>
+{/if}
 
 {#if isOwner}
 	<section>

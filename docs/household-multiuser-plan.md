@@ -115,6 +115,29 @@ request. `FLOPPY_TOKEN` stays as the fallback / your own token.
 
 ---
 
+### As built (2026-10-03)
+
+- **Reconciler reads `/api/v1/history/?flat=1`, not `/sync/changes/`.** Probed
+  live: the sync feed answers but is empty (`newest_sequence: null`) on the
+  owner's token, while history has every play with `played_at`, `instance_id`
+  and `entry_source` (e.g. `jellyfin`), filterable by show (`source`+`media_id`).
+  Each pass re-reads history back to 2 days before the last scan.
+- **Idempotency without Floppy's help.** The watch POST appends (no upsert), so
+  before carrying a play at time T the partner's own plays of that episode are
+  checked: one within ±12h means they have credit already (watched together,
+  a previous run, a timed-out POST that landed). That check alone makes runs
+  idempotent and stops echoes; `mirror_log` (v3) just saves API calls.
+  A rewatch long after the partner's viewing does carry over.
+- **"Together" is the shared list.** Once two people have Floppy linked, the
+  show page's Together/Alone chip shares/unshares (and keeps everyone's `joint`
+  tag in step, so filters agree). First share runs the backfill (episodes the
+  other hasn't seen at all). Settings → Household lists shared shows.
+- Seek marks nudge a debounced pass (~4s); the timer runs every 10 minutes.
+  One pass at a time per household.
+- **Not mirrored:** unmarking. A carried play is the partner's history; theirs to
+  undo. Untested against live Floppy writes (no second account yet) — the first
+  real share is the end-to-end test; watch the `[mirror]` logs.
+
 ## Phases (each shippable + tested)
 
 - **A — Data + auth core:** SQLite layer + schema/migrations; scrypt passwords;

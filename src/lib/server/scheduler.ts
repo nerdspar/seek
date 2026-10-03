@@ -13,6 +13,7 @@ import { jellyfinConfigured } from './jellyfin';
 import { syncAnimeTags } from './anime-sync';
 import { listUsers, type User } from './users';
 import { runAs, NotLinkedError } from './userctx';
+import { startMirroring } from './household/run';
 
 /* Every job here is per person: it runs once for each account, *as* that
    account, so it reads their prefs, their calendar and their devices. */
@@ -49,6 +50,9 @@ let started = false;
 
 export function startScheduler(): void {
 	if (started) return;
+	// Shared-show mirroring is independent of push and Jellyfin; with fewer than
+	// two linked people (or nothing shared) each pass is a couple of DB reads.
+	startMirroring();
 	// Start if either job has something to do.
 	if (!pushConfigured() && !jellyfinConfigured()) return;
 	started = true;

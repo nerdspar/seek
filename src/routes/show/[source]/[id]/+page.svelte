@@ -346,7 +346,7 @@
 	let jointEdit = $state<boolean | null>(null);
 	let jointBusy = $state(false);
 
-	async function toggleJoint(current: boolean) {
+	async function toggleJoint(current: boolean, showTitle: string) {
 		if (jointBusy) return;
 		const before = jointEdit;
 		const next = !current;
@@ -360,7 +360,8 @@
 					mediaType: 'tv',
 					source: data.source,
 					mediaId: data.mediaId,
-					joint: next
+					joint: next,
+					title: showTitle
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
@@ -487,8 +488,11 @@
 						busy={trackBusy || jointBusy}
 						onmain={() => (statusOpen = true)}
 						onrating={() => (ratingOpen = true)}
-						oncompany={() => toggleJoint(joint)}
+						oncompany={() => toggleJoint(joint, show.title)}
 					/>
+					{#if joint && data.sharedWith?.length && data.companyTracking}
+						<p class="sharednote">Shared with {data.sharedWith.join(' & ')} — a play by either of you counts for both.</p>
+					{/if}
 				{/await}
 			{:else}
 				<!-- The one thing worth doing on a show you do not have, so it gets the
@@ -702,6 +706,7 @@
 
 	/* The one action worth taking on a show you do not have, so it takes the
 	   full width and the accent. */
+	.sharednote { margin: 8px 0 0; font-size: 12.5px; color: var(--text-dim); }
 	.add {
 		display: flex; align-items: center; justify-content: center; gap: 9px;
 		width: 100%; min-height: var(--tap); margin: 0 0 16px;
