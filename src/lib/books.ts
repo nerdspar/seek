@@ -34,7 +34,22 @@ export type ReadingBook = {
 	/** Link to Hardcover, when BookOrbit matched an edition — lets Discover mark
 	 *  a result as already owned. */
 	hardcoverId: number | null;
+	genres: string[];
+	/** What kinds of file BookOrbit holds for it. */
+	formats: BookFormat[];
+	addedAt: string | null;
+	/** When your status last changed, and when you started / finished it. */
+	statusAt: string | null;
+	startedAt: string | null;
+	finishedAt: string | null;
 };
+
+export type BookFormat = 'ebook' | 'audiobook' | 'comic';
+
+const AUDIO = new Set(['m4b', 'm4a', 'mp3', 'opus', 'ogg', 'flac', 'aac', 'wav']);
+const COMIC = new Set(['cbz', 'cbr', 'cb7', 'cbt']);
+export const formatOf = (ext: string): BookFormat =>
+	AUDIO.has(ext.toLowerCase()) ? 'audiobook' : COMIC.has(ext.toLowerCase()) ? 'comic' : 'ebook';
 
 /** A discovery result from Hardcover — a book you may not own yet. */
 export type BookCard = {
@@ -47,6 +62,19 @@ export type BookCard = {
 	/** Community rating, 0..5, or null. */
 	rating: number | null;
 };
+
+/** Your copy of a discovery result, when it's in your library. */
+export type OwnedSummary = {
+	bookId: number;
+	status: BookReadStatus;
+	progress: number | null;
+	rating?: number | null;
+	pages?: number | null;
+};
+
+/** A discovery result as the UI gets it: with your library copy, or your own
+ *  status on it, when there is one. */
+export type DiscoveryCard = BookCard & { owned?: OwnedSummary | null; mine?: BookReadStatus | null };
 
 /** A discovery shelf (Popular this year, New releases, …). */
 export type BookRail = { key: string; title: string; subtitle: string; books: BookCard[] };
@@ -77,11 +105,12 @@ const STATUS_LABELS: Record<BookReadStatus, string> = {
 
 export const statusLabel = (s: BookReadStatus) => STATUS_LABELS[s];
 
-/** The badge on a discovery cover: your status if you own it, else whether
- *  it's on your wishlist, else nothing. */
-export function cardBadge(c: { owned?: { status: BookReadStatus } | null; wished?: boolean }): string | null {
+/** The badge on a discovery cover: your status if it's in your library, else
+ *  your status on it as one of your own books, else nothing. A library book
+ *  you haven't started shows "In your library". */
+export function cardBadge(c: { owned?: { status: BookReadStatus } | null; mine?: BookReadStatus | null }): string | null {
 	if (c.owned) return statusLabel(c.owned.status);
-	return c.wished ? 'Want to read' : null;
+	return c.mine ? statusLabel(c.mine) : null;
 }
 
 /** The reading list's sections, in order. Books you own but haven't started
@@ -104,57 +133,227 @@ export function groupReading(
 	})).filter((s) => s.books.length);
 }
 
-/** A wishlisted book — wanted, not owned (Seek's own list, per person). */
-export type WishBook = BookCard & { addedAt: string };
+/* ── Your books outside the library ─────────────────────────────────────────
+   A book you track that isn't in BookOrbit (a physical copy, a loan, one you
+   want) — Seek keeps your status, rating and page for it. */
 
-/** Wishlist entries you still don't own. Once a book lands in the library the
- *  library copy (with your real status) is the one to show. */
-export function unownedWishes(wishlist: WishBook[], library: ReadingBook[]): WishBook[] {
-	const ids = new Set(library.map((b) => b.hardcoverId).filter(Boolean));
-	const keys = new Set(library.map((b) => bookKey(b.title, b.authors[0])));
-	return wishlist.filter((w) => !ids.has(w.hardcoverId) && !keys.has(bookKey(w.title, w.author)));
-}
+/** The statuses a book outside the library can have ('unread' means "in the
+ *  library, not started", which doesn't apply). */
+export type EntryStatus = Exclude<BookReadStatus, 'unread' | 'rereading' | 'skimmed'>;
+export const ENTRY_STATUSES: EntryStatus[] = ['want_to_read', 'reading', 'on_hold', 'read', 'abandoned'];
 
-/** Wishes whose book is now in the library, paired with the library copy. */
-export function arrivedWishes(
-	wishlist: WishBook[],
-	library: ReadingBook[]
-): { wish: WishBook; book: ReadingBook }[] {
+export type BookEntry = BookCard & {
+	pages: number | null;
+	status: EntryStatus;
+	/** Your rating, 1–5. */
+	myRating: number | null;
+	progressPages: number | null;
+	startedAt: string | null;
+	finishedAt: string | null;
+	addedAt: string;
+	updatedAt: string;
+};
+
+/* ── One list: library books and your own entries ───────────────────────────── */
+
+/** A book on your reading list, wherever its state lives. */
+export type MyBook = {
+	/** Unique across both sources: `lib:<bookorbit id>` or `hc:<hardcover id>`. */
+	key: string;
+	source: 'library' | 'entry';
+	libraryId: number | null;
+	hardcoverId: number | null;
+	title: string;
+	authors: string[];
+	coverUrl: string | null;
+	year: number | null;
+	status: BookReadStatus;
+	/** Your rating, 1–5. */
+	myRating: number | null;
+	pages: number | null;
+	/** 0..1, or null when there's nothing to show. */
+	progress: number | null;
+	seriesName: string | null;
+	seriesIndex: number | null;
+	genres: string[];
+	formats: BookFormat[];
+	addedAt: string | null;
+	/** Last time your status changed — "recently active" ordering. */
+	activeAt: string | null;
+	startedAt: string | null;
+	finishedAt: string | null;
+};
+
+export const fromLibrary = (b: ReadingBook): MyBook => ({
+	key: `lib:${b.id}`,
+	source: 'library',
+	libraryId: b.id,
+	hardcoverId: b.hardcoverId,
+	title: b.title,
+	authors: b.authors,
+	coverUrl: b.coverUrl,
+	year: b.year,
+	status: b.status,
+	myRating: b.rating,
+	pages: b.pageCount,
+	progress: b.progress,
+	seriesName: b.seriesName,
+	seriesIndex: b.seriesIndex,
+	genres: b.genres,
+	formats: b.formats,
+	addedAt: b.addedAt,
+	activeAt: b.statusAt ?? b.addedAt,
+	startedAt: b.startedAt,
+	finishedAt: b.finishedAt
+});
+
+export const fromEntry = (e: BookEntry): MyBook => ({
+	key: `hc:${e.hardcoverId}`,
+	source: 'entry',
+	libraryId: null,
+	hardcoverId: e.hardcoverId,
+	title: e.title,
+	authors: e.author ? [e.author] : [],
+	coverUrl: e.coverUrl,
+	year: e.year,
+	status: e.status,
+	myRating: e.myRating,
+	pages: e.pages,
+	progress: e.pages && e.progressPages != null ? Math.min(1, e.progressPages / e.pages) : null,
+	seriesName: null,
+	seriesIndex: null,
+	genres: [],
+	formats: [],
+	addedAt: e.addedAt,
+	activeAt: e.updatedAt,
+	startedAt: e.startedAt,
+	finishedAt: e.finishedAt
+});
+
+/** Your entries matched to the library copy that has since arrived. */
+export function arrivedEntries(entries: BookEntry[], library: ReadingBook[]): { entry: BookEntry; book: ReadingBook }[] {
 	const byHc = new Map(library.filter((b) => b.hardcoverId).map((b) => [b.hardcoverId!, b]));
 	const byKey = new Map(library.map((b) => [bookKey(b.title, b.authors[0]), b]));
-	return wishlist.flatMap((wish) => {
-		const book = byHc.get(wish.hardcoverId) ?? byKey.get(bookKey(wish.title, wish.author));
-		return book ? [{ wish, book }] : [];
+	return entries.flatMap((entry) => {
+		const book = byHc.get(entry.hardcoverId) ?? byKey.get(bookKey(entry.title, entry.author));
+		return book ? [{ entry, book }] : [];
 	});
 }
 
-export type ReadingSection = {
-	title: string;
-	books: ReadingBook[];
-	wishes: WishBook[];
-	requests: BookRequest[];
+/** The whole list: every library book plus your entries for books you don't
+ *  own. Once a book is in the library, its library copy is the one shown. */
+export function myBooks(library: ReadingBook[], entries: BookEntry[]): MyBook[] {
+	const arrived = new Set(arrivedEntries(entries, library).map((a) => a.entry.hardcoverId));
+	return [...library.map(fromLibrary), ...entries.filter((e) => !arrived.has(e.hardcoverId)).map(fromEntry)];
+}
+
+/** "123 / 400 pages · 31%" (or just the percent when the page count is unknown). */
+export function progressText(b: Pick<MyBook, 'progress' | 'pages'>): string | null {
+	if (b.progress === null) return null;
+	const pct = Math.round(b.progress * 100);
+	if (!b.pages) return `${pct}%`;
+	return `${Math.round(b.progress * b.pages)} / ${b.pages} pages · ${pct}%`;
+}
+
+/* ── Sorting and filtering the list ─────────────────────────────────────────── */
+
+export type BookSort = 'active' | 'title' | 'author' | 'added' | 'progress' | 'rating';
+export const BOOK_SORTS: { key: BookSort; label: string }[] = [
+	{ key: 'active', label: 'Recently active' },
+	{ key: 'title', label: 'Title' },
+	{ key: 'author', label: 'Author' },
+	{ key: 'added', label: 'Recently added' },
+	{ key: 'progress', label: 'Progress' },
+	{ key: 'rating', label: 'Your rating' }
+];
+
+const sortTitle = (t: string) => t.toLowerCase().replace(/^(the|a|an)\s+/, '');
+const surname = (a: string | undefined) => (a ?? '').trim().split(/\s+/).pop()?.toLowerCase() ?? '';
+const newestFirst = (a: string | null, b: string | null) => (b ?? '').localeCompare(a ?? '');
+
+export function sortBooks(books: MyBook[], sort: BookSort): MyBook[] {
+	const byTitle = (a: MyBook, b: MyBook) => sortTitle(a.title).localeCompare(sortTitle(b.title));
+	const cmp: Record<BookSort, (a: MyBook, b: MyBook) => number> = {
+		active: (a, b) => newestFirst(a.activeAt, b.activeAt) || byTitle(a, b),
+		title: byTitle,
+		// Author by surname, then a series in reading order, then title.
+		author: (a, b) =>
+			surname(a.authors[0]).localeCompare(surname(b.authors[0])) ||
+			(a.seriesName ?? '').localeCompare(b.seriesName ?? '') ||
+			(a.seriesIndex ?? 0) - (b.seriesIndex ?? 0) ||
+			byTitle(a, b),
+		added: (a, b) => newestFirst(a.addedAt, b.addedAt) || byTitle(a, b),
+		progress: (a, b) => (b.progress ?? -1) - (a.progress ?? -1) || byTitle(a, b),
+		rating: (a, b) => (b.myRating ?? 0) - (a.myRating ?? 0) || byTitle(a, b)
+	};
+	return [...books].sort(cmp[sort]);
+}
+
+/** Which books: by status, by where it lives / what kind of file, by one of
+ *  your shelves, by genre. */
+export type BookFilters = {
+	status: 'all' | 'reading' | 'want_to_read' | 'on_hold' | 'read' | 'abandoned' | 'unstarted';
+	/** ebook / audiobook: files in BookOrbit; `mine`: your own books outside it. */
+	kind: 'all' | 'ebook' | 'audiobook' | 'mine';
+	/** A shelf (BookOrbit collection) id. */
+	shelf: number | null;
+	genre: string | null;
+};
+export const NO_BOOK_FILTERS: BookFilters = { status: 'all', kind: 'all', shelf: null, genre: null };
+
+export const bookFiltersActive = (f: BookFilters) =>
+	f.status !== 'all' || f.kind !== 'all' || f.shelf !== null || f.genre !== null;
+
+const STATUS_FILTER: Record<Exclude<BookFilters['status'], 'all'>, BookReadStatus[]> = {
+	reading: ['reading', 'rereading'],
+	want_to_read: ['want_to_read'],
+	on_hold: ['on_hold'],
+	read: ['read', 'skimmed'],
+	abandoned: ['abandoned'],
+	unstarted: ['unread']
 };
 
-/** The reading list: status sections from the library, the books you've asked
- *  BookOrbit for (while they're on the way) right after Reading, and the
- *  wishlist's not-yet-owned books folded into "Want to read" — minus any that
- *  are already shown as on the way. */
-export function readingSections(
-	library: ReadingBook[],
-	wishlist: WishBook[],
-	requests: BookRequest[] = []
-): ReadingSection[] {
+/** `shelfIds`: the library ids on the chosen shelf (fetched separately). */
+export function filterBooks(books: MyBook[], f: BookFilters, shelfIds: Set<number> | null = null): MyBook[] {
+	return books.filter((b) => {
+		if (f.status !== 'all' && !STATUS_FILTER[f.status].includes(b.status)) return false;
+		if (f.kind === 'mine' && b.source !== 'entry') return false;
+		if ((f.kind === 'ebook' || f.kind === 'audiobook') && !b.formats.includes(f.kind)) return false;
+		if (f.shelf !== null && !(b.libraryId !== null && shelfIds?.has(b.libraryId))) return false;
+		if (f.genre !== null && !b.genres.some((g) => g.toLowerCase() === f.genre!.toLowerCase())) return false;
+		return true;
+	});
+}
+
+/** The genres across your books, most common first — the filter's choices. */
+export function topGenres(books: MyBook[], max = 12): string[] {
+	const counts = new Map<string, { name: string; n: number }>();
+	for (const b of books)
+		for (const g of b.genres) {
+			const k = g.toLowerCase();
+			const c = counts.get(k) ?? { name: g, n: 0 };
+			c.n++;
+			counts.set(k, c);
+		}
+	return [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).slice(0, max).map((c) => c.name);
+}
+
+export type ReadingSection = { title: string; books: MyBook[]; requests: BookRequest[] };
+
+/** The reading list: status sections, plus the books you've asked BookOrbit
+ *  for (while on the way) right after Reading — minus any of your own entries
+ *  that are already shown as on the way. */
+export function readingSections(books: MyBook[], requests: BookRequest[] = []): ReadingSection[] {
 	const onTheWay = requests.filter((r) => requestActive(r.status));
 	const coming = new Set(onTheWay.map((r) => r.hardcoverId).filter(Boolean));
-	const wishes = unownedWishes(wishlist, library).filter((w) => !coming.has(w.hardcoverId));
+	const shown = books.filter((b) => !(b.source === 'entry' && b.status === 'want_to_read' && coming.has(b.hardcoverId)));
 	const sections: ReadingSection[] = READING_SECTIONS.map((s) => ({
 		title: s.title,
-		books: library.filter((b) => s.statuses.includes(b.status)),
-		wishes: s.title === 'Want to read' ? wishes : [],
+		books: shown.filter((b) => s.statuses.includes(b.status)),
 		requests: []
 	}));
-	sections.splice(1, 0, { title: 'Requested', books: [], wishes: [], requests: onTheWay });
-	return sections.filter((s) => s.books.length || s.wishes.length || s.requests.length);
+	sections.splice(1, 0, { title: 'Requested', books: [], requests: onTheWay });
+	return sections.filter((s) => s.books.length || s.requests.length);
 }
 
 /* ── Requests: asking BookOrbit to get a book you don't own ─────────────────
@@ -373,7 +572,20 @@ export function mapReadingBook(raw: unknown): ReadingBook {
 		seriesName: str(b.seriesName),
 		seriesIndex: num(b.seriesIndex),
 		coverUrl: b.hasCover ? `/api/books/cover/${id}` : null,
-		hardcoverId: num(b.hardcoverId)
+		hardcoverId: num(b.hardcoverId),
+		genres: Array.isArray(b.genres) ? b.genres.filter((g): g is string => typeof g === 'string') : [],
+		formats: [
+			...new Set(
+				(Array.isArray(b.files) ? b.files : [])
+					.map((f) => str(rec(f).format))
+					.filter((f): f is string => Boolean(f))
+					.map(formatOf)
+			)
+		],
+		addedAt: str(b.addedAt),
+		statusAt: str(rec(b.readStatus).updatedAt),
+		startedAt: str(rec(b.readStatus).startedAt),
+		finishedAt: str(rec(b.readStatus).finishedAt)
 	};
 }
 

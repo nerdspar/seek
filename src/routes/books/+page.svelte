@@ -4,22 +4,40 @@
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import BookRow from '$lib/components/BookRow.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
-	import NotLinked from '$lib/components/NotLinked.svelte';
-	import { notLinkedOf } from '$lib/notLinked';
+	import SortSheet from '$lib/components/SortSheet.svelte';
+	import BookFilterSheet from '$lib/components/BookFilterSheet.svelte';
+	import AddBookSheet from '$lib/components/AddBookSheet.svelte';
+	import ShelvesSheet from '$lib/components/ShelvesSheet.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import {
+		BOOK_SORTS,
+		NO_BOOK_FILTERS,
+		bookFiltersActive,
+		filterBooks,
+		myBooks,
 		readingSections,
 		requestLabel,
+		sortBooks,
+		topGenres,
+		type DiscoveryCard,
+		type BookFilters,
 		type BookRequest,
-		type ReadingBook,
-		type WishBook
+		type BookSort,
+		type MyBook
 	} from '$lib/books';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	let open = $state<ReadingBook | null>(null);
-	let openWish = $state<WishBook | null>(null);
+	/* The sheet: a book from your list, or a Hardcover card (from the + search or
+	   a request on its way). */
+	type Card = DiscoveryCard;
+	let openBook = $state<MyBook | null>(null);
+	let openCard = $state<Card | null>(null);
+	const closeSheet = () => {
+		openBook = null;
+		openCard = null;
+	};
 
 	/* ── Your yearly goal: tap to change it (or set one) ─────────────────── */
 	type Goal = { goalBooks: number; completedBooks: number; year: number };
@@ -67,46 +85,79 @@
 			live = false;
 		};
 	});
-
-	/* A wishlisted book drawn as a reading-list row. It has no BookOrbit id, so
-	   its key is the (negated) Hardcover id — never collides with a library id. */
-	const asRow = (w: WishBook): ReadingBook => ({
-		id: -w.hardcoverId,
-		title: w.title,
-		authors: w.author ? [w.author] : [],
-		status: 'want_to_read',
-		progress: null,
-		rating: null,
-		pageCount: null,
-		year: w.year,
-		seriesName: null,
-		seriesIndex: null,
-		coverUrl: w.coverUrl,
-		hardcoverId: w.hardcoverId
-	});
-
-	/* A request as a wish-shaped card, so it opens the same sheet. */
-	const asWish = (r: BookRequest): WishBook => ({
-		hardcoverId: r.hardcoverId ?? 0,
-		title: r.title,
-		author: r.author,
-		coverUrl: r.coverUrl,
-		year: null,
-		rating: null,
-		addedAt: r.createdAt
-	});
 	const requestNote = (r: BookRequest) =>
 		`${requestLabel(r.status)}${r.progress !== null ? ` · ${Math.round(r.progress * 100)}%` : ''}`;
+	/* A request as a row: it isn't a book of yours yet, so it's drawn from what
+	   the request knows, and opens as a Hardcover card. */
+	const requestRow = (r: BookRequest): MyBook => ({
+		key: `req:${r.id}`,
+		source: 'entry',
+		libraryId: null,
+		hardcoverId: r.hardcoverId,
+		title: r.title,
+		authors: r.author ? [r.author] : [],
+		coverUrl: r.coverUrl,
+		year: null,
+		status: 'want_to_read',
+		myRating: null,
+		pages: null,
+		progress: null,
+		seriesName: null,
+		seriesIndex: null,
+		genres: [],
+		formats: [],
+		addedAt: r.createdAt,
+		activeAt: r.createdAt,
+		startedAt: null,
+		finishedAt: null
+	});
 
-	/* Long finished lists would bury everything after them; they open on request. */
+	/* ── Sort and filter (kept on this device) ─────────────────────────────── */
+	const VIEW_KEY = 'seek:books:view';
+	let sort = $state<BookSort>('active');
+	let filters = $state<BookFilters>({ ...NO_BOOK_FILTERS });
+	try {
+		const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
+		if (saved?.sort) sort = saved.sort;
+		if (saved?.filters) filters = { ...NO_BOOK_FILTERS, ...saved.filters };
+	} catch {
+		/* private mode, or nothing saved */
+	}
+	function remember() {
+		try {
+			localStorage.setItem(VIEW_KEY, JSON.stringify({ sort, filters }));
+		} catch {
+			/* not essential */
+		}
+	}
+	let sortOpen = $state(false);
+	let filterOpen = $state(false);
+	let addOpen = $state(false);
+	let shelvesOpen = $state(false);
+
+	/* A shelf filter needs that shelf's books (BookOrbit knows; we ask). */
+	let shelfIds = $state<Set<number> | null>(null);
+	$effect(() => {
+		const id = filters.shelf;
+		shelfIds = null;
+		if (id === null) return;
+		let live = true;
+		fetch(`/api/books/shelves/${id}`)
+			.then((r) => (r.ok ? r.json() : { books: [] }))
+			.then((b) => live && (shelfIds = new Set((b.books ?? []).map((x: { id: number }) => x.id))))
+			.catch(() => live && (shelfIds = new Set()));
+		return () => {
+			live = false;
+		};
+	});
+
+	/* Long sections would bury everything after them; they open on request. */
 	const CAP = 8;
 	let expanded = $state<Record<string, boolean>>({});
-
-	/* Owned but never started — the library, not the reading list. Collapsed. */
+	/* Owned but never started — the library, not the reading list. Collapsed,
+	   unless you filtered to it. */
 	let showLibrary = $state(false);
 	let libraryShown = $state(40);
-	const unstarted = (books: ReadingBook[]) =>
-		books.filter((b) => b.status === 'unread').sort((a, b) => a.title.localeCompare(b.title));
 </script>
 
 <div class="app">
@@ -116,6 +167,12 @@
 			<button role="tab" aria-selected="false" onclick={() => goto('/?type=movie', { noScroll: true })}>Movies</button>
 			<button role="tab" aria-selected="true" class="active">Books</button>
 		</div>
+		<button class="hbtn" onclick={() => (sortOpen = true)} aria-label="Sort">
+			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M6.5 12h11M10 17h4" /></svg>
+		</button>
+		<button class="hbtn last" class:on={bookFiltersActive(filters)} onclick={() => (filterOpen = true)} aria-label="Filter">
+			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+		</button>
 	</header>
 
 	<main use:tabReselect={{ tab: 'watchlist' }}>
@@ -148,104 +205,148 @@
 			{/if}
 		{/await}
 
+		{#if !data.linked}
+			<p class="linkhint">
+				{#if data.canLink}
+					Link your BookOrbit login in <a href="/profile/settings#accounts">Settings → Your accounts</a> to see your library here. Books you add yourself work either way.
+				{:else}
+					Books you add with + are kept here.
+				{/if}
+			</p>
+		{/if}
+
 		{#await data.library}
 			<ul class="rows">
 				{#each Array(5) as _, i (i)}<li><Skeleton height="98px" radius={14} /></li>{/each}
 			</ul>
-		{:then books}
-			{@const groups = readingSections(books, data.wishlist, requests)}
-			{@const library = unstarted(books)}
+		{:then library}
+			{@const all = myBooks(library, data.entries)}
+			{@const shown = sortBooks(filterBooks(all, filters, shelfIds), sort)}
+			{@const filtering = bookFiltersActive(filters)}
+			{@const groups = readingSections(shown, filtering ? [] : requests)}
+			{@const unstarted = shown.filter((b) => b.status === 'unread')}
+			{@const genres = topGenres(all)}
 			{#each groups as g (g.title)}
-				{@const all = expanded[g.title]}
+				{@const open = expanded[g.title]}
 				{@const rows = [
-					...g.books.map((b) => ({ b, wish: null, note: null })),
-					...g.requests.map((r) => ({
-						// Never collides with a library id (positive) or a wish (−hardcoverId).
-						b: { ...asRow(asWish(r)), id: -1e9 - r.id },
-						wish: r.hardcoverId ? asWish(r) : null,
-						note: requestNote(r)
-					})),
-					...g.wishes.map((w) => ({ b: asRow(w), wish: w, note: 'Not in your library yet' }))
+					...g.requests.map((r) => ({ b: requestRow(r), note: requestNote(r), req: r })),
+					...g.books.map((b) => ({ b, note: null, req: null }))
 				]}
 				<section class="group">
 					<h2>{g.title} <span class="count tnum">{rows.length}</span></h2>
 					<ul class="rows">
-						{#each all ? rows : rows.slice(0, CAP) as r (r.b.id)}
+						{#each open ? rows : rows.slice(0, CAP) as r (r.b.key)}
 							<li>
-								{#if r.note}
-									{@const w = r.wish}
-									<BookRow book={r.b} note={r.note} onopen={() => w && (openWish = w)} />
-								{:else}
-									<BookRow book={r.b} onopen={(x) => (open = x)} />
-								{/if}
+								<BookRow
+									book={r.b}
+									note={r.note}
+									onopen={() => {
+										if (r.req) {
+											if (r.req.hardcoverId) openCard = { hardcoverId: r.req.hardcoverId, title: r.req.title, author: r.req.author, coverUrl: r.req.coverUrl, year: null, rating: null };
+										} else openBook = r.b;
+									}}
+								/>
 							</li>
 						{/each}
 					</ul>
 					{#if rows.length > CAP}
-						<button class="more" onclick={() => (expanded = { ...expanded, [g.title]: !all })}>
-							{all ? 'Show fewer' : `Show all ${rows.length}`}
+						<button class="more" onclick={() => (expanded = { ...expanded, [g.title]: !open })}>
+							{open ? 'Show fewer' : `Show all ${rows.length}`}
 						</button>
 					{/if}
 				</section>
 			{/each}
 
-			{#if !groups.length}
+			{#if !groups.length && !unstarted.length}
 				<div class="empty">
-					<h2>Nothing on your reading list yet</h2>
-					<p>
-						Mark books as reading or want-to-read in BookOrbit (or on your reader) and they'll show up
-						here. Find something new in Discover → Books and tap Want to read.
-					</p>
+					{#if filtering}
+						<h2>No books match</h2>
+						<p><button class="linkbtn" onclick={() => { filters = { ...NO_BOOK_FILTERS }; remember(); }}>Clear the filters</button></p>
+					{:else}
+						<h2>Nothing on your reading list yet</h2>
+						<p>Tap + to add a book — one you're reading, have read, or want to. Or find something new in Discover → Books.</p>
+					{/if}
 				</div>
 			{/if}
 
-			{#if library.length}
+			{#if unstarted.length}
+				{@const libOpen = showLibrary || filters.status === 'unstarted'}
 				<section class="group">
 					<button class="libhead" onclick={() => (showLibrary = !showLibrary)}>
-						<h2>Your library <span class="count tnum">{library.length}</span></h2>
-						<span class="chev">{showLibrary ? '−' : '+'}</span>
+						<h2>Your library <span class="count tnum">{unstarted.length}</span></h2>
+						<span class="chev">{libOpen ? '−' : '+'}</span>
 					</button>
-					{#if showLibrary}
+					{#if libOpen}
 						<ul class="rows">
-							{#each library.slice(0, libraryShown) as b (b.id)}
-								<li><BookRow book={b} onopen={(x) => (open = x)} /></li>
+							{#each unstarted.slice(0, libraryShown) as b (b.key)}
+								<li><BookRow book={b} onopen={(x) => (openBook = x)} /></li>
 							{/each}
 						</ul>
-						{#if library.length > libraryShown}
+						{#if unstarted.length > libraryShown}
 							<button class="more" onclick={() => (libraryShown += 60)}>Show more</button>
 						{/if}
 					{/if}
 				</section>
 			{/if}
-		{:catch err}
-			{@const missing = notLinkedOf(err)}
-			{#if missing}
-				<NotLinked service={missing} />
-			{:else}
-				<div class="empty"><h2>Can't reach BookOrbit</h2><p>{err.message}</p></div>
+
+			{#if filterOpen}
+				<BookFilterSheet
+					{filters}
+					{genres}
+					resultCount={shown.length}
+					onchange={(f) => {
+						filters = f;
+						remember();
+					}}
+					onmanage={() => {
+						filterOpen = false;
+						shelvesOpen = true;
+					}}
+					onclose={() => (filterOpen = false)}
+				/>
 			{/if}
+			{#if addOpen}
+				<AddBookSheet
+					books={all}
+					onpick={(pick) => {
+						addOpen = false;
+						if ('book' in pick) openBook = pick.book;
+						else openCard = pick.card;
+					}}
+					onclose={() => (addOpen = false)}
+				/>
+			{/if}
+		{:catch err}
+			<div class="empty"><h2>Can't reach BookOrbit</h2><p>{err.message}</p></div>
 		{/await}
 	</main>
+
+	<button class="fab" onclick={() => (addOpen = true)} aria-label="Add a book">
+		<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg>
+	</button>
 
 	<TabBar current="watchlist" />
 </div>
 
-{#if open}
-	<BookSheet
-		hardcoverId={open.hardcoverId}
-		library={open}
-		onclose={() => (open = null)}
-		onchange={() => invalidateAll()}
+{#if openBook || openCard}
+	<BookSheet book={openBook} card={openCard} onclose={closeSheet} onchange={() => invalidateAll()} />
+{/if}
+
+{#if sortOpen}
+	<SortSheet
+		current={sort}
+		options={BOOK_SORTS}
+		onchange={(k) => {
+			sort = k as BookSort;
+			sortOpen = false;
+			remember();
+		}}
+		onclose={() => (sortOpen = false)}
 	/>
 {/if}
 
-{#if openWish}
-	<BookSheet
-		hardcoverId={openWish.hardcoverId}
-		card={{ ...openWish, owned: null, wished: true }}
-		onclose={() => (openWish = null)}
-		onchange={() => invalidateAll()}
-	/>
+{#if shelvesOpen}
+	<ShelvesSheet onclose={() => (shelvesOpen = false)} />
 {/if}
 
 <style>
@@ -263,7 +364,27 @@
 	}
 	.segments button.active { background: var(--surface-raised); color: var(--text); }
 
-	main { padding: 4px var(--gutter) calc(var(--tabbar-footprint) + 24px); }
+	/* Header icons as on the TV/Movies watchlist. */
+	.hbtn {
+		flex: none; display: grid; place-items: center;
+		width: 38px; height: var(--tap); border-radius: 11px; color: var(--text-dim);
+	}
+	.hbtn.last { margin-right: -8px; }
+	.hbtn.on { color: var(--signal-solid); }
+
+	/* Clear the tab bar and the floating + button. */
+	main { padding: 4px var(--gutter) calc(var(--tabbar-footprint) + 88px); }
+
+	.fab {
+		position: fixed; right: var(--gutter);
+		bottom: calc(var(--tabbar-h) + var(--tabbar-safe-b) + 16px);
+		z-index: 40; display: grid; place-items: center;
+		width: 56px; height: 56px; border-radius: 50%;
+		background: var(--signal); color: #fff;
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--signal-solid) 34%, transparent);
+	}
+	.linkhint { margin: 0 0 16px; font-size: 13px; line-height: 1.45; color: var(--text-dim); }
+	.linkhint a, .linkbtn { color: var(--signal-solid); font-weight: 600; }
 
 	.goal {
 		display: flex; flex-direction: column; gap: 8px;

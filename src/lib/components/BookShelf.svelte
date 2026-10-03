@@ -1,11 +1,10 @@
 <script lang="ts">
 	import Poster from './Poster.svelte';
-	import { coverThumb, cardBadge, type BookCard, type ReadingBook } from '$lib/books';
+	import { coverThumb, cardBadge, type DiscoveryCard } from '$lib/books';
 
 	/** One horizontal shelf of book covers (Discover → Books). Books you already
 	 *  own carry a small badge with your status. */
-	type Owned = { bookId: number; status: ReadingBook['status']; progress: number | null };
-	type Card = BookCard & { owned?: Owned | null; wished?: boolean };
+	type Card = DiscoveryCard;
 	type Props = { title: string; subtitle?: string | null; books: Card[]; onopen: (book: Card) => void };
 	let { title, subtitle = null, books, onopen }: Props = $props();
 </script>

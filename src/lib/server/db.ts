@@ -135,6 +135,31 @@ export const MIGRATIONS: string[] = [
 		value       TEXT NOT NULL,
 		updated_at  TEXT NOT NULL
 	);
+	`,
+	// v5 — books you track that aren't in BookOrbit (a physical copy, a library
+	// loan, one you want): your status, rating and page for each. Replaces the
+	// want-to-read-only wishlist, whose rows carry over as want_to_read.
+	`
+	CREATE TABLE book_entries (
+		user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		hardcover_id    INTEGER NOT NULL,
+		title           TEXT NOT NULL,
+		author          TEXT,
+		cover_url       TEXT,
+		year            INTEGER,
+		pages           INTEGER,
+		status          TEXT NOT NULL,
+		rating          INTEGER,
+		progress_pages  INTEGER,
+		started_at      TEXT,
+		finished_at     TEXT,
+		added_at        TEXT NOT NULL,
+		updated_at      TEXT NOT NULL,
+		PRIMARY KEY (user_id, hardcover_id)
+	);
+	INSERT INTO book_entries (user_id, hardcover_id, title, author, cover_url, year, status, added_at, updated_at)
+		SELECT user_id, hardcover_id, title, author, cover_url, year, 'want_to_read', added_at, added_at FROM wishlist;
+	DROP TABLE wishlist;
 	`
 ];
 

@@ -35,7 +35,7 @@ describe('migrations', () => {
 		migrate(old);
 		expect(old.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
 		expect(users.userCount()).toBe(1);
-		expect(old.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='wishlist'`).get()).toBeTruthy();
+		expect(old.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='book_entries'`).get()).toBeTruthy();
 	});
 });
 

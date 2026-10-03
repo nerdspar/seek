@@ -1,28 +1,38 @@
 import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
-import { bookorbitConfigured, getAllBooks, getReadingGoal } from '$lib/server/books/bookorbit';
-import { listWishlist } from '$lib/server/books/wishlist';
+import {
+	bookorbitConfigured,
+	bookorbitLinked,
+	getAllBooks,
+	getReadingGoal,
+	listMyRequests
+} from '$lib/server/books/bookorbit';
+import { hardcoverConfigured } from '$lib/server/books/hardcover';
+import { listEntries } from '$lib/server/books/entries';
 import { settleArrivals } from '$lib/server/books/discovery';
-import { listMyRequests } from '$lib/server/books/bookorbit';
+import type { ReadingBook } from '$lib/books';
 import type { PageServerLoad } from './$types';
 
 /**
- * Watchlist → Books: your reading list, from *your* BookOrbit account (each
- * person's statuses and progress are their own). Streamed like the other tabs,
- * so the shell paints immediately; not having linked BookOrbit arrives as a
- * link-your-account prompt (handleError).
+ * Watchlist → Books: your reading list — your BookOrbit library (each person's
+ * statuses and progress are their own) plus your own books outside it (Seek's).
+ * Streamed like the other tabs, so the shell paints immediately. Without a
+ * BookOrbit login you still get your own books; the page says how to link.
  */
 export const load: PageServerLoad = async () => {
 	const prefs = await getPrefs();
-	if (!prefs.booksEnabled || !bookorbitConfigured()) redirect(303, '/');
+	if (!prefs.booksEnabled || (!bookorbitConfigured() && !hardcoverConfigured())) redirect(303, '/');
+	const linked = bookorbitLinked();
 	return {
-		// Wished books that have since landed become Want to read on the way in.
-		library: getAllBooks().then(settleArrivals),
+		linked,
+		canLink: bookorbitConfigured(),
+		// Your own books that have since landed carry their status over on the way in.
+		library: linked ? getAllBooks().then(settleArrivals) : Promise.resolve([] as ReadingBook[]),
 		// What you've asked BookOrbit to fetch; a nicety, never fails the page.
-		requests: listMyRequests().catch(() => []),
+		requests: linked ? listMyRequests().catch(() => []) : Promise.resolve([]),
 		// The goal is a nicety: never let it fail the page.
-		goal: getReadingGoal().catch(() => null),
-		// Books you want but don't own yet — Seek's own list, joins "Want to read".
-		wishlist: listWishlist()
+		goal: linked ? getReadingGoal().catch(() => null) : Promise.resolve(null),
+		// Your books outside the library (Seek's own) — they join the list.
+		entries: listEntries()
 	};
 };

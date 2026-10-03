@@ -12,61 +12,143 @@ import {
 	bookKey,
 	coverThumb,
 	readingSections,
-	unownedWishes,
+	myBooks,
+	arrivedEntries,
+	progressText,
+	sortBooks,
+	filterBooks,
+	topGenres,
+	bookFiltersActive,
+	NO_BOOK_FILTERS,
+	formatOf,
 	cardBadge,
+	type BookEntry,
+	type MyBook,
 	mapBookRequest,
 	requestLabel,
 	requestCancellable,
 	requestFor
 } from './books';
 
-describe('readingSections', () => {
-	const owned = (id: number, status: string, title: string, author = 'A', hardcoverId: number | null = null) =>
-		({ ...mapReadingBook({ id, title, authors: [author], readStatus: { status } }), hardcoverId });
-	const wish = (hardcoverId: number, title: string, author = 'A') => ({
-		hardcoverId,
-		title,
-		author,
-		coverUrl: null,
-		year: null,
-		rating: null,
-		addedAt: '2026-10-03T00:00:00Z'
+const owned = (id: number, status: string, title: string, author = 'A', hardcoverId: number | null = null, extra: Record<string, unknown> = {}) =>
+	({ ...mapReadingBook({ id, title, authors: [author], readStatus: { status }, ...extra }), hardcoverId });
+const entry = (hardcoverId: number, title: string, over: Partial<BookEntry> = {}): BookEntry => ({
+	hardcoverId,
+	title,
+	author: 'A',
+	coverUrl: null,
+	year: null,
+	rating: null,
+	pages: null,
+	status: 'want_to_read',
+	myRating: null,
+	progressPages: null,
+	startedAt: null,
+	finishedAt: null,
+	addedAt: '2026-10-01T00:00:00Z',
+	updatedAt: '2026-10-01T00:00:00Z',
+	...over
+});
+
+describe('myBooks', () => {
+	it('lists library books and your own entries together; a library copy supersedes your entry', () => {
+		const lib = [owned(1, 'unread', 'Hyperion', 'Dan Simmons'), owned(2, 'reading', 'Dune', 'A', 77)];
+		const list = myBooks(lib, [entry(50, 'Hyperion', { author: 'Dan Simmons' }), entry(77, 'Dune'), entry(9, 'Paper copy', { status: 'reading' })]);
+		expect(list.map((b) => [b.key, b.source, b.status])).toEqual([
+			['lib:1', 'library', 'unread'],
+			['lib:2', 'library', 'reading'],
+			['hc:9', 'entry', 'reading']
+		]);
+		expect(arrivedEntries([entry(50, 'Hyperion', { author: 'Dan Simmons' })], lib).map((a) => a.book.id)).toEqual([1]);
 	});
 
-	it('folds wishlisted books into Want to read, even with no owned ones there', () => {
-		const sections = readingSections([owned(1, 'reading', 'Dune')], [wish(50, 'Hyperion')]);
-		expect(sections.map((s) => [s.title, s.books.length, s.wishes.map((w) => w.title)])).toEqual([
-			['Reading', 1, []],
-			['Want to read', 0, ['Hyperion']]
+	it("turns an entry's pages read into progress", () => {
+		const [b] = myBooks([], [entry(9, 'X', { status: 'reading', pages: 400, progressPages: 124 })]);
+		expect(b.progress).toBeCloseTo(0.31);
+		expect(progressText(b)).toBe('124 / 400 pages · 31%');
+		expect(progressText({ progress: 0.5, pages: null })).toBe('50%');
+		expect(progressText({ progress: null, pages: 400 })).toBeNull();
+	});
+});
+
+describe('readingSections', () => {
+	const req = (id: number, status: string, hc: number | null) =>
+		mapBookRequest({ id, status, title: `R${id}`, ...(hc ? { providerKey: 'hardcover', providerId: String(hc) } : {}) });
+
+	it('groups by status; your own entries sit in their status like library books', () => {
+		const books = myBooks([owned(1, 'reading', 'Dune')], [entry(50, 'Hyperion'), entry(51, 'Paper', { status: 'reading' })]);
+		expect(readingSections(books).map((s) => [s.title, s.books.map((b) => b.title)])).toEqual([
+			['Reading', ['Dune', 'Paper']],
+			['Want to read', ['Hyperion']]
 		]);
 	});
 
-	it('shows requests on the way after Reading, and takes their wishes out of Want to read', () => {
-		const req = (id: number, status: string, hc: number | null) =>
-			mapBookRequest({ id, status, title: `R${id}`, ...(hc ? { providerKey: 'hardcover', providerId: String(hc) } : {}) });
-		const sections = readingSections(
-			[owned(1, 'reading', 'Dune')],
-			[wish(50, 'Hyperion'), wish(51, 'Wanted')],
-			[req(7, 'downloading', 50), req(8, 'pending', null), req(9, 'cancelled', 51)]
-		);
-		expect(sections.map((s) => [s.title, s.requests.map((r) => r.id), s.wishes.map((w) => w.title)])).toEqual([
-			['Reading', [], []],
+	it('shows requests on the way after Reading, and takes those wants out of Want to read', () => {
+		const books = myBooks([owned(1, 'reading', 'Dune')], [entry(50, 'Hyperion'), entry(51, 'Wanted')]);
+		const sections = readingSections(books, [req(7, 'downloading', 50), req(8, 'pending', null), req(9, 'cancelled', 51)]);
+		expect(sections.map((s) => [s.title, s.requests.map((r) => r.id), s.books.map((b) => b.title)])).toEqual([
+			['Reading', [], ['Dune']],
 			['Requested', [7, 8], []],
 			['Want to read', [], ['Wanted']]
 		]);
 	});
+});
 
-	it('drops a wish once you own the book (by id or by title + author)', () => {
-		const lib = [owned(1, 'unread', 'Hyperion', 'Dan Simmons'), owned(2, 'unread', 'Other', 'A', 77)];
-		const left = unownedWishes([wish(50, 'Hyperion', 'Dan Simmons'), wish(77, 'Renamed'), wish(9, 'Still wanted')], lib);
-		expect(left.map((w) => w.title)).toEqual(['Still wanted']);
+describe('sorting and filtering', () => {
+	const lib = [
+		owned(1, 'reading', 'The Way of Kings', 'Brandon Sanderson', null, {
+			readingProgress: 0.6,
+			rating: 5,
+			genres: ['Fantasy'],
+			files: [{ format: 'epub' }],
+			addedAt: '2026-01-01T00:00:00Z',
+			readStatus: { status: 'reading', updatedAt: '2026-09-01T00:00:00Z' }
+		}),
+		owned(2, 'read', 'Dune', 'Frank Herbert', null, {
+			rating: 3,
+			genres: ['Science Fiction', 'Fantasy'],
+			files: [{ format: 'm4b' }],
+			addedAt: '2026-05-01T00:00:00Z',
+			readStatus: { status: 'read', updatedAt: '2026-10-01T00:00:00Z' }
+		}),
+		owned(3, 'unread', 'A Wizard of Earthsea', 'Ursula K. Le Guin', null, { genres: ['fantasy'], addedAt: '2026-03-01T00:00:00Z' })
+	];
+	const books = myBooks(lib, [entry(9, 'Paper copy', { status: 'reading', updatedAt: '2026-08-01T00:00:00Z' })]);
+	const titles = (bs: MyBook[]) => bs.map((b) => b.title);
+
+	it('sorts every way the sheet offers, ignoring leading articles', () => {
+		expect(titles(sortBooks(books, 'title'))).toEqual(['Dune', 'Paper copy', 'The Way of Kings', 'A Wizard of Earthsea']);
+		expect(titles(sortBooks(books, 'active'))).toEqual(['Dune', 'The Way of Kings', 'Paper copy', 'A Wizard of Earthsea']);
+		expect(titles(sortBooks(books, 'author'))[0]).toBe('Paper copy'); // "A"
+		expect(titles(sortBooks(books, 'rating')).slice(0, 2)).toEqual(['The Way of Kings', 'Dune']);
+		expect(titles(sortBooks(books, 'progress'))[0]).toBe('The Way of Kings');
+		expect(titles(sortBooks(books, 'added'))[0]).toBe('Paper copy');
+	});
+
+	it('filters by status, kind, shelf and genre (case-insensitive)', () => {
+		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, status: 'reading' }))).toEqual(['The Way of Kings', 'Paper copy']);
+		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, status: 'unstarted' }))).toEqual(['A Wizard of Earthsea']);
+		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, kind: 'audiobook' }))).toEqual(['Dune']);
+		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, kind: 'mine' }))).toEqual(['Paper copy']);
+		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, shelf: 4 }, new Set([2, 3])))).toEqual(['Dune', 'A Wizard of Earthsea']);
+		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, genre: 'FANTASY' }))).toHaveLength(3);
+		expect(bookFiltersActive(NO_BOOK_FILTERS)).toBe(false);
+		expect(bookFiltersActive({ ...NO_BOOK_FILTERS, genre: 'x' })).toBe(true);
+	});
+
+	it('offers the most common genres first', () => {
+		expect(topGenres(books)).toEqual(['Fantasy', 'Science Fiction']);
+	});
+
+	it('knows an audiobook file from an ebook one', () => {
+		expect([formatOf('M4B'), formatOf('epub'), formatOf('cbz'), formatOf('pdf')]).toEqual(['audiobook', 'ebook', 'comic', 'ebook']);
 	});
 });
 
 describe('cardBadge', () => {
-	it('shows your status when owned, the wish otherwise, else nothing', () => {
-		expect(cardBadge({ owned: { status: 'read' }, wished: true })).toBe('Read');
-		expect(cardBadge({ owned: null, wished: true })).toBe('Want to read');
+	it('shows your library status when owned, your own status otherwise, else nothing', () => {
+		expect(cardBadge({ owned: { status: 'read' }, mine: 'reading' })).toBe('Read');
+		expect(cardBadge({ owned: null, mine: 'want_to_read' })).toBe('Want to read');
 		expect(cardBadge({})).toBeNull();
 	});
 });
@@ -244,7 +326,31 @@ describe('mapReadingBook', () => {
 			seriesName: null,
 			seriesIndex: null,
 			coverUrl: '/api/books/cover/17',
-			hardcoverId: 427578
+			hardcoverId: 427578,
+			genres: [],
+			formats: [],
+			addedAt: null,
+			statusAt: null,
+			startedAt: null,
+			finishedAt: null
+		});
+	});
+
+	it('reads genres, file kinds and your status dates', () => {
+		const b = mapReadingBook({
+			...raw,
+			genres: ['Science Fiction', 3],
+			files: [{ format: 'epub' }, { format: 'm4b' }, { format: 'EPUB' }],
+			addedAt: '2026-01-01T00:00:00Z',
+			readStatus: { status: 'read', startedAt: '2026-02-01T00:00:00Z', finishedAt: '2026-03-01T00:00:00Z', updatedAt: '2026-03-01T00:00:00Z' }
+		});
+		expect(b).toMatchObject({
+			genres: ['Science Fiction'],
+			formats: ['ebook', 'audiobook'],
+			addedAt: '2026-01-01T00:00:00Z',
+			startedAt: '2026-02-01T00:00:00Z',
+			finishedAt: '2026-03-01T00:00:00Z',
+			statusAt: '2026-03-01T00:00:00Z'
 		});
 	});
 

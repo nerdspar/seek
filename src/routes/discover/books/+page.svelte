@@ -8,13 +8,12 @@
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import UploadSheet from '$lib/components/UploadSheet.svelte';
 	import { tabReselect } from '$lib/tabReselect';
-	import { coverThumb, cardBadge, type BookCard, type ReadingBook } from '$lib/books';
+	import { coverThumb, cardBadge, type DiscoveryCard } from '$lib/books';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	type Owned = { bookId: number; status: ReadingBook['status']; progress: number | null };
-	type Card = BookCard & { owned?: Owned | null; wished?: boolean };
+	type Card = DiscoveryCard;
 
 	let open = $state<Card | null>(null);
 	let uploading = $state(false);
@@ -135,7 +134,6 @@
 
 {#if open}
 	<BookSheet
-		hardcoverId={open.hardcoverId}
 		card={open}
 		onclose={() => (open = null)}
 		onchange={() => {

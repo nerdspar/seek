@@ -188,6 +188,17 @@ export async function setReadStatus(bookId: number, status: BookReadStatus): Pro
 	return (res.status as BookReadStatus) ?? status;
 }
 
+/**
+ * Set *your* rating (1–5, or null to clear) on a book you own. Per person in
+ * BookOrbit. Needs the "edit metadata" permission on the BookOrbit account —
+ * without it BookOrbit says so, and that message is passed on.
+ */
+export async function setBookRating(bookId: number, rating: number | null): Promise<void> {
+	await bo<unknown>('/books/bulk-set-rating', { method: 'POST', body: { bookIds: [bookId], rating } });
+	dropBooksCache();
+	invalidate('books:snapshot');
+}
+
 /** Drop the current user's cached list (after a status change) and, with
  *  `session`, their BookOrbit session too (after they relink the account). */
 export function dropBooksCache(opts: { session?: boolean } = {}): void {

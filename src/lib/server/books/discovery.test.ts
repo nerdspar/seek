@@ -4,17 +4,20 @@ import type { BookCard, ReadingBook } from '$lib/books';
 const searchBooks = vi.fn();
 vi.mock('./hardcover', () => ({ searchBooks: (...a: unknown[]) => searchBooks(...a) }));
 const setReadStatus = vi.fn();
+const setBookRating = vi.fn();
 vi.mock('./bookorbit', () => ({
 	bookorbitLinked: () => true,
 	getAllBooks: async () => [],
-	setReadStatus: (...a: unknown[]) => setReadStatus(...a)
+	setReadStatus: (...a: unknown[]) => setReadStatus(...a),
+	setBookRating: (...a: unknown[]) => setBookRating(...a)
 }));
-let wishes: { hardcoverId: number; title: string; author: string | null }[] = [];
-const removeFromWishlist = vi.fn((id: number) => (wishes = wishes.filter((w) => w.hardcoverId !== id)));
-vi.mock('./wishlist', () => ({
-	wishlistIds: () => new Set(),
-	listWishlist: () => wishes,
-	removeFromWishlist: (id: number) => removeFromWishlist(id)
+type E = { hardcoverId: number; title: string; author: string | null; status?: string; myRating?: number | null };
+let wishes: E[] = [];
+const removeEntry = vi.fn((id: number) => (wishes = wishes.filter((w) => w.hardcoverId !== id)));
+vi.mock('./entries', () => ({
+	entryStatuses: () => new Map(),
+	listEntries: () => wishes.map((w) => ({ status: 'want_to_read', myRating: null, ...w })),
+	removeEntry: (id: number) => removeEntry(id)
 }));
 
 import { markOwned, indexLibrary, matchHardcover, settleArrivals } from './discovery';
@@ -33,14 +36,15 @@ const mine = (over: Partial<ReadingBook>) =>
 beforeEach(() => {
 	searchBooks.mockReset();
 	setReadStatus.mockReset();
-	removeFromWishlist.mockClear();
+	setBookRating.mockReset();
+	removeEntry.mockClear();
 });
 
 describe('markOwned', () => {
 	it('matches by Hardcover id when BookOrbit has one', () => {
 		const out = markOwned([card(1), card(2)], indexLibrary([mine({ hardcoverId: 2 })]));
 		expect(out[0].owned).toBeNull();
-		expect(out[1].owned).toEqual({ bookId: 41, status: 'reading', progress: 0.3 });
+		expect(out[1].owned).toEqual({ bookId: 41, status: 'reading', progress: 0.3, rating: undefined, pages: undefined });
 	});
 
 	it('falls back to title + author until BookOrbit has matched the book', () => {
@@ -54,11 +58,11 @@ describe('markOwned', () => {
 	});
 });
 
-describe('markOwned wishlist', () => {
-	it('flags wished books, but owning one supersedes the wish', () => {
-		const idx = indexLibrary([mine({ hardcoverId: 2 })], new Set([1, 2]));
+describe('markOwned with your own books', () => {
+	it('carries your status on books you track yourself, but owning one supersedes it', () => {
+		const idx = indexLibrary([mine({ hardcoverId: 2 })], new Map([[1, 'reading'], [2, 'want_to_read']] as const));
 		const [a, b, c] = markOwned([card(1), card(2), card(3)], idx);
-		expect([a.wished, b.wished, c.wished]).toEqual([true, false, false]);
+		expect([a.mine, b.mine, c.mine]).toEqual(['reading', null, null]);
 		expect(b.owned?.bookId).toBe(41);
 	});
 });
@@ -80,6 +84,16 @@ describe('matchHardcover', () => {
 });
 
 describe('settleArrivals', () => {
+	it('carries your status and rating to the arrived library copy, then clears the entry', async () => {
+		wishes = [{ hardcoverId: 1, title: 'Hyperion', author: 'Dan Simmons', status: 'reading', myRating: 4 }];
+		const lib = [mine({ id: 10, title: 'Hyperion', authors: ['Dan Simmons'], status: 'unread', rating: null })];
+		const out = await settleArrivals(lib);
+		expect(setReadStatus.mock.calls).toEqual([[10, 'reading']]);
+		expect(setBookRating.mock.calls).toEqual([[10, 4]]);
+		expect(out[0]).toMatchObject({ status: 'reading', rating: 4 });
+		expect(wishes).toEqual([]);
+	});
+
 	it('marks an arrived wish Want to read and clears it; leaves a status you already set', async () => {
 		wishes = [
 			{ hardcoverId: 1, title: 'Hyperion', author: 'Dan Simmons' },

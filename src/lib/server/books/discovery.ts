@@ -3,56 +3,66 @@
  * BookOrbit says whether you own it and where you are in it. Kept apart from
  * both clients so each stays about one service.
  */
-import { arrivedWishes, bookKey, type BookCard, type BookRail, type ReadingBook } from '$lib/books';
-import { bookorbitLinked, getAllBooks, setReadStatus } from './bookorbit';
+import { arrivedEntries, bookKey, type BookCard, type BookRail, type EntryStatus, type ReadingBook } from '$lib/books';
+import { bookorbitLinked, getAllBooks, setBookRating, setReadStatus } from './bookorbit';
 import { searchBooks } from './hardcover';
-import { listWishlist, removeFromWishlist, wishlistIds } from './wishlist';
+import { entryStatuses, listEntries, removeEntry } from './entries';
 
 /** What the UI needs to badge a discovery card you already own. */
-export type Owned = { bookId: number; status: ReadingBook['status']; progress: number | null };
+export type Owned = {
+	bookId: number;
+	status: ReadingBook['status'];
+	progress: number | null;
+	/** Your rating (1–5) and the page count, for the book sheet. */
+	rating: number | null;
+	pages: number | null;
+};
 
-/** `wished`: on your wishlist (and not owned — owning it supersedes the wish). */
-export type OwnedCard = BookCard & { owned: Owned | null; wished: boolean };
+/** `mine`: your status on it as one of your own books (not owned — owning it
+ *  supersedes that). */
+export type OwnedCard = BookCard & { owned: Owned | null; mine: EntryStatus | null };
 
 /* Your library two ways: by Hardcover id (exact, once BookOrbit has matched the
    book) and by normalised title + author (the fallback until it has — on a
-   fresh library none have ids yet). Plus the Hardcover ids on your wishlist. */
+   fresh library none have ids yet). Plus your statuses on books you don't own. */
 export type OwnedIndex = {
 	byHc: Map<number, ReadingBook>;
 	byKey: Map<string, ReadingBook>;
-	wished: Set<number>;
+	mine: Map<number, EntryStatus>;
 };
 
-export function indexLibrary(books: ReadingBook[], wished: Set<number> = new Set()): OwnedIndex {
+export function indexLibrary(books: ReadingBook[], mine: Map<number, EntryStatus> = new Map()): OwnedIndex {
 	const byHc = new Map<number, ReadingBook>();
 	const byKey = new Map<string, ReadingBook>();
 	for (const b of books) {
 		if (b.hardcoverId) byHc.set(b.hardcoverId, b);
 		byKey.set(bookKey(b.title, b.authors[0]), b);
 	}
-	return { byHc, byKey, wished };
+	return { byHc, byKey, mine };
 }
 
 export function markOwned(cards: BookCard[], idx: OwnedIndex): OwnedCard[] {
 	return cards.map((c) => {
-		const mine = idx.byHc.get(c.hardcoverId) ?? idx.byKey.get(bookKey(c.title, c.author));
+		const lib = idx.byHc.get(c.hardcoverId) ?? idx.byKey.get(bookKey(c.title, c.author));
 		return {
 			...c,
-			owned: mine ? { bookId: mine.id, status: mine.status, progress: mine.progress } : null,
-			wished: !mine && idx.wished.has(c.hardcoverId)
+			owned: lib
+				? { bookId: lib.id, status: lib.status, progress: lib.progress, rating: lib.rating, pages: lib.pageCount }
+				: null,
+			mine: lib ? null : (idx.mine.get(c.hardcoverId) ?? null)
 		};
 	});
 }
 
 /** Your library index, or an empty one if you haven't linked BookOrbit or it's
  *  down — discovery must never fail just because the badge can't be computed.
- *  The wishlist is Seek's own, so it counts even without BookOrbit. */
+ *  Your own books are Seek's, so they count even without BookOrbit. */
 export async function ownedIndex(): Promise<OwnedIndex> {
-	const wished = wishlistIds();
-	if (!bookorbitLinked()) return indexLibrary([], wished);
+	const mine = entryStatuses();
+	if (!bookorbitLinked()) return indexLibrary([], mine);
 	return getAllBooks()
-		.then((books) => indexLibrary(books, wished))
-		.catch(() => indexLibrary([], wished));
+		.then((books) => indexLibrary(books, mine))
+		.catch(() => indexLibrary([], mine));
 }
 
 export async function railsWithOwned(
@@ -75,25 +85,32 @@ export async function matchHardcover(title: string, author: string | null): Prom
 }
 
 /**
- * A wished-for (or requested) book that has landed in the library comes in as
- * "unread" — BookOrbit doesn't know you wanted it. Carry the wish over: mark it
- * Want to read for you, then drop it from the wishlist, since the library copy
- * now carries your status. A copy you'd already given a status keeps it.
- * Best-effort: a failed write leaves the wish for next time.
+ * One of your own books that has landed in the library (you requested it, or
+ * uploaded your copy) comes in as "unread" — BookOrbit doesn't know what you'd
+ * done with it. Carry it over: your status and rating move to the library
+ * copy, then your entry goes, since the library copy now carries them. A copy
+ * you'd already given a status or rating keeps it. Best-effort: a failed write
+ * leaves the entry for next time.
  */
 export async function settleArrivals(library: ReadingBook[]): Promise<ReadingBook[]> {
-	const arrived = arrivedWishes(listWishlist(), library);
+	const arrived = arrivedEntries(listEntries(), library);
 	if (!arrived.length) return library;
 	const updated = new Map<number, ReadingBook>();
-	for (const { wish, book } of arrived) {
+	for (const { entry, book } of arrived) {
 		try {
+			let next = book;
 			if (book.status === 'unread') {
-				await setReadStatus(book.id, 'want_to_read');
-				updated.set(book.id, { ...book, status: 'want_to_read' });
+				await setReadStatus(book.id, entry.status);
+				next = { ...next, status: entry.status };
 			}
-			removeFromWishlist(wish.hardcoverId);
+			if (book.rating === null && entry.myRating !== null) {
+				await setBookRating(book.id, entry.myRating);
+				next = { ...next, rating: entry.myRating };
+			}
+			updated.set(book.id, next);
+			removeEntry(entry.hardcoverId);
 		} catch {
-			/* leave it wished; try again on the next visit */
+			/* keep the entry; try again on the next visit */
 		}
 	}
 	return library.map((b) => updated.get(b.id) ?? b);

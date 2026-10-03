@@ -1,12 +1,13 @@
 <script lang="ts">
 	import Poster from './Poster.svelte';
-	import { coverThumb, statusLabel, type ReadingBook } from '$lib/books';
+	import { coverThumb, progressText, statusLabel, type MyBook } from '$lib/books';
 
-	/** One book on the reading list: cover, title, author, and how far in you are.
-	 *  `note` replaces the status line (a wishlisted book has no status yet). */
-	type Props = { book: ReadingBook; note?: string | null; onopen: (b: ReadingBook) => void };
+	/** One book on the reading list: cover, title, author, where you are in it
+	 *  ("123 / 400 pages · 31%") and your rating. `note` replaces the status line
+	 *  (a requested book shows where its download is). */
+	type Props = { book: MyBook; note?: string | null; onopen: (b: MyBook) => void };
 	let { book, note = null, onopen }: Props = $props();
-	const pct = $derived(book.progress !== null ? Math.round(book.progress * 100) : null);
+	const progress = $derived(book.status !== 'read' ? progressText(book) : null);
 </script>
 
 <button class="row" onclick={() => onopen(book)}>
@@ -19,13 +20,15 @@
 		{/if}
 		{#if note}
 			<span class="status">{note}</span>
-		{:else if pct !== null && pct > 0 && book.status !== 'read'}
+		{:else if progress && book.progress !== null && book.progress > 0}
 			<span class="progress">
-				<span class="track"><span class="fill" style:width={`${pct}%`}></span></span>
-				<span class="pct tnum">{pct}%</span>
+				<span class="track"><span class="fill" style:width={`${Math.round(book.progress * 100)}%`}></span></span>
+				<span class="pct tnum">{progress}</span>
 			</span>
 		{:else}
-			<span class="status">{statusLabel(book.status)}</span>
+			<span class="status">
+				{statusLabel(book.status)}{#if book.myRating}<span class="stars" aria-label={`Rated ${book.myRating} of 5`}> · {'★'.repeat(book.myRating)}</span>{/if}
+			</span>
 		{/if}
 	</span>
 </button>
@@ -44,6 +47,7 @@
 	}
 	.by, .series { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.status { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+	.stars { color: var(--signal-solid); letter-spacing: 1px; }
 	.progress { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 	.track { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-raised); overflow: hidden; }
 	.fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
