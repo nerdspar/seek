@@ -7,16 +7,23 @@
 #        mkdir -p /mnt/NAS/Data/seek
 #        chown -R 1000:1000 /mnt/NAS/Data/seek
 #      (The container runs as the `node` user, uid 1000.)
-#      This holds Seek's own preferences ONLY. Floppy remains the single
-#      source of truth for all watch state — nothing here is precious.
+#      This holds Seek's household accounts (seek.db) and preferences. Floppy
+#      remains the single source of truth for all watch state. Back it up with
+#      the rest of /mnt/NAS/Data — losing it means re-creating the accounts.
 #
-# ── 2. Generate the session secret ───────────────────────────────────────
-#        openssl rand -hex 32
+# ── 2. Generate two secrets ──────────────────────────────────────────────
+#        openssl rand -hex 32     # SEEK_SESSION_SECRET
+#        openssl rand -hex 32     # SEEK_TOKEN_KEY
 #
 # ── 3. Paste your values at the ⬅ markers below ──────────────────────────
 #      FLOPPY_TOKEN          Floppy → Settings → Integrations → API Token
-#      SEEK_SESSION_SECRET   the value from step 2
+#      SEEK_SESSION_SECRET   from step 2
+#      SEEK_TOKEN_KEY        from step 2
 #      FLOPPY_URL            see the note on that line
+#
+#   First launch: open Seek and you'll land on /setup — create the owner
+#   account (enter SEEK_PASSPHRASE there if it's set), then invite the rest of
+#   the household from Settings → Household.
 #
 # ── 4. Log in to GHCR once (private image) and launch ────────────────────
 #        docker login ghcr.io -u nerdspar     # paste a read:packages PAT
@@ -50,35 +57,58 @@ services:
       #  • Floppy anywhere else: use its LAN address, e.g. http://192.168.1.10:8007
       FLOPPY_URL: "http://floppy:8000" # ⬅ FLOPPY_URL
 
-      # Floppy → Settings → Integrations → API Token.
+      # Floppy → Settings → Integrations → API Token. This is the OWNER's
+      # fallback — the owner's account uses it until they link their own in
+      # Settings. Other household members always link their own (never this).
       FLOPPY_TOKEN: "PASTE_FLOPPY_TOKEN_HERE" # ⬅ FLOPPY_TOKEN
 
-      # openssl rand -hex 32
+      # openssl rand -hex 32 — signs the login cookie.
       SEEK_SESSION_SECRET: "PASTE_SEEK_SESSION_SECRET_HERE" # ⬅ SEEK_SESSION_SECRET
 
-      # Shared household passphrase. Leave EMPTY on a trusted LAN and Seek is
-      # ungated. Set it before exposing Seek through a reverse proxy or tunnel —
-      # it holds the Floppy API token, so anyone who reaches it controls your
-      # library.
-      SEEK_PASSPHRASE: "" # ⬅ SEEK_PASSPHRASE (optional)
+      # openssl rand -hex 32 — encrypts each person's stored links (their Floppy
+      # token, calendar token, BookOrbit password). Keep it: changing it makes
+      # the stored links unreadable and everyone would have to re-link.
+      SEEK_TOKEN_KEY: "PASTE_SEEK_TOKEN_KEY_HERE" # ⬅ SEEK_TOKEN_KEY
+
+      # Everyone signs in with their own account now. The passphrase only
+      # unlocks first-run setup (/setup), proving the person creating the owner
+      # account is whoever deployed Seek. Set it before exposing Seek beyond
+      # the LAN, so a stranger can't claim a fresh install.
+      SEEK_PASSPHRASE: "" # ⬅ SEEK_PASSPHRASE (recommended)
+
+      # --- Email (optional): invites, password resets, email confirmation ----
+      # Via Resend (resend.com). Without these, Settings → Household gives the
+      # owner the invite / reset links to send by hand instead.
+      # MAIL_FROM must be on a domain verified in Resend.
+      RESEND_API_KEY: "" # ⬅ RESEND_API_KEY (optional)
+      MAIL_FROM: "" # ⬅ e.g. "Seek <seek@nerdspar.com>"
+
+      # --- Books (optional) — see docs/books-plan.md -------------------------
+      # BookOrbit is the library; each person links their own BookOrbit login in
+      # Settings. BOOKORBIT_USER/PASSWORD are only the owner's fallback.
+      # Hardcover powers book discovery (one personal token serves everyone).
+      BOOKORBIT_URL: "" # ⬅ e.g. https://bookorbit.example.com
+      BOOKORBIT_USER: "" # ⬅ (optional) owner fallback
+      BOOKORBIT_PASSWORD: "" # ⬅ (optional) owner fallback
+      HARDCOVER_TOKEN: "" # ⬅ hardcover.app/settings → API
 
       # Browser-reachable Floppy address, for the one settings link the phone
       # opens directly. Every other call is proxied, so FLOPPY_URL can stay a
       # container name. Blank hides the link.
       FLOPPY_PUBLIC_URL: "https://floppy.example.com" # ⬅ FLOPPY_PUBLIC_URL (optional)
 
-      # --- Required whenever SEEK_PASSPHRASE is set ---------------------------
+      # --- Required --------------------------------------------------------
       # The address browsers actually use, protocol included. SvelteKit compares
       # it against the Origin header on every POST, so getting it wrong makes the
-      # login form fail with 403 "Cross-site POST form submissions are forbidden"
-      # — the passphrase is never even read. It also decides whether the session
-      # cookie is marked Secure.
+      # sign-in form fail with 403 "Cross-site POST form submissions are
+      # forbidden" — the password is never even read. It also decides whether the
+      # session cookie is marked Secure, and it's the base of invite/reset links.
       #
       # Not optional in practice: with ORIGIN unset, adapter-node assumes https,
       # so a plain-HTTP deployment rejects its own login page.
       #
       # Use the SAME hostname on the LAN as from outside so one value covers both.
-      ORIGIN: "https://seek.example.com" # ⬅ ORIGIN (required if gated)
+      ORIGIN: "https://seek.example.com" # ⬅ ORIGIN (required)
 
       # Lets the login throttle tell clients apart. Without it every request
       # carries the proxy's address and the throttle becomes one global bucket —
@@ -88,12 +118,12 @@ services:
       #
       # Only safe if the proxy is the sole route in: the header is trusted as
       # given, so anything able to reach Seek directly could forge it.
-      ADDRESS_HEADER: "x-forwarded-for" # ⬅ ADDRESS_HEADER (recommended if gated)
+      ADDRESS_HEADER: "x-forwarded-for" # ⬅ ADDRESS_HEADER (recommended behind a proxy)
       XFF_DEPTH: "1"
 
       # Calendar feed token — powers the Upcoming tab AND the daily notification.
-      # Floppy → Calendar page → the token in the .ics feed URL. No token, no
-      # Upcoming and no digest.
+      # Floppy → Calendar page → the token in the .ics feed URL. This one is the
+      # OWNER's fallback; each person can link their own in Settings.
       FLOPPY_CALENDAR_TOKEN: "" # ⬅ FLOPPY_CALENDAR_TOKEN
       # themoviedb.org API key — enables search and Discover.
       TMDB_API_KEY: "" # ⬅ TMDB_API_KEY

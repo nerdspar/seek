@@ -81,10 +81,13 @@ Fill in the three values marked ⬅ :
 | `FLOPPY_URL` | `http://floppy:8000` if Floppy runs on this same Docker host — note 8000 is the *internal* port, not the published one (see below). Otherwise its LAN address, e.g. `http://192.168.1.10:8007` |
 | `FLOPPY_TOKEN` | Floppy → Settings → Integrations → API Token |
 | `SEEK_SESSION_SECRET` | `openssl rand -hex 32` |
+| `SEEK_TOKEN_KEY` | `openssl rand -hex 32` — encrypts each person's stored account links; keep it |
 
-`SEEK_PASSPHRASE` can stay empty on a trusted LAN (see "Security"). The rest —
-`FLOPPY_CALENDAR_TOKEN`, `TMDB_API_KEY`, and the `VAPID_*` keys — turn on optional
-features and can be filled in whenever you want them (see "Optional features").
+`SEEK_PASSPHRASE` unlocks first-run setup — set it for anything reachable off the
+LAN (see "Security"). The rest — `FLOPPY_CALENDAR_TOKEN`, `TMDB_API_KEY`, the
+`VAPID_*` keys, email (`RESEND_API_KEY`, `MAIL_FROM`) and books (`BOOKORBIT_*`,
+`HARDCOVER_TOKEN`) — turn on optional features and can be filled in whenever you
+want them (see "Optional features").
 
 **If Floppy runs on this same host** — including in a *different compose stack* —
 prefer reaching it by container name. `docker-compose.yml` ships configured that
@@ -167,43 +170,73 @@ docker image prune -f
 Pushing to `main` publishes a new `:latest` within a couple of minutes, so this
 is all it takes. If you run Watchtower, it will pick it up on its own.
 
+### Upgrading from the shared passphrase to accounts (one time)
+
+The household-accounts release replaces the single passphrase with a sign-in per
+person. Before pulling it:
+
+1. **Add `SEEK_TOKEN_KEY`** to the compose environment (`openssl rand -hex 32`)
+   — it encrypts each person's stored links. Keep `SEEK_SESSION_SECRET` and
+   `SEEK_PASSPHRASE` as they are.
+2. **Pull and restart.** Existing sessions stop working (they named no user), so
+   every device lands on **`/setup`** once.
+3. **Create the owner account** there — your name, email and a password, plus
+   the old `SEEK_PASSPHRASE` as the setup token. Your existing preferences and
+   notification devices carry over to this account automatically, and it keeps
+   using the env `FLOPPY_TOKEN` / `FLOPPY_CALENDAR_TOKEN` until you link your own.
+4. **Invite the household** from Settings → Household. Without email set up,
+   Seek shows you the invite link to send. Each person then links their own
+   Floppy (and BookOrbit) under Settings → Your accounts.
+
+`seek.db` now lives in `/data` next to the old JSON files — back it up with the
+rest of the dataset. Losing it means re-creating the accounts (nobody's Floppy
+data is affected).
+
 ## Security
 
-Seek holds your Floppy API token and proxies every call server-side, so the
-browser never sees it — but **anyone who can reach Seek can control your Floppy
-library**. On a trusted LAN that's fine and `SEEK_PASSPHRASE` can stay empty.
+Seek proxies every Floppy call server-side, so the browser never sees a token —
+but **anyone who can sign in can control that person's Floppy library**, so
+every page and API route requires an account.
 
-Set `SEEK_PASSPHRASE` **before** putting Seek behind a reverse proxy, Cloudflare
-Tunnel, or anything else reachable off the LAN. With it set, Seek gates every
-page and every API route behind a signed session cookie.
+- **Accounts, not a shared secret.** Each person signs in with their own email
+  and password; the owner invites everyone else (there's no open signup).
+  `SEEK_PASSPHRASE` survives only as the token that unlocks first-run setup —
+  set it before exposing a fresh install, so a stranger can't claim it.
+- **Nobody runs on someone else's account.** Each request runs as the signed-in
+  person with *their* Floppy token, caches and preferences. A household member
+  who hasn't linked Floppy sees a "link your account" prompt — never the
+  owner's library. Only the owner may fall back to the env tokens.
+- **Stored links are encrypted.** Floppy/calendar tokens and BookOrbit passwords
+  are AES-GCM encrypted at rest under `SEEK_TOKEN_KEY`, and each is checked
+  against the real service before it's saved.
 
-### What the gate does
+### How sessions work
 
-- **One passphrase, then a year of quiet.** A correct passphrase issues an
-  HttpOnly cookie lasting a year, so you authenticate once per device and not
-  again. On iOS the home-screen app has its own cookie store separate from
-  Safari, so expect to enter it twice on a phone — once in Safari, once after
-  adding to the home screen.
-- **The cookie is per-device.** Every other device and every other person gets
-  the login screen.
-- **Sessions really expire.** The token carries a signed issue time that the
-  server checks, so a copied cookie dies at a year rather than lasting forever.
-  The cookie's own `Max-Age` is only a promise the browser makes.
+- **Sign in once per device, then a year of quiet.** A correct password issues
+  an HttpOnly cookie lasting a year. On iOS the home-screen app has its own
+  cookie store separate from Safari, so expect to sign in twice on a phone —
+  once in Safari, once after adding to the home screen.
+- **Sessions really expire, and can be revoked.** The token carries a signed
+  issue time the server checks, plus the account's session version: changing a
+  password or tapping "Sign out everywhere" kills every other device's cookie.
 - **Guessing is throttled.** Every wrong answer costs a fixed delay; six wrong
   answers lock that client out for a minute, and each further failure escalates
-  the lockout up to two hours. A lockout blocks the *correct* passphrase too,
-  and the counters decay after six quiet hours.
-
-Because you type it about once per device, make it long — six random words or
-20+ characters from a password manager. Nothing about the UX rewards a short one.
+  the lockout up to two hours. A lockout blocks the *correct* password too, and
+  the counters decay after six quiet hours. Password-reset emails count toward
+  the same throttle, so the form can't be used to flood an inbox.
+- **Forgotten passwords.** With email configured, "Forgot password?" emails a
+  one-hour reset link. Without it, the owner can hand out a reset link from
+  Settings → Household.
 
 ### `ORIGIN` — the one that will bite you
 
-**Set `ORIGIN` to the exact address browsers use, protocol included, whenever the
-gate is on.** SvelteKit checks it against the `Origin` header on every POST, and
-a mismatch rejects the login form with `403 Cross-site POST form submissions are
-forbidden` before the passphrase is read. The symptom is a login page that just
-sits there, so Seek now says so on screen rather than failing silently.
+**Set `ORIGIN` to the exact address browsers use, protocol included.** SvelteKit
+checks it against the `Origin` header on every POST, and a mismatch rejects the
+sign-in form with `403 Cross-site POST form submissions are forbidden` before the
+password is read. The symptom is a sign-in page that just sits there, so Seek
+says so on screen rather than failing silently. `ORIGIN` is also the base of the
+invite and password-reset links Seek generates, so a wrong value hands out links
+that don't work.
 
 It is not really optional: with `ORIGIN` unset, adapter-node assumes `https`, so
 a plain-HTTP deployment rejects its own login page.
@@ -224,10 +257,12 @@ Then use that URL on the phone too, not `http://192.168.1.10:8100`.
 A Cloudflare Tunnel avoids opening ports and reuses the hostname you already
 have. In order:
 
-1. **Turn the gate on and confirm it.** `SEEK_PASSPHRASE` and
-   `SEEK_SESSION_SECRET` set, `ORIGIN` set, container restarted, login screen
-   reached and passed — *before* the name resolves publicly. Scanners find new
-   hostnames within hours of a certificate being issued.
+1. **Finish setup first.** `SEEK_PASSPHRASE`, `SEEK_SESSION_SECRET`,
+   `SEEK_TOKEN_KEY` and `ORIGIN` set, container restarted, the owner account
+   created at `/setup`, sign-in reached and passed — *before* the name resolves
+   publicly. Scanners find new hostnames within hours of a certificate being
+   issued, and an un-set-up Seek would offer them the setup page (the passphrase
+   is what stops them).
 2. **Set `ADDRESS_HEADER`** so the throttle can tell clients apart. Without it
    every request carries the proxy's address and one stranger's failures would
    lock out the household.
@@ -238,7 +273,8 @@ Verify after cutover — the cookie must come back marked `Secure`:
 curl -s -X POST https://seek.example.com/login \
   -H 'content-type: application/x-www-form-urlencoded' \
   -H 'Origin: https://seek.example.com' \
-  --data-urlencode 'passphrase=YOUR_PASSPHRASE' -D - -o /dev/null | grep -i set-cookie
+  --data-urlencode 'email=YOU@EXAMPLE.COM' \
+  --data-urlencode 'password=YOUR_PASSWORD' -D - -o /dev/null | grep -i set-cookie
 ```
 
 Cloudflare's own rate limiting on `/login` is worth adding as a second layer, but
@@ -302,7 +338,7 @@ address tells anyone who asks how the inside of the network is laid out.
 **Then verify, in this order:**
 
 ```bash
-# 1. From outside (phone on cellular): the tunnel is up and the gate holds.
+# 1. From outside (phone on cellular): the tunnel is up and sign-in is required.
 curl -s -o /dev/null -w '%{http_code}\n' https://seek.example.com/     # 303 → /login
 
 # 2. The address header survives the extra hop. A 500 here means cloudflared
@@ -322,9 +358,14 @@ outside. LAN clients stay individually counted.
 
 ### Revoking access
 
-There is one shared secret and no per-device records, so a lost phone means
-rotating `SEEK_SESSION_SECRET` and restarting. That invalidates every session on
-every device, and everyone logs in once more.
+- **A lost phone:** sign in elsewhere and tap Settings → **Sign out everywhere**
+  (or change your password). Every other device's session dies; nobody else in
+  the household is affected.
+- **Someone leaving the household:** the owner removes them in Settings →
+  Household. Their Seek account and its stored links are deleted; their own
+  Floppy and BookOrbit data are untouched.
+- **Nuclear option:** rotating `SEEK_SESSION_SECRET` and restarting invalidates
+  every session for everyone.
 
 ## Optional features
 
