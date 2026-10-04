@@ -6,7 +6,7 @@ declare global {
 			message: string;
 			/** Set when the failure is just "this person hasn't linked the account a
 			 *  feature needs" — pages show a link-it prompt instead of an error. */
-			notLinked?: 'floppy' | 'calendar' | 'bookorbit';
+			notLinked?: 'floppy' | 'bookorbit';
 		}
 		interface Locals {
 			/** The signed-in account, or null. Requests run *as* this user (userctx). */

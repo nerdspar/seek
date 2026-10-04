@@ -3,11 +3,11 @@
 	import StatusDot from './StatusDot.svelte';
 
 	/** "Your accounts" — the credentials Seek uses on *your* behalf: your own
-	 *  Floppy (watchlist, stats), its calendar feed (Upcoming), and BookOrbit
-	 *  (books). Each is checked against the real service before it's saved. */
+	 *  Floppy (watchlist, stats, Upcoming — one token opens the API and the
+	 *  calendar), BookOrbit (books) and, optionally, Hardcover. Each is checked
+	 *  against the real service before it's saved. */
 	type Linked = {
 		floppy: boolean;
-		calendar: boolean;
 		bookorbit: { username: string; libraryId: number | null } | null;
 		hardcover: boolean;
 	};
@@ -20,7 +20,7 @@
 	let { account }: Props = $props();
 	const linked = $derived(account.linked);
 
-	type Service = 'floppy' | 'calendar' | 'bookorbit' | 'hardcover';
+	type Service = 'floppy' | 'bookorbit' | 'hardcover';
 	let open = $state<Service | null>(null);
 	let busy = $state(false);
 	let msg = $state<{ service: Service; ok: boolean; text: string } | null>(null);
@@ -135,14 +135,8 @@
 		{
 			id: 'floppy',
 			label: 'Floppy',
-			what: 'Your watchlist, shows, stats and history',
-			how: 'In Floppy: Settings → Integrations → Tokens. Give it watchlist:write, sync:read and progress access, then paste the flp_… token.'
-		},
-		{
-			id: 'calendar',
-			label: 'Floppy calendar',
-			what: 'Upcoming, and the daily digest',
-			how: 'In Floppy: copy your calendar feed link. Paste the whole link — Seek takes the token from it.'
+			what: 'Your watchlist, shows, stats, history and Upcoming',
+			how: 'In Floppy, open Calendar and copy its feed link (…/calendar/download/…). Paste the whole link — its token opens your Floppy and your calendar, so it’s the only one Seek needs.'
 		},
 		{
 			id: 'bookorbit',
@@ -201,7 +195,7 @@
 						<input
 							bind:value={token}
 							type="password"
-							placeholder={s.id === 'floppy' ? 'flp_…' : s.id === 'hardcover' ? 'Hardcover API token' : 'Calendar feed link or token'}
+							placeholder={s.id === 'floppy' ? 'Floppy calendar link or token' : 'Hardcover API token'}
 							autocomplete="off"
 							autocapitalize="off"
 							autocorrect="off"

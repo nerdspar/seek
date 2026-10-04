@@ -53,6 +53,13 @@ describe('credential resolution', () => {
 		});
 	});
 
+	it('one Floppy token does both: the calendar uses it unless an older separate one is saved', () => {
+		users.setFloppyToken(member.id, 'acct_tok');
+		runAs(member, () => expect(calendarToken()).toBe('acct_tok'));
+		users.setCalendarToken(member.id, 'old_cal');
+		runAs(member, () => expect(calendarToken()).toBe('old_cal'));
+	});
+
 	it('a member NEVER falls back to the owner’s env credentials', () => {
 		runAs(member, () => {
 			expect(() => floppyToken()).toThrow(NotLinkedError);

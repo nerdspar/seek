@@ -1,6 +1,6 @@
 /**
- * Linking a person's own accounts (household phase C): Floppy, the Floppy
- * calendar feed, and BookOrbit. Every credential is tried against the real
+ * Linking a person's own accounts (household phase C): Floppy (one token for
+ * the API and the calendar feed), BookOrbit and Hardcover. Every credential is tried against the real
  * service before it's saved, so a typo is caught at the form rather than
  * surfacing later as a broken tab.
  */

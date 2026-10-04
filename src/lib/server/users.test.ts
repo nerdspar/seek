@@ -208,7 +208,6 @@ describe('credentials', () => {
 		});
 		expect(users.linkedStatus(u.id)).toEqual({
 			floppy: true,
-			calendar: true,
 			bookorbit: { username: 'scott', libraryId: 2 },
 			hardcover: true
 		});

@@ -400,7 +400,6 @@ export function getCredentials(userId: number): Credentials {
 /** Which credentials are linked — safe to send to the browser. */
 export type LinkedStatus = {
 	floppy: boolean;
-	calendar: boolean;
 	bookorbit: { username: string; libraryId: number | null } | null;
 	hardcover: boolean;
 };
@@ -409,7 +408,6 @@ export function linkedStatus(userId: number): LinkedStatus {
 	const r = row(userId);
 	return {
 		floppy: Boolean(r?.floppy_token_enc),
-		calendar: Boolean(r?.floppy_calendar_token_enc),
 		bookorbit: r?.bookorbit_username
 			? { username: r.bookorbit_username, libraryId: r.bookorbit_library_id }
 			: null,

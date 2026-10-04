@@ -25,7 +25,7 @@ const TTL_MS = 45 * 60 * 1000;
 
 async function fetchFeed(): Promise<IcalEvent[]> {
 	const token = calendarToken();
-	if (!token) throw new NotLinkedError('calendar');
+	if (!token) throw new NotLinkedError('floppy');
 
 	const params = new URLSearchParams();
 	for (const t of ['tv', 'season', 'movie', 'anime']) params.append('media_types', t);

@@ -38,11 +38,10 @@ function creds(ctx: Ctx): Credentials {
 	return ctx.creds;
 }
 
-export type LinkedService = 'floppy' | 'calendar' | 'bookorbit';
+export type LinkedService = 'floppy' | 'bookorbit';
 
 const NOT_LINKED: Record<LinkedService, string> = {
 	floppy: 'No Floppy account linked — add your Floppy token in Settings → Your accounts.',
-	calendar: 'No Floppy calendar linked — add your calendar token in Settings → Your accounts.',
 	bookorbit: 'No BookOrbit account linked — add your BookOrbit login in Settings → Your accounts.'
 };
 
@@ -70,10 +69,14 @@ export function floppyToken(): string {
 	return token;
 }
 
-/** The Floppy calendar (iCal) token, or null when this person has none. */
+/** The Floppy calendar (iCal) token, or null when this person has none.
+ *  Floppy's account token opens both the API and the calendar, so it's the
+ *  Floppy token — unless an older, separately linked calendar token is saved. */
 export function calendarToken(): string | null {
 	const ctx = als.getStore();
-	return ctx ? creds(ctx).calendarToken : null;
+	if (!ctx) return null;
+	const c = creds(ctx);
+	return c.calendarToken ?? c.floppyToken;
 }
 
 export type BookOrbitLogin = { username: string; password: string; libraryId: number | null };

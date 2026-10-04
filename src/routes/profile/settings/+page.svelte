@@ -72,7 +72,7 @@
 			title: 'You',
 			rows: [
 				{ id: 'account', title: 'Account', hint: `${data.account.me.name} · ${data.account.me.email}`, show: true },
-				{ id: 'accounts', title: 'Your accounts', hint: 'Floppy, calendar, BookOrbit, Hardcover', show: true }
+				{ id: 'accounts', title: 'Your accounts', hint: 'Floppy, BookOrbit, Hardcover', show: true }
 			]
 		},
 		{
