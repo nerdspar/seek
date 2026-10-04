@@ -29,6 +29,9 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : nul
 const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
+/** Floppy's status code for Completed (0 Planning, 1 In progress, 2 Paused, 4 Dropped). */
+const FLOPPY_COMPLETED = 3;
+
 const showPath = (source: string, mediaId: string) =>
 	`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}`;
 
@@ -202,12 +205,18 @@ export async function getShow(
 	const details = rec(d.details);
 	const related = rec(d.related);
 
+	/* Floppy's season `progress` is the furthest episode reached, not a count:
+	   watch only E10 and it says 10, with 0 left. Only a Completed season's
+	   number is a true count; any other season with a position is counted from
+	   its ticked episodes below (normally just the one you're watching). */
+	const inProgress = new Set<number>();
 	const seasons: SeasonSummary[] = arr(related.seasons)
 		.map((entry): SeasonSummary | null => {
 			const s = rec(entry);
 			const item = rec(s.item);
 			const seasonNumber = num(item.season_number);
 			if (seasonNumber === null) return null;
+			if ((num(s.progress) ?? 0) > 0 && num(s.status) !== FLOPPY_COMPLETED) inProgress.add(seasonNumber);
 			return {
 				seasonNumber,
 				title: str(item.title) ?? `Season ${seasonNumber}`,
@@ -246,7 +255,7 @@ export async function getShow(
 		seasons.map(async (s) => {
 			const known = knownSeasonEpisodes[s.seasonNumber];
 			const needMax = s.maxProgress === null && typeof known !== 'number';
-			const needProg = deriveProgress && s.progress === null;
+			const needProg = (deriveProgress && s.progress === null) || inProgress.has(s.seasonNumber);
 			if (!needMax && !needProg) {
 				return { ...s, maxProgress: s.maxProgress ?? (typeof known === 'number' ? known : null) };
 			}
@@ -290,7 +299,15 @@ export async function getShow(
 		score: num(d.score),
 		scoreCount: num(d.score_count),
 		maxProgress: num(d.max_progress),
-		progress: num(consumption.progress) ?? 0,
+		// The show total is "furthest" too: move it by whatever counting changed.
+		progress: Math.max(
+			0,
+			showProgress +
+				withTotals.reduce(
+					(n, t, i) => (inProgress.has(t.seasonNumber) ? n + (t.progress ?? 0) - (seasons[i].progress ?? 0) : n),
+					0
+				)
+		),
 		tracked: d.tracked === true,
 		status: str(details.status),
 		firstAirDate: str(details.first_air_date),
