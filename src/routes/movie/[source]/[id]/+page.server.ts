@@ -5,6 +5,9 @@ import { getPrefs } from '$lib/server/prefs';
 import { getTracking, UNTRACKED } from '$lib/server/tracking';
 import { getMovieExtras } from '$lib/server/tmdb';
 import { memo } from '$lib/server/memo';
+import { currentUser } from '$lib/server/userctx';
+import { mirrorMembers } from '$lib/server/household/mirror';
+import { isShared } from '$lib/server/household/shared';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -30,11 +33,18 @@ export const load: PageServerLoad = async ({ params }) => {
 	/* Company applies to films too — verified live that Floppy stores and filters
 	   the tag on a movie. Skipped entirely when the feature is off, so nothing
 	   is fetched for a chip that will not render. */
-	const joint = prefs.companyTracking
-		? getItemTags('movie', params.source, params.id)
-				.then((tags) => tags.includes(JOINT_TAG))
-				.catch(() => false)
-		: Promise.resolve(false);
+	/* With two people on Floppy, "together" is the household's shared list (plays
+	   mirror between you), so a film your partner shared reads as together for
+	   you too — the same as on the show page. */
+	const me = currentUser();
+	const mirroring = me ? mirrorMembers(me.householdId).length >= 2 : false;
+	const joint = !prefs.companyTracking
+		? Promise.resolve(false)
+		: mirroring && me
+			? Promise.resolve(isShared(me.householdId, params.source, params.id, 'movie'))
+			: getItemTags('movie', params.source, params.id)
+					.then((tags) => tags.includes(JOINT_TAG))
+					.catch(() => false);
 
 	// Status and score live on the list row, not the detail — see tracking.ts.
 	const tracking = movie

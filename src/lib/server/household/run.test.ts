@@ -41,7 +41,7 @@ describe('setShared', () => {
 		expect(setShared(owner.householdId, owner.id, show, true)).toBe(true);
 		await flush();
 		expect(backfillShow).toHaveBeenCalledTimes(1);
-		expect(backfillShow).toHaveBeenCalledWith(owner.householdId, 'tmdb', '95350');
+		expect(backfillShow).toHaveBeenCalledWith(owner.householdId, 'tmdb', '95350', undefined, 'tv');
 		expect(isShared(owner.householdId, 'tmdb', '95350')).toBe(true);
 	});
 
@@ -121,6 +121,15 @@ describe('shareMany (the one-time joint import)', () => {
 		expect(bulkProgress(owner.householdId)).toMatchObject({ total: 3, done: 3, mirrored: 5, failed: 1, running: false });
 		// Tagged for each linked member after its catch-up (two members × three shows).
 		expect(setJoint).toHaveBeenCalledTimes(6);
+	});
+
+	it('shares films as films: kept apart from shows, caught up as films', async () => {
+		shareMany(owner.householdId, owner.id, [{ source: 'tmdb', mediaId: '603', mediaType: 'movie', title: 'The Matrix' }]);
+		for (let i = 0; i < 5; i++) await flush();
+		expect(isShared(owner.householdId, 'tmdb', '603', 'movie')).toBe(true);
+		expect(isShared(owner.householdId, 'tmdb', '603')).toBe(false);
+		expect(backfillShow).toHaveBeenCalledWith(owner.householdId, 'tmdb', '603', undefined, 'movie');
+		expect(setJoint.mock.calls.every((c) => c[0] === 'movie')).toBe(true);
 	});
 
 	it('re-running catches up shows that were already shared (safe to resume)', async () => {

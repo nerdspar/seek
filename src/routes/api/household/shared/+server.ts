@@ -34,7 +34,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const shows = raw
 		.map((s) => (s && typeof s === 'object' ? (s as Record<string, unknown>) : {}))
 		.filter((s) => typeof s.source === 'string' && typeof s.mediaId === 'string' && s.source && s.mediaId)
-		.map((s) => ({ source: s.source as string, mediaId: s.mediaId as string, title: typeof s.title === 'string' ? s.title : null }));
+		.map((s) => ({
+			source: s.source as string,
+			mediaId: s.mediaId as string,
+			mediaType: s.mediaType === 'movie' ? ('movie' as const) : ('tv' as const),
+			title: typeof s.title === 'string' ? s.title : null
+		}));
 	if (!shows.length || shows.length !== raw.length) error(400, 'Every show needs a source and mediaId.');
 	if (shows.length > 1000) error(400, 'At most 1000 shows at a time.');
 	if (bulkProgress(me.householdId)?.running) error(409, 'A bulk share is already running.');
@@ -45,9 +50,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 export const DELETE: RequestHandler = async ({ locals, request }) => {
 	const me = locals.user;
 	if (!me) error(401);
-	const { source, mediaId } = await request.json().catch(() => ({}));
+	const { source, mediaId, mediaType: kind } = await request.json().catch(() => ({}));
 	if (typeof source !== 'string' || typeof mediaId !== 'string') error(400, 'source and mediaId are required');
-	setShared(me.householdId, me.id, { source, mediaId }, false);
-	await syncJointTags(me.householdId, { source, mediaId }, false);
+	const mediaType = kind === 'movie' ? ('movie' as const) : ('tv' as const);
+	setShared(me.householdId, me.id, { source, mediaId, mediaType }, false);
+	await syncJointTags(me.householdId, { source, mediaId, mediaType }, false);
 	return json({ ok: true });
 };

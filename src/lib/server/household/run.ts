@@ -11,7 +11,7 @@ import { floppy } from '../floppy';
 import { getPrefs } from '../prefs';
 import { sendToDevices } from '../push';
 import { backfillShow, mirrorMembers, reconcileHousehold } from './mirror';
-import { isShared, share, unshare } from './shared';
+import { isShared, share, unshare, type SharedKind, type SharedRef } from './shared';
 import { decide, noteShared, scanNewShows, settle, type Added, type Deps, type Settled, type ShowRef } from './newShows';
 
 const running = new Map<number, Promise<unknown>>();
@@ -116,10 +116,10 @@ export function reconcileSoon(householdId: number, delayMs = 4000): void {
 
 /** After a mark in Seek: nudge mirroring if this show is shared. Never throws —
  *  a mark that landed must not be reported as failed over this. */
-export function afterMark(source: string, mediaId: string): void {
+export function afterMark(source: string, mediaId: string, mediaType: SharedKind = 'tv'): void {
 	try {
 		const me = currentUser();
-		if (me && isShared(me.householdId, source, mediaId) && mirroringAvailable(me.householdId)) {
+		if (me && isShared(me.householdId, source, mediaId, mediaType) && mirroringAvailable(me.householdId)) {
 			reconcileSoon(me.householdId);
 		}
 	} catch (err) {
@@ -135,16 +135,18 @@ export function afterMark(source: string, mediaId: string): void {
 export function setShared(
 	householdId: number,
 	userId: number,
-	show: { source: string; mediaId: string; title?: string | null },
+	show: SharedRef,
 	on: boolean
 ): boolean {
-	noteShared(householdId, userId, { source: show.source, mediaId: show.mediaId, title: show.title ?? null }, on);
+	const kind = show.mediaType ?? 'tv';
+	// The new-show inbox is for shows; a film's answer is just the share.
+	if (kind === 'tv') noteShared(householdId, userId, { source: show.source, mediaId: show.mediaId, title: show.title ?? null }, on);
 	if (!on) {
-		unshare(householdId, show.source, show.mediaId);
+		unshare(householdId, show.source, show.mediaId, kind);
 		return false;
 	}
 	if (share(householdId, userId, show)) {
-		void serial(householdId, () => backfillShow(householdId, show.source, show.mediaId))
+		void serial(householdId, () => backfillShow(householdId, show.source, show.mediaId, undefined, kind))
 			// Tag it again now the catch-up has put it in everyone's library.
 			.then(async (sum) => {
 				console.log(`[mirror] backfilled ${show.source}:${show.mediaId}:`, sum);
@@ -182,7 +184,7 @@ export const bulkProgress = (householdId: number): BulkProgress | null => bulk.g
 export function shareMany(
 	householdId: number,
 	userId: number,
-	shows: { source: string; mediaId: string; title?: string | null }[]
+	shows: SharedRef[]
 ): BulkProgress {
 	const progress: BulkProgress = {
 		total: shows.length,
@@ -198,7 +200,7 @@ export function shareMany(
 	void (async () => {
 		for (const s of shows) {
 			try {
-				const sum = await serial(householdId, () => backfillShow(householdId, s.source, s.mediaId));
+				const sum = await serial(householdId, () => backfillShow(householdId, s.source, s.mediaId, undefined, s.mediaType ?? 'tv'));
 				progress.mirrored += sum.mirrored;
 				progress.failed += sum.failed;
 				await syncJointTags(householdId, s, true);
@@ -222,13 +224,13 @@ export function shareMany(
  */
 export async function syncJointTags(
 	householdId: number,
-	show: { source: string; mediaId: string },
+	show: SharedRef,
 	on: boolean,
 	exceptUserId?: number
 ): Promise<void> {
 	for (const m of mirrorMembers(householdId)) {
 		if (m.id === exceptUserId) continue;
-		await runAs(m, () => setJoint('tv', show.source, show.mediaId, on)).catch((err) =>
+		await runAs(m, () => setJoint(show.mediaType ?? 'tv', show.source, show.mediaId, on)).catch((err) =>
 			console.warn(`[mirror] tag sync for user ${m.id} failed:`, err)
 		);
 	}

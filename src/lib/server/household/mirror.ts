@@ -1,7 +1,8 @@
 /**
- * Shared-show mirroring: a play of a shared show by one of you is recorded for
- * the others too, at the same time, so you both get credit for watching it
- * together — however it was logged (Seek, Floppy, or Jellyfin's auto-scrobble).
+ * Shared-show mirroring: a play of a shared show (or film) by one of you is
+ * recorded for the others too, at the same time, so you both get credit for
+ * watching it together — however it was logged (Seek, Floppy, or Jellyfin's
+ * auto-scrobble). A film is one "episode": season 0, episode 0.
  *
  * How it stays correct without help from Floppy (whose watch POST appends —
  * it never upserts or dedupes):
@@ -24,9 +25,11 @@ import { listMembers, type User } from '../users';
 import { runAs, floppyToken, NotLinkedError } from '../userctx';
 import { floppy, FloppyError } from '../floppy';
 import { addMedia } from '../search';
-import { listShared, showKey } from './shared';
+import { listShared, showKey, type SharedKind } from './shared';
 
 export type Play = {
+	/** 'tv' (an episode) or 'movie' (a film: season and episode are 0). */
+	mediaType: SharedKind;
 	source: string;
 	mediaId: string;
 	season: number;
@@ -45,7 +48,7 @@ export const LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
 type Raw = Record<string, unknown>;
 const rec = (v: unknown): Raw => (v && typeof v === 'object' ? (v as Raw) : {});
 
-/** Episode plays from a Floppy `/history/?flat=1` page (other media dropped). */
+/** Episode and film plays from a Floppy `/history/?flat=1` page (other media dropped). */
 export function playsFromHistory(raw: unknown): Play[] {
 	const results = rec(raw).results;
 	if (!Array.isArray(results)) return [];
@@ -53,13 +56,15 @@ export function playsFromHistory(raw: unknown): Play[] {
 		const r = rec(e);
 		const item = rec(r.item);
 		const at = Date.parse(String(r.played_at_local ?? ''));
-		const season = Number(r.season_number ?? item.season_number);
-		const episode = Number(r.episode_number ?? item.episode_number);
-		if (r.media_type !== 'episode' || !item.media_id || !item.source || !Number.isFinite(at)) return [];
+		const movie = r.media_type === 'movie';
+		const season = movie ? 0 : Number(r.season_number ?? item.season_number);
+		const episode = movie ? 0 : Number(r.episode_number ?? item.episode_number);
+		if ((r.media_type !== 'episode' && !movie) || !item.media_id || !item.source || !Number.isFinite(at)) return [];
 		if (!Number.isInteger(season) || !Number.isInteger(episode)) return [];
 		const instance = Number(r.instance_id);
 		return [
 			{
+				mediaType: movie ? 'movie' : 'tv',
 				source: String(item.source),
 				mediaId: String(item.media_id),
 				season,
@@ -72,7 +77,11 @@ export function playsFromHistory(raw: unknown): Play[] {
 }
 
 const sameEpisode = (a: Play, b: Play) =>
-	a.source === b.source && a.mediaId === b.mediaId && a.season === b.season && a.episode === b.episode;
+	a.mediaType === b.mediaType &&
+	a.source === b.source &&
+	a.mediaId === b.mediaId &&
+	a.season === b.season &&
+	a.episode === b.episode;
 
 /** The partner already has credit for this viewing. */
 export const hasViewing = (theirs: Play[], p: Play) =>
@@ -84,10 +93,10 @@ export const hasEpisode = (theirs: Play[], p: Play) => theirs.some((t) => sameEp
 /* ── Floppy, as a given person ───────────────────────────────────────────── */
 
 export type Ops = {
-	/** This person's episode plays since `sinceMs`, newest first. */
+	/** This person's episode and film plays since `sinceMs`, newest first. */
 	recentPlays(user: User, sinceMs: number): Promise<Play[]>;
-	/** Every play this person has of one show. */
-	showPlays(user: User, source: string, mediaId: string): Promise<Play[]>;
+	/** Every play this person has of one show or film. */
+	showPlays(user: User, source: string, mediaId: string, mediaType: SharedKind): Promise<Play[]>;
 	/** Record a play for this person at the play's time. */
 	postPlay(user: User, play: Play): Promise<void>;
 };
@@ -98,7 +107,7 @@ async function historyPages(query: Record<string, string>, stop: (page: Play[]) 
 	const out: Play[] = [];
 	for (let page = 0; page < maxPages; page++) {
 		const raw = await floppy<unknown>('/api/v1/history/', {
-			query: { flat: '1', media_type: 'tv', limit: String(PAGE), offset: String(page * PAGE), ...query }
+			query: { flat: '1', limit: String(PAGE), offset: String(page * PAGE), ...query }
 		});
 		const plays = playsFromHistory(raw);
 		out.push(...plays);
@@ -110,21 +119,30 @@ async function historyPages(query: Record<string, string>, stop: (page: Play[]) 
 
 export const floppyOps: Ops = {
 	recentPlays: (user, sinceMs) =>
-		runAs(user, () =>
-			historyPages({}, (page) => page.some((p) => p.at < sinceMs), 5).then((all) => all.filter((p) => p.at >= sinceMs))
-		),
-	showPlays: (user, source, mediaId) =>
-		runAs(user, () => historyPages({ source, media_id: mediaId }, () => false, 10)),
+		runAs(user, async () => {
+			const recent = (mediaType: SharedKind) =>
+				historyPages({ media_type: mediaType }, (page) => page.some((p) => p.at < sinceMs), 5).then((all) =>
+					all.filter((p) => p.at >= sinceMs)
+				);
+			const [tv, movie] = await Promise.all([recent('tv'), recent('movie')]);
+			return [...tv, ...movie].sort((a, b) => b.at - a.at);
+		}),
+	showPlays: (user, source, mediaId, mediaType) =>
+		runAs(user, () => historyPages({ media_type: mediaType, source, media_id: mediaId }, () => false, 10)),
 	postPlay: (user, play) =>
 		runAs(user, async () => {
-			const path = `/api/v1/media/tv/${play.source}/${encodeURIComponent(play.mediaId)}/${play.season}/episodes/${play.episode}/watch/`;
+			const id = encodeURIComponent(play.mediaId);
+			const path =
+				play.mediaType === 'movie'
+					? `/api/v1/media/movie/${play.source}/${id}/watch/`
+					: `/api/v1/media/tv/${play.source}/${id}/${play.season}/episodes/${play.episode}/watch/`;
 			const body = { end_date: new Date(play.at).toISOString() };
 			try {
 				await floppy(path, { method: 'POST', body });
 			} catch (err) {
-				// Not in their library yet: add the show, then record the play.
+				// Not in their library yet: add it, then record the play.
 				if (!(err instanceof FloppyError) || err.status !== 404) throw err;
-				await addMedia('tv', play.source, play.mediaId).catch((e) => {
+				await addMedia(play.mediaType, play.source, play.mediaId).catch((e) => {
 					if (!(e instanceof FloppyError && e.status === 409)) throw e;
 				});
 				await floppy(path, { method: 'POST', body });
@@ -200,14 +218,14 @@ async function carry(
 	from: User,
 	to: User,
 	plays: Play[],
-	theirs: (source: string, mediaId: string) => Promise<Play[]>,
+	theirs: (source: string, mediaId: string, mediaType: SharedKind) => Promise<Play[]>,
 	covered: (theirs: Play[], p: Play) => boolean,
 	ops: Ops,
 	sum: MirrorSummary
 ) {
 	for (const p of plays) {
 		if (p.instance !== null && logged(from.id, p.instance, to.id)) continue;
-		const existing = await theirs(p.source, p.mediaId);
+		const existing = await theirs(p.source, p.mediaId, p.mediaType);
 		if (covered(existing, p)) {
 			record(from.id, to.id, p, 'already');
 			sum.already++;
@@ -222,7 +240,8 @@ async function carry(
 			// Left unlogged: the next run tries again, and the partner check stops
 			// a doubled play if this one landed after all (e.g. a timeout).
 			sum.failed++;
-			console.warn(`[mirror] ${from.id}→${to.id} ${showKey(p.source, p.mediaId)} S${p.season}E${p.episode}:`, err);
+			const what = p.mediaType === 'movie' ? '' : ` S${p.season}E${p.episode}`;
+			console.warn(`[mirror] ${from.id}→${to.id} ${showKey(p.source, p.mediaId, p.mediaType)}${what}:`, err);
 		}
 	}
 }
@@ -230,9 +249,9 @@ async function carry(
 /** Cache of a person's plays per show, for one run. */
 function showCache(user: User, ops: Ops) {
 	const cache = new Map<string, Promise<Play[]>>();
-	return (source: string, mediaId: string) => {
-		const key = showKey(source, mediaId);
-		if (!cache.has(key)) cache.set(key, ops.showPlays(user, source, mediaId));
+	return (source: string, mediaId: string, mediaType: SharedKind) => {
+		const key = showKey(source, mediaId, mediaType);
+		if (!cache.has(key)) cache.set(key, ops.showPlays(user, source, mediaId, mediaType));
 		return cache.get(key)!;
 	};
 }
@@ -245,14 +264,14 @@ export async function reconcileHousehold(householdId: number, ops: Ops = floppyO
 	const sum: MirrorSummary = { mirrored: 0, already: 0, failed: 0 };
 	const members = mirrorMembers(householdId);
 	if (members.length < 2) return sum;
-	const shared = new Set(listShared(householdId).map((s) => showKey(s.source, s.mediaId)));
+	const shared = new Set(listShared(householdId).map((s) => showKey(s.source, s.mediaId, s.mediaType)));
 	if (!shared.size) return sum;
 
 	const caches = new Map(members.map((m) => [m.id, showCache(m, ops)]));
 	for (const from of members) {
 		const since = (lastScan(from.id) ?? now) - LOOKBACK_MS;
 		const plays = (await ops.recentPlays(from, since)).filter(
-			(p) => shared.has(showKey(p.source, p.mediaId)) && !isMirrored(from.id, p)
+			(p) => shared.has(showKey(p.source, p.mediaId, p.mediaType)) && !isMirrored(from.id, p)
 		);
 		for (const to of members) {
 			if (to.id === from.id) continue;
@@ -272,7 +291,8 @@ export async function backfillShow(
 	householdId: number,
 	source: string,
 	mediaId: string,
-	ops: Ops = floppyOps
+	ops: Ops = floppyOps,
+	mediaType: SharedKind = 'tv'
 ): Promise<MirrorSummary> {
 	const sum: MirrorSummary = { mirrored: 0, already: 0, failed: 0 };
 	const members = mirrorMembers(householdId);
@@ -281,7 +301,7 @@ export async function backfillShow(
 	// Read everyone's history first, so one person's backfilled plays aren't
 	// mistaken for their own and carried straight back.
 	const own = new Map<number, Play[]>();
-	for (const m of members) own.set(m.id, [...(await caches.get(m.id)!(source, mediaId))]);
+	for (const m of members) own.set(m.id, [...(await caches.get(m.id)!(source, mediaId, mediaType))]);
 	for (const from of members) {
 		// Oldest first, capped: a long-running show is still a bounded catch-up.
 		const plays = [...own.get(from.id)!].sort((a, b) => a.at - b.at).slice(0, 1000);

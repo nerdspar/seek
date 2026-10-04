@@ -197,6 +197,24 @@ export const MIGRATIONS: string[] = [
 		created_at    TEXT NOT NULL,
 		PRIMARY KEY (household_id, source, media_id)
 	);
+	`,
+	// v9 — films can be shared too. A film and a show can share a TMDB number,
+	// so the shared list is keyed by media type as well (existing rows are shows).
+	`
+	CREATE TABLE shared_shows_v9 (
+		household_id  INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		media_type    TEXT NOT NULL DEFAULT 'tv' CHECK (media_type IN ('tv', 'movie')),
+		source        TEXT NOT NULL,
+		media_id      TEXT NOT NULL,
+		title         TEXT,
+		added_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+		created_at    TEXT NOT NULL,
+		PRIMARY KEY (household_id, media_type, source, media_id)
+	);
+	INSERT INTO shared_shows_v9 (household_id, media_type, source, media_id, title, added_by, created_at)
+		SELECT household_id, 'tv', source, media_id, title, added_by, created_at FROM shared_shows;
+	DROP TABLE shared_shows;
+	ALTER TABLE shared_shows_v9 RENAME TO shared_shows;
 	`
 ];
 

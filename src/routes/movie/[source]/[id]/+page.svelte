@@ -81,7 +81,7 @@
 	/* Company is a household tag, so it applies to films exactly as it does to
 	   shows — verified against a live instance that Floppy stores and filters it
 	   on a movie. It is hidden when the feature is switched off in settings. */
-	async function toggleJoint(current: boolean) {
+	async function toggleJoint(current: boolean, movieTitle: string) {
 		if (jointBusy) return;
 		const before = jointEdit;
 		const next = !current;
@@ -95,7 +95,8 @@
 					mediaType: 'movie',
 					source: data.source,
 					mediaId: data.mediaId,
-					joint: next
+					joint: next,
+					title: movieTitle
 				})
 			});
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
@@ -321,7 +322,7 @@
 							busy={trackBusy || watchBusy || jointBusy}
 							onmain={() => (statusOpen = true)}
 							onrating={() => (ratingOpen = true)}
-							oncompany={() => toggleJoint(joint)}
+							oncompany={() => toggleJoint(joint, movie.title)}
 						/>
 					</div>
 				{/await}

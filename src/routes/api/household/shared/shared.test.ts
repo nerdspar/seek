@@ -29,9 +29,14 @@ describe('POST /api/household/shared (bulk)', () => {
 		const res = await post({ shows: [{ source: 'tmdb', mediaId: '1', title: 'One' }, { source: 'tmdb', mediaId: '2' }] });
 		expect(res.status).toBe(200);
 		expect(shareMany).toHaveBeenCalledWith(7, 1, [
-			{ source: 'tmdb', mediaId: '1', title: 'One' },
-			{ source: 'tmdb', mediaId: '2', title: null }
+			{ source: 'tmdb', mediaId: '1', mediaType: 'tv', title: 'One' },
+			{ source: 'tmdb', mediaId: '2', mediaType: 'tv', title: null }
 		]);
+	});
+
+	it('carries films as films', async () => {
+		await post({ shows: [{ source: 'tmdb', mediaId: '603', mediaType: 'movie', title: 'The Matrix' }] });
+		expect(shareMany).toHaveBeenCalledWith(7, 1, [{ source: 'tmdb', mediaId: '603', mediaType: 'movie', title: 'The Matrix' }]);
 	});
 
 	it('refuses before both of you are linked, a malformed list, or a second run', async () => {

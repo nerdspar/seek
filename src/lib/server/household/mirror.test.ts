@@ -19,7 +19,7 @@ function fakeFloppy(initial: Record<number, Play[]>) {
 	const mine = (u: users.User) => plays.get(u.id) ?? [];
 	const ops: Ops = {
 		recentPlays: async (u, since) => mine(u).filter((p) => p.at >= since).sort((a, b) => b.at - a.at),
-		showPlays: async (u, s, m) => mine(u).filter((p) => p.source === s && p.mediaId === m),
+		showPlays: async (u, s, m, kind) => mine(u).filter((p) => p.source === s && p.mediaId === m && p.mediaType === kind),
 		postPlay: async (u, p) => {
 			if (failNext > 0) {
 				failNext--;
@@ -33,6 +33,7 @@ function fakeFloppy(initial: Record<number, Play[]>) {
 }
 
 const play = (mediaId: string, season: number, episode: number, at: number, instance: number | null): Play => ({
+	mediaType: 'tv',
 	source: 'tmdb',
 	mediaId,
 	season,
@@ -57,7 +58,7 @@ afterEach(() => {
 });
 
 describe('playsFromHistory', () => {
-	it('reads episode plays from a flat history page', () => {
+	it('reads episode and film plays from a flat history page (a film is S0E0)', () => {
 		const out = playsFromHistory({
 			results: [
 				{
@@ -68,11 +69,13 @@ describe('playsFromHistory', () => {
 					played_at_local: '2026-10-02T23:42:58.908987-04:00',
 					instance_id: 22629
 				},
-				{ media_type: 'movie', item: { media_id: '1', source: 'tmdb' }, played_at_local: '2026-10-02T20:00:00Z' }
+				{ media_type: 'movie', item: { media_id: '1', source: 'tmdb' }, played_at_local: '2026-10-02T20:00:00Z', instance_id: 7 },
+				{ media_type: 'book', item: { media_id: '2', source: 'hardcover' }, played_at_local: '2026-10-02T20:00:00Z' }
 			]
 		});
 		expect(out).toEqual([
-			{ source: 'tmdb', mediaId: '95350', season: 1, episode: 5, at: Date.parse('2026-10-03T03:42:58.908Z'), instance: 22629 }
+			{ mediaType: 'tv', source: 'tmdb', mediaId: '95350', season: 1, episode: 5, at: Date.parse('2026-10-03T03:42:58.908Z'), instance: 22629 },
+			{ mediaType: 'movie', source: 'tmdb', mediaId: '1', season: 0, episode: 0, at: Date.parse('2026-10-02T20:00:00Z'), instance: 7 }
 		]);
 	});
 });
@@ -146,5 +149,34 @@ describe('backfillShow', () => {
 			['owner', 4]
 		]);
 		expect(sum).toEqual({ mirrored: 3, already: 2, failed: 0 });
+	});
+});
+
+describe('films', () => {
+	const film = (mediaId: string, at: number, instance: number | null): Play => ({
+		mediaType: 'movie',
+		source: 'tmdb',
+		mediaId,
+		season: 0,
+		episode: 0,
+		at,
+		instance
+	});
+
+	it('a shared film is caught up and kept in sync like a show — and never confused with a show of the same id', async () => {
+		share(owner.householdId, owner.id, { source: 'tmdb', mediaId: '603', mediaType: 'movie', title: 'The Matrix' });
+		const f = fakeFloppy({
+			[owner.id]: [film('603', NOW - 30 * 24 * HOUR, 1), play('603', 1, 1, NOW - HOUR, 2)] // a *show* numbered 603 too
+		});
+		const back = await backfillShow(owner.householdId, 'tmdb', '603', f.ops, 'movie');
+		expect(back.mirrored).toBe(1);
+		expect(f.posts.map((p) => [p.user, p.play.mediaType, p.play.mediaId])).toEqual([[wife.id, 'movie', '603']]);
+
+		// The ongoing pass: a new viewing of the film carries; the show's play doesn't (not shared).
+		f.plays.set(owner.id, [...f.plays.get(owner.id)!, film('603', NOW - 2 * HOUR, 3)]);
+		const sum = await reconcileHousehold(owner.householdId, f.ops, NOW);
+		expect(sum.mirrored).toBe(1);
+		expect(f.posts.at(-1)!.play).toMatchObject({ mediaType: 'movie', mediaId: '603', at: NOW - 2 * HOUR });
+		expect(f.posts.some((p) => p.play.mediaType === 'tv')).toBe(false);
 	});
 });

@@ -20,9 +20,9 @@ export const PUT: RequestHandler = async ({ request }) => {
 		const tags = await setJoint(mediaType, source, mediaId, joint);
 		const me = currentUser();
 		let shared: boolean | undefined;
-		if (mediaType === 'tv' && me && mirroringAvailable(me.householdId)) {
-			shared = setShared(me.householdId, me.id, { source, mediaId, title: title ?? null }, joint);
-			await syncJointTags(me.householdId, { source, mediaId }, joint, me.id);
+		if ((mediaType === 'tv' || mediaType === 'movie') && me && mirroringAvailable(me.householdId)) {
+			shared = setShared(me.householdId, me.id, { source, mediaId, mediaType, title: title ?? null }, joint);
+			await syncJointTags(me.householdId, { source, mediaId, mediaType }, joint, me.id);
 		}
 		return json({ ok: true, tags, shared });
 	} catch (err) {

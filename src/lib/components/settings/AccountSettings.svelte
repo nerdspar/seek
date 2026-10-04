@@ -85,7 +85,7 @@
 	type SharedState = {
 		mirroring: boolean;
 		waitingOn: string[];
-		shows: { source: string; mediaId: string; title: string | null }[];
+		shows: { source: string; mediaId: string; mediaType?: 'tv' | 'movie'; title: string | null }[];
 		bulk: Bulk | null;
 	};
 	let sharedShows = $state<SharedState | null>(null);
@@ -129,7 +129,7 @@
 	/* The joint import: a link carrying a list of shows, `#share=<base64url JSON
 	   [[id, title] | [source, id, title], …]>`, opened while signed in. Nothing
 	   happens until you confirm. */
-	type Pick = { source: string; mediaId: string; title: string | null };
+	type Pick = { source: string; mediaId: string; mediaType: 'tv' | 'movie'; title: string | null };
 	let importList = $state<Pick[] | null>(null);
 	let importBusy = $state(false);
 	$effect(() => {
@@ -139,14 +139,29 @@
 			const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
 			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 			const rows = JSON.parse(new TextDecoder().decode(bytes)) as unknown[][];
+			// [id, title] (a TMDB show), [source, id, title], or [source, id, title, 'movie'].
 			importList = rows.map((r) =>
 				r.length >= 3
-					? { source: String(r[0]), mediaId: String(r[1]), title: r[2] == null ? null : String(r[2]) }
-					: { source: 'tmdb', mediaId: String(r[0]), title: r[1] == null ? null : String(r[1]) }
+					? {
+							source: String(r[0]),
+							mediaId: String(r[1]),
+							title: r[2] == null ? null : String(r[2]),
+							mediaType: r[3] === 'movie' ? ('movie' as const) : ('tv' as const)
+						}
+					: { source: 'tmdb', mediaId: String(r[0]), title: r[1] == null ? null : String(r[1]), mediaType: 'tv' as const }
 			);
 		} catch {
 			memberMsg = 'That share link is damaged — ask for a fresh one.';
 		}
+	});
+	/* "3 shows", "1 film", "2 shows and 1 film". */
+	const importNoun = $derived.by(() => {
+		if (!importList) return '';
+		const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+		const films = importList.filter((p) => p.mediaType === 'movie').length;
+		const shows = importList.length - films;
+		const parts = [shows ? n(shows, 'show', 'shows') : '', films ? n(films, 'film', 'films') : ''].filter(Boolean);
+		return parts.join(' and ');
 	});
 	function dropImport() {
 		importList = null;
@@ -171,10 +186,14 @@
 		const t = setInterval(() => void loadShared(), 4000);
 		return () => clearInterval(t);
 	});
-	async function unshareShow(show: { source: string; mediaId: string }) {
+	async function unshareShow(show: { source: string; mediaId: string; mediaType?: 'tv' | 'movie' }) {
+		const kind = show.mediaType ?? 'tv';
 		try {
-			await call('/api/household/shared', 'DELETE', show);
-			if (sharedShows) sharedShows.shows = sharedShows.shows.filter((s) => s.mediaId !== show.mediaId || s.source !== show.source);
+			await call('/api/household/shared', 'DELETE', { source: show.source, mediaId: show.mediaId, mediaType: kind });
+			if (sharedShows)
+				sharedShows.shows = sharedShows.shows.filter(
+					(s) => s.mediaId !== show.mediaId || s.source !== show.source || (s.mediaType ?? 'tv') !== kind
+				);
 		} catch (e) {
 			memberMsg = (e as Error).message;
 		}
@@ -372,7 +391,7 @@
 		{/if}
 		{#if importList && sharedShows.mirroring}
 			<div class="import">
-				<p class="label">Share {importList.length === 1 ? '1 show' : `${importList.length} shows`} with {sharedShows.waitingOn.length ? 'the household' : partnerName}?</p>
+				<p class="label">Share {importNoun} with {sharedShows.waitingOn.length ? 'the household' : partnerName}?</p>
 				<p class="hint">
 					Each one's watched episodes are copied to whoever hasn't seen them, with the original dates, and
 					from then on a play by either of you counts for both. Shows not on this list stay solo.
@@ -380,12 +399,12 @@
 				<details>
 					<summary class="hint">See the list</summary>
 					<ul class="importlist">
-						{#each importList as p (p.source + p.mediaId)}<li>{p.title ?? `${p.source} ${p.mediaId}`}</li>{/each}
+						{#each importList as p (p.mediaType + p.source + p.mediaId)}<li>{p.title ?? `${p.source} ${p.mediaId}`}</li>{/each}
 					</ul>
 				</details>
 				<div class="importbtns">
 					<button class="primary small" disabled={importBusy} onclick={startImport}>
-						{importBusy ? 'Starting…' : `Share ${importList.length === 1 ? '1 show' : `${importList.length} shows`}`}
+						{importBusy ? 'Starting…' : `Share ${importNoun}`}
 					</button>
 					<button class="link" onclick={dropImport}>Cancel</button>
 				</div>
@@ -421,10 +440,10 @@
 			</p>
 		{:else if sharedShows.mirroring}
 			<ul class="members">
-				{#each showAllShared ? sharedShows.shows : sharedShows.shows.slice(0, 8) as sh (sh.source + sh.mediaId)}
+				{#each showAllShared ? sharedShows.shows : sharedShows.shows.slice(0, 8) as sh ((sh.mediaType ?? 'tv') + sh.source + sh.mediaId)}
 					<li>
-						<a class="rowtext" href={`/show/${sh.source}/${sh.mediaId}`}>
-							<span class="label">{sh.title ?? `Show ${sh.mediaId}`}</span>
+						<a class="rowtext" href={`/${sh.mediaType === 'movie' ? 'movie' : 'show'}/${sh.source}/${sh.mediaId}`}>
+							<span class="label">{sh.title ?? `Show ${sh.mediaId}`}{#if sh.mediaType === 'movie'}<span class="hint"> · film</span>{/if}</span>
 						</a>
 						<button class="link" onclick={() => unshareShow(sh)}>Stop sharing</button>
 					</li>

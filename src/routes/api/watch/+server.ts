@@ -140,8 +140,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			if (isMovie) await markMovieWatched(source, mediaId);
 			else await markEpisodeWatched(source, mediaId, season as number, episode as number);
 			markApplied(key);
-			// A shared show: carry the play to the rest of the household shortly.
-			if (!isMovie) afterMark(source, mediaId);
+			// A shared show or film: carry the play to the rest of the household shortly.
+			afterMark(source, mediaId, isMovie ? 'movie' : 'tv');
 		}
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) {
