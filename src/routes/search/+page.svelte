@@ -9,6 +9,7 @@
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
 	import { loadArrStatus } from '$lib/arr.svelte';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
+	import { confirmShowAdded } from '$lib/together';
 	import type { SearchResult } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -92,10 +93,12 @@
 			const res = await fetch('/api/library', {
 				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ mediaType: r.mediaType, source: r.source, mediaId: r.mediaId })
+				body: JSON.stringify({ mediaType: r.mediaType, source: r.source, mediaId: r.mediaId, title: r.title })
 			});
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
 			confirmTitle(r.source, r.mediaId, { tracked: next });
+			if (next && r.mediaType === 'tv') confirmShowAdded({ source: r.source, mediaId: r.mediaId, title: r.title }, body);
 		} catch (err) {
 			revertTitle(r.source, r.mediaId, ['tracked']);
 			failed = err instanceof Error ? err.message : String(err);

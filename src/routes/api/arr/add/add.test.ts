@@ -20,6 +20,8 @@ const { FloppyError } = vi.hoisted(() => ({
 }));
 vi.mock('$lib/server/floppy', () => ({ FloppyError }));
 vi.mock('$lib/server/memo', () => ({ expire: vi.fn(), invalidate: vi.fn() }));
+const settleAdded = vi.fn((..._a: unknown[]) => 'pending');
+vi.mock('$lib/server/household/run', () => ({ settleAdded: (...a: unknown[]) => settleAdded(...a) }));
 
 import { POST } from './+server';
 
@@ -29,6 +31,7 @@ const add = async (body: unknown) =>
 beforeEach(() => {
 	addTitle.mockReset().mockResolvedValue({ ok: true });
 	addMedia.mockReset();
+	settleAdded.mockClear();
 });
 
 describe('downloading a show or film', () => {
@@ -43,5 +46,15 @@ describe('downloading a show or film', () => {
 		expect((await add({ mediaType: 'tv', tmdbId: 1 })).tracked).toBe(true);
 		addMedia.mockRejectedValueOnce(new Error('Floppy down'));
 		expect(await add({ mediaType: 'tv', tmdbId: 2 })).toMatchObject({ ok: true, tracked: false });
+	});
+
+	it("settles together or solo for a show: the form's answer, else the household setting", async () => {
+		addMedia.mockResolvedValue({});
+		expect(await add({ mediaType: 'tv', tmdbId: 1, title: 'Lanterns', together: true })).toMatchObject({ household: 'pending' });
+		expect(settleAdded).toHaveBeenLastCalledWith({ source: 'tmdb', mediaId: '1', title: 'Lanterns' }, 'together');
+		await add({ mediaType: 'tv', tmdbId: 2 });
+		expect(settleAdded).toHaveBeenLastCalledWith({ source: 'tmdb', mediaId: '2', title: null }, undefined);
+		await add({ mediaType: 'movie', tmdbId: 3 });
+		expect(settleAdded).toHaveBeenCalledTimes(2);
 	});
 });

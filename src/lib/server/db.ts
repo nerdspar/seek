@@ -165,6 +165,25 @@ export const MIGRATIONS: string[] = [
 	// rated there seeds your book recommendations.
 	`
 	ALTER TABLE users ADD COLUMN hardcover_token_enc TEXT;
+	`,
+	// v7 — together or solo for new shows. A household setting (ask / together /
+	// solo), and each new show's answer: 'pending' sits in the inbox until one of
+	// you decides, 'solo' is decided (together lives in shared_shows). Shows added
+	// before this existed count as decided, hence the timestamp.
+	`
+	ALTER TABLE households ADD COLUMN new_shows TEXT NOT NULL DEFAULT 'ask';
+	ALTER TABLE households ADD COLUMN new_shows_since TEXT;
+	UPDATE households SET new_shows_since = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+	CREATE TABLE show_choices (
+		household_id  INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		source        TEXT NOT NULL,
+		media_id      TEXT NOT NULL,
+		title         TEXT,
+		choice        TEXT NOT NULL CHECK (choice IN ('solo', 'pending')),
+		user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+		created_at    TEXT NOT NULL,
+		PRIMARY KEY (household_id, source, media_id)
+	);
 	`
 ];
 

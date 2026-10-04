@@ -7,8 +7,12 @@
 import { listUsers } from '../users';
 import { currentUser, runAs } from '../userctx';
 import { setJoint } from '../tags';
+import { floppy } from '../floppy';
+import { getPrefs } from '../prefs';
+import { sendToDevices } from '../push';
 import { backfillShow, mirrorMembers, reconcileHousehold } from './mirror';
 import { isShared, share, unshare } from './shared';
+import { decide, noteShared, scanNewShows, settle, type Added, type Deps, type Settled, type ShowRef } from './newShows';
 
 const running = new Map<number, Promise<unknown>>();
 
@@ -31,13 +35,68 @@ function households(): number[] {
 export function reconcileAll(): Promise<void> {
 	return Promise.all(
 		households().map((h) =>
-			serial(h, () => reconcileHousehold(h)).then(
-				(sum) => sum.mirrored && console.log(`[mirror] household ${h}: carried ${sum.mirrored} play(s)`),
-				(err) => console.warn(`[mirror] household ${h} failed:`, err)
-			)
+			serial(h, () => reconcileHousehold(h))
+				.then(
+					(sum) => sum.mirrored && console.log(`[mirror] household ${h}: carried ${sum.mirrored} play(s)`),
+					(err) => console.warn(`[mirror] household ${h} failed:`, err)
+				)
+				// New shows added anywhere — Jellyfin, a download, Floppy's site.
+				.then(() => (mirroringAvailable(h) ? scanNewShows(h, mirrorMembers(h), newShowDeps) : []))
+				.then(
+					(fresh) => fresh.length && console.log(`[mirror] household ${h}: ${fresh.length} new show(s) to sort`),
+					(err) => console.warn(`[mirror] new-show scan for household ${h} failed:`, err)
+				)
 		)
 	).then(() => {});
 }
+
+/**
+ * A show was just added in Seek: settle "together or solo?" for it — with the
+ * answer when the add form asked, else per the household setting. Null when
+ * sharing isn't on (fewer than two people linked). Never throws: the add itself
+ * succeeded and must not be reported as failed over this.
+ */
+export function settleAdded(show: ShowRef, choice?: 'together' | 'solo'): Settled | null {
+	try {
+		const me = currentUser();
+		if (!me || !mirroringAvailable(me.householdId)) return null;
+		if (choice) {
+			decide(me.householdId, me.id, show, choice, newShowDeps);
+			return choice;
+		}
+		return settle(me.householdId, me.id, show, newShowDeps);
+	} catch (err) {
+		console.warn('[mirror] settling a new show failed:', err);
+		return null;
+	}
+}
+
+/** The real Floppy and push behind the new-show logic (newShows.ts). */
+export const newShowDeps: Deps = {
+	recentAdds: (user) =>
+		runAs(user, async () => {
+			const raw = await floppy<{ results?: unknown[] }>('/api/v1/media/tv/', { query: { sort: 'added', limit: '25' } });
+			return (raw.results ?? []).flatMap((r): Added[] => {
+				const row = (r ?? {}) as Record<string, unknown>;
+				const item = (row.item ?? {}) as Record<string, unknown>;
+				const at = typeof row.created_at === 'string' ? Date.parse(row.created_at) : NaN;
+				if (typeof item.source !== 'string' || typeof item.media_id !== 'string' || Number.isNaN(at)) return [];
+				return [{ source: item.source, mediaId: item.media_id, title: typeof item.title === 'string' ? item.title : null, addedAt: at }];
+			});
+		}),
+	share: (h, userId, show) => void setShared(h, userId, show, true),
+	notify: (user, shows) =>
+		runAs(user, async () => {
+			if (!(await getPrefs()).notifyNewShows) return;
+			const names = shows.map((s) => s.title ?? 'A show');
+			await sendToDevices({
+				title: shows.length === 1 ? 'New show' : `${shows.length} new shows`,
+				body: `${names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`} — watching together or solo?`,
+				url: '/#new-shows',
+				tag: 'seek-new-shows'
+			});
+		})
+};
 
 /* A mark in Seek on a shared show: mirror it within seconds rather than at the
    next tick. Debounced so marking a whole season is one pass, not twenty. */
@@ -79,6 +138,7 @@ export function setShared(
 	show: { source: string; mediaId: string; title?: string | null },
 	on: boolean
 ): boolean {
+	noteShared(householdId, userId, { source: show.source, mediaId: show.mediaId, title: show.title ?? null }, on);
 	if (!on) {
 		unshare(householdId, show.source, show.mediaId);
 		return false;

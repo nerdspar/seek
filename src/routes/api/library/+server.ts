@@ -3,9 +3,10 @@ import { addMedia, removeMedia } from '$lib/server/search';
 import { FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { expire, invalidate } from '$lib/server/memo';
 import type { MediaType } from '$lib/types';
+import { settleAdded } from '$lib/server/household/run';
 import type { RequestHandler } from './$types';
 
-type Body = { mediaType?: MediaType; source?: string; mediaId?: string };
+type Body = { mediaType?: MediaType; source?: string; mediaId?: string; title?: string };
 
 /**
  * Every cache that embeds whether something is tracked.
@@ -44,7 +45,8 @@ function parse(body: Body) {
 
 /** Start tracking (§6.4). */
 export const POST: RequestHandler = async ({ request }) => {
-	const { mediaType, source, mediaId } = parse(await request.json());
+	const body = (await request.json()) as Body;
+	const { mediaType, source, mediaId } = parse(body);
 	try {
 		await addMedia(mediaType, source, mediaId);
 	} catch (err) {
@@ -61,7 +63,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw err;
 	}
 	invalidateTracked(source, mediaId);
-	return json({ ok: true });
+	/* A new show: together or solo? Settled per the household setting; 'pending'
+	   tells the button to offer "Watching together" right there. */
+	const household = mediaType === 'tv' ? settleAdded({ source, mediaId, title: body.title ?? null }) : null;
+	return json({ ok: true, household });
 };
 
 /** Undo an add. */

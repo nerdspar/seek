@@ -97,6 +97,31 @@
 	}
 	$effect(() => void loadShared());
 	let showAllShared = $state(false);
+
+	/* New shows: together, solo, or ask each time (the household's setting). */
+	type NewShowsMode = 'ask' | 'together' | 'solo';
+	let newShowsMode = $state<NewShowsMode | null>(null);
+	$effect(() => {
+		fetch('/api/household/new-shows')
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => (newShowsMode = d?.mode ?? null))
+			.catch(() => {});
+	});
+	async function setNewShowsMode(mode: NewShowsMode) {
+		const before = newShowsMode;
+		newShowsMode = mode;
+		try {
+			await call('/api/household/new-shows', 'PUT', { mode });
+		} catch (e) {
+			newShowsMode = before;
+			memberMsg = (e as Error).message;
+		}
+	}
+	const NEW_SHOW_MODES: { id: NewShowsMode; label: string; hint: string }[] = [
+		{ id: 'ask', label: 'Ask', hint: 'Each new show waits on the Watchlist for one of you to choose.' },
+		{ id: 'together', label: 'Together', hint: 'New shows are shared straight away.' },
+		{ id: 'solo', label: 'Solo', hint: 'New shows stay yours; share one from its page.' }
+	];
 	const partnerName = $derived(
 		account.household.members.filter((m) => m.id !== me.id).map((m) => m.name).join(' and ') || 'the household'
 	);
@@ -368,6 +393,20 @@
 		{:else if importList}
 			<p class="hint msg">This share link works once both of you have Floppy linked.</p>
 		{/if}
+		{#if sharedShows.mirroring && newShowsMode}
+			<div class="newshows">
+				<span class="label">New shows start as</span>
+				<div class="chips">
+					{#each NEW_SHOW_MODES as m (m.id)}
+						<button class:on={newShowsMode === m.id} onclick={() => setNewShowsMode(m.id)}>{m.label}</button>
+					{/each}
+				</div>
+				<p class="hint">
+					{NEW_SHOW_MODES.find((m) => m.id === newShowsMode)?.hint} Counts for shows added anywhere — Seek, a download,
+					or a Jellyfin play.
+				</p>
+			</div>
+		{/if}
 		{#if sharedShows.bulk}
 			{@const b = sharedShows.bulk}
 			<p class="hint msg" class:ok={!b.running}>
@@ -497,6 +536,11 @@
 	.importlist { max-height: 240px; overflow: auto; margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
 	.importbtns { display: flex; align-items: center; gap: 16px; }
 	.more { margin-top: 6px; }
+	.newshows { margin: 0 0 14px; display: flex; flex-direction: column; gap: 8px; }
+	.newshows .hint { margin: 0; line-height: 1.4; }
+	.chips { display: flex; gap: 6px; }
+	.chips button { min-height: 34px; padding: 0 14px; border-radius: 9px; background: var(--surface-raised); font-size: 13.5px; font-weight: 600; color: var(--text-dim); }
+	.chips button.on { background: var(--signal); color: #fff; }
 	.msg.ok { color: var(--signal-solid); opacity: 1; }
 	.members { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 	.members li {

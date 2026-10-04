@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { notify } from '$lib/notices.svelte';
+	import { confirmShowAdded } from '$lib/together';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	/** Inline add/remove for a Discover or search result (§6.4). Owns its own
 	 *  request so any grid can drop it in without threading state. */
@@ -32,13 +33,17 @@
 			const res = await fetch('/api/library', {
 				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ mediaType, source, mediaId })
+				body: JSON.stringify({ mediaType, source, mediaId, title })
 			});
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
 			confirmTitle(source, mediaId, { tracked: next });
 			/* The glyph flips, which is easy to miss on a poster the size of a
-			   thumbnail — and on iOS there is no haptic to feel instead. */
-			void notify(next ? `Added ${title}` : `Removed ${title}`);
+			   thumbnail — and on iOS there is no haptic to feel instead. A new show
+			   in a household that asks "together or solo?" offers the answer right
+			   here; ignored, it waits on the Watchlist. */
+			if (next) confirmShowAdded({ source, mediaId, title }, body);
+			else void notify(`Removed ${title}`);
 		} catch (err) {
 			revertTitle(source, mediaId, ['tracked']);
 			onerror?.(`Couldn't ${next ? 'add' : 'remove'} ${title} — ${err instanceof Error ? err.message : err}`);

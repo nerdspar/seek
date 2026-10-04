@@ -1,4 +1,5 @@
 <script lang="ts">
+	import NewShows from '$lib/components/NewShows.svelte';
 	import { setSegment } from '$lib/segment';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { flip } from 'svelte/animate';
@@ -511,6 +512,7 @@
 			</svg>
 		</div>
 		<div class="ptr-body" class:settling={pullSettling} style:transform={`translateY(${refreshing ? REFRESH_REST : pullY}px)`}>
+		{#if data.mediaType !== 'movie'}<NewShows />{/if}
 		{#await data.page}
 			<ul class="rows">
 				{#each Array(6) as _, i (i)}

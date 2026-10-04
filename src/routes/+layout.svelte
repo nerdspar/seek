@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import NavProgress from '$lib/components/NavProgress.svelte';
-	import { notice, dismissNotice } from '$lib/notices.svelte';
+	import { notice, dismissNotice, runNoticeAction } from '$lib/notices.svelte';
 	import { pendingCount } from '$lib/queue.svelte';
 	import { afterNavigate, invalidateAll } from '$app/navigation';
 	import { consumeWatchlist } from '$lib/dirty';
@@ -38,7 +38,14 @@
 	{#key notice.current.id}
 		<!-- A button, not a div with a click handler: it is dismissible, so it
 		     should be reachable and announce itself as such. -->
-		<button class="notice" onclick={dismissNotice}>{notice.current.message}</button>
+		{#if notice.current.action}
+			<div class="notice withaction" role="status">
+				<button class="msg" onclick={dismissNotice}>{notice.current.message}</button>
+				<button class="act" onclick={runNoticeAction}>{notice.current.action.label}</button>
+			</div>
+		{:else}
+			<button class="notice" onclick={dismissNotice}>{notice.current.message}</button>
+		{/if}
 	{/key}
 {/if}
 
@@ -59,6 +66,12 @@
 		font-weight: 600;
 		color: var(--text);
 		animation: rise 180ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+	.notice.withaction { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 16px; white-space: nowrap; }
+	.withaction .msg { font: inherit; color: inherit; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+	.withaction .act {
+		flex: none; padding: 7px 12px; border-radius: 999px;
+		background: var(--signal); color: #fff; font-size: 13px; font-weight: 650;
 	}
 	@keyframes rise {
 		from { opacity: 0; transform: translate(-50%, 8px); }

@@ -17,7 +17,9 @@
  */
 import { browser } from '$app/environment';
 
-export type Notice = { id: number; message: string };
+/** A one-tap follow-up offered with the confirmation ("Watching together"). */
+export type NoticeAction = { label: string; run: () => void | Promise<void> };
+export type Notice = { id: number; message: string; action?: NoticeAction };
 
 let nextId = 1;
 
@@ -50,16 +52,25 @@ export function setNoticesEnabled(on: boolean): void {
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-/** Show a confirmation, if the user wants them. */
-export async function notify(message: string): Promise<void> {
+/** Show a confirmation, if the user wants them. One carrying an action shows
+ *  even with confirmations off — it's a question, not just a confirmation. */
+export async function notify(message: string, action?: NoticeAction): Promise<void> {
 	await ensureLoaded();
-	if (!enabled) return;
+	if (!enabled && !action) return;
 
-	notice.current = { id: nextId++, message };
+	notice.current = { id: nextId++, message, action };
 	if (timer) clearTimeout(timer);
 	/* Long enough to read, short enough not to sit over the thing you just did.
-	   Deliberately shorter than the undo toast, which has to be actionable. */
-	timer = setTimeout(() => (notice.current = null), 2600);
+	   Deliberately shorter than the undo toast, which has to be actionable —
+	   unless this one is too. */
+	timer = setTimeout(() => (notice.current = null), action ? 6000 : 2600);
+}
+
+/** Run a notice's action, then let the notice go. */
+export function runNoticeAction(): void {
+	const a = notice.current?.action;
+	dismissNotice();
+	void a?.run();
 }
 
 export function dismissNotice(): void {

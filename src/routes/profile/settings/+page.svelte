@@ -732,6 +732,19 @@
 					</span>
 					<span class="toggle" class:on={local.notifyAtTime}><span class="knob"></span></span>
 				</button>
+				<button
+					class="row"
+					role="switch"
+					aria-checked={local.notifyNewShows}
+					disabled={pushBusy}
+					onclick={() => patch({ notifyNewShows: !local.notifyNewShows })}
+				>
+					<span class="rowtext">
+						<span class="label">New shows to sort</span>
+						<span class="hint">When a new show needs “together or solo?”</span>
+					</span>
+					<span class="toggle" class:on={local.notifyNewShows}><span class="knob"></span></span>
+				</button>
 				<button class="reset" disabled={pushBusy} onclick={testNotify}>Send a test</button>
 			{/if}
 			{#if pushMsg}<p class="hint">{pushMsg}</p>{/if}

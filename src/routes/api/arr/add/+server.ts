@@ -11,6 +11,7 @@ import { getPrefs } from '$lib/server/prefs';
 import { addMedia } from '$lib/server/search';
 import { FloppyError } from '$lib/server/floppy';
 import { expire, invalidate } from '$lib/server/memo';
+import { settleAdded } from '$lib/server/household/run';
 import type { RequestHandler } from './$types';
 
 type Body = {
@@ -23,6 +24,9 @@ type Body = {
 	tags?: string[];
 	/** Kick off a search on add (start grabbing) vs. monitor only. Per add. */
 	search?: boolean;
+	title?: string;
+	/** Together or solo, when the add form asked (shows only). */
+	together?: boolean;
 };
 
 /**
@@ -87,7 +91,14 @@ export const POST: RequestHandler = async ({ request }) => {
 		   Floppy library too (Planning), like a book download goes on your list.
 		   Already there is fine; a Floppy hiccup never fails the download. */
 		const tracked = await addToLibrary(body.mediaType === 'movie' ? 'movie' : 'tv', tmdbId);
-		return json({ ...result, tracked });
+		const household =
+			tracked && body.mediaType !== 'movie'
+				? settleAdded(
+						{ source: 'tmdb', mediaId: tmdbId, title: body.title ?? null },
+						typeof body.together === 'boolean' ? (body.together ? 'together' : 'solo') : undefined
+					)
+				: null;
+		return json({ ...result, tracked, household });
 	} catch (err) {
 		if (err instanceof ArrUnreachable) error(503, `${service} is unreachable; nothing was added.`);
 		if (err instanceof ArrError) error(err.status === 404 ? 404 : 502, err.message);

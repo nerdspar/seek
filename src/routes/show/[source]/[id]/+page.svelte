@@ -20,6 +20,7 @@
 	import { formatRuntime } from '$lib/format';
 	import { haptic } from '$lib/haptics';
 	import { notify } from '$lib/notices.svelte';
+	import { confirmShowAdded } from '$lib/together';
 	import { touchWatchlist } from '$lib/dirty';
 	import { queuedWrite } from '$lib/queue.svelte';
 	import type { SeasonSummary, ShowDetail } from '$lib/types';
@@ -309,7 +310,7 @@
 	   a reload; the loaded `show.tracked` is the fallback. */
 	let trackBusy = $state(false);
 
-	async function toggleTracked(current: boolean) {
+	async function toggleTracked(current: boolean, showTitle: string) {
 		if (trackBusy) return;
 		const next = !current;
 
@@ -325,12 +326,14 @@
 				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				// This route renders TV; films have their own page under /movie.
-				body: JSON.stringify({ mediaType: 'tv', source: data.source, mediaId: data.mediaId })
+				body: JSON.stringify({ mediaType: 'tv', source: data.source, mediaId: data.mediaId, title: showTitle })
 			});
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
 			confirmTitle(data.source, data.mediaId, { tracked: next });
 			touchWatchlist();
-			void notify(next ? 'Added to your library' : 'Removed from your library');
+			if (next) confirmShowAdded({ source: data.source, mediaId: data.mediaId, title: showTitle }, body, 'Added to your library');
+			else void notify('Removed from your library');
 		} catch (err) {
 			revertTitle(data.source, data.mediaId, ['tracked']);
 			note = `Couldn't ${next ? 'add' : 'remove'} — ${err instanceof Error ? err.message : err}`;
@@ -497,7 +500,7 @@
 			{:else}
 				<!-- The one thing worth doing on a show you do not have, so it gets the
 				     full width and the accent rather than a quiet pill. -->
-				<button class="add" disabled={trackBusy} onclick={() => toggleTracked(false)}>
+				<button class="add" disabled={trackBusy} onclick={() => toggleTracked(false, show.title)}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
 					<span>Add to library</span>
 				</button>
@@ -529,7 +532,7 @@
 					sourceUrl={show.sourceUrl}
 					floppyUrl={data.floppyBase && t.floppyPath ? `${data.floppyBase}${t.floppyPath}` : null}
 					busy={trackBusy}
-					onremove={() => toggleTracked(true)}
+					onremove={() => toggleTracked(true, show.title)}
 					onclose={() => (menuOpen = false)}
 				/>
 			{/if}

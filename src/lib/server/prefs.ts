@@ -71,6 +71,9 @@ export type Prefs = {
 	/** Push each show as it airs — at its real time, or local midnight for an
 	 *  all-day streaming drop. Independent of the daily digest. */
 	notifyAtTime: boolean;
+	/** Push when a new show needs "together or solo?" (household with sharing
+	 *  on, setting = Ask). On once notifications are; the answer is in the app. */
+	notifyNewShows: boolean;
 	/** Where Sonarr/Radarr files new adds and at what quality (§ requests). Null
 	 *  until picked in Settings; the connection itself is in Settings → Services. */
 	sonarr: ArrPref | null;
@@ -116,6 +119,7 @@ export const DEFAULTS: Prefs = {
 	notifyDigest: false,
 	digestHour: 8,
 	notifyAtTime: false,
+	notifyNewShows: true,
 	sonarr: null,
 	radarr: null,
 	arrManage: true,

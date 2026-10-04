@@ -36,7 +36,24 @@
 	let newTag = $state('');
 	let search = $state(false);
 
-	onMount(() => void loadArrOptions());
+	/* Together or solo, for a show in a household that shares (two people on
+	   Floppy). Pre-picked from the household setting; with "Ask", neither is —
+	   leave it and the show waits on the Watchlist for an answer. */
+	let household = $state<{ mirroring: boolean; mode: 'ask' | 'together' | 'solo' } | null>(null);
+	let together = $state<boolean | null>(null);
+
+	onMount(() => {
+		void loadArrOptions();
+		if (item.mediaType === 'movie') return;
+		fetch('/api/household/new-shows')
+			.then((r) => (r.ok ? r.json() : null))
+			.then((h) => {
+				if (!h?.mirroring) return;
+				household = h;
+				together = h.mode === 'together' ? true : h.mode === 'solo' ? false : null;
+			})
+			.catch(() => {});
+	});
 
 	/* Seed the form from the saved default once options arrive. */
 	let inited = false;
@@ -84,7 +101,9 @@
 					qualityProfileId,
 					monitor,
 					tags: [...selected],
-					search
+					search,
+					title: item.title,
+					...(together === null ? {} : { together })
 				})
 			});
 			const body = await res.json().catch(() => ({}));
@@ -155,6 +174,17 @@
 				</div>
 			</div>
 
+			{#if household}
+				<div class="field">
+					<span class="flabel">Watching</span>
+					<div class="chips">
+						<button type="button" class="tag" class:on={together === true} onclick={() => (together = together === true ? null : true)}>Together</button>
+						<button type="button" class="tag" class:on={together === false} onclick={() => (together = together === false ? null : false)}>Solo</button>
+					</div>
+					{#if together === null}<span class="sub small">Not sure yet? Leave it — it'll wait on your Watchlist.</span>{/if}
+				</div>
+			{/if}
+
 			<button type="button" class="row" role="switch" aria-checked={search} onclick={() => (search = !search)}>
 				<span class="flabel">Search on add</span>
 				<span class="toggle" class:on={search}><span class="knob"></span></span>
@@ -185,6 +215,7 @@
 		color: var(--text-dim);
 		font-size: 14px;
 	}
+	.sub.small { font-size: 12.5px; }
 	.field {
 		display: flex;
 		flex-direction: column;
