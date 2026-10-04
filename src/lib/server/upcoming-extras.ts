@@ -9,10 +9,9 @@ import { floppy } from './floppy';
 import { TMDB_API_KEY } from './env';
 import { TTLCache } from './cache';
 import { memo } from './memo';
-import { bookorbitLinked, getAllBooks } from './books/bookorbit';
-import { listEntries } from './books/entries';
+import { myBookList } from './books/discovery';
 import { hardcoverConfigured, upcomingBooks } from './books/hardcover';
-import { myBooks, recommendationSeeds, type MyBook } from '$lib/books';
+import { recommendationSeeds, type MyBook } from '$lib/books';
 import type { UpcomingItem } from '$lib/types';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -115,8 +114,7 @@ export function authorsYouRead(books: MyBook[], max = 10): string[] {
 
 async function bookItems(now: number): Promise<UpcomingItem[]> {
 	if (!hardcoverConfigured()) return [];
-	const library = bookorbitLinked() ? await getAllBooks().catch(() => []) : [];
-	const books = myBooks(library, listEntries());
+	const books = await myBookList().catch(() => []);
 	const wanted = books.filter((b) => b.status === 'want_to_read' && b.hardcoverId).map((b) => b.hardcoverId!);
 	const authors = authorsYouRead(books);
 	if (!wanted.length && !authors.length) return [];

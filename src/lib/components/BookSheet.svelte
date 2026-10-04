@@ -13,7 +13,6 @@
 		type DiscoveryCard,
 		type OwnedSummary,
 		type BookDetail,
-		type BookEntry,
 		type BookReadStatus,
 		type BookRequest,
 		type MyBook
@@ -25,9 +24,8 @@
 	 * Hardcover id the sheet fills in the description, genres and series.
 	 *
 	 * The row under the cover works like a show's: a status chip that opens a
-	 * picker, and a rating chip. A book in BookOrbit keeps both there (per
-	 * person); any other book — a physical copy, a loan, one you want — is one of
-	 * "your books", kept by Seek, and you can log the page you're on.
+	 * picker, and a rating chip, plus the page you're on. All of it lives on your
+	 * Hardcover shelf — for any book, in the library or not.
 	 */
 	type Props = {
 		book?: MyBook | null;
@@ -40,7 +38,8 @@
 
 	type Detail = BookDetail & {
 		owned: OwnedSummary | null;
-		entry: BookEntry | null;
+		/** Your shelf entry, for a book that isn't in the library. */
+		shelf: { status: BookReadStatus; rating: number | null; progressPages: number | null } | null;
 		canRequest?: boolean;
 		request?: BookRequest | null;
 	};
@@ -116,10 +115,11 @@
 		const owned = detail?.owned ?? card?.owned ?? null;
 		if (owned)
 			return { bookId: owned.bookId, status: owned.status, rating: owned.rating ?? null, pages: owned.pages ?? detail?.pages ?? null, progress: owned.progress };
-		const e = detail?.entry;
+		const e = detail?.shelf;
 		if (e) {
-			const pages = e.pages ?? detail?.pages ?? null;
-			return { bookId: null, status: e.status, rating: e.myRating, pages, progress: pages && e.progressPages != null ? e.progressPages / pages : null };
+			const pages = detail?.pages ?? null;
+			const progress = e.status === 'read' ? 1 : pages && e.progressPages != null ? Math.min(1, e.progressPages / pages) : null;
+			return { bookId: null, status: e.status, rating: e.rating, pages, progress };
 		}
 		if (book) return { bookId: null, status: book.status, rating: book.myRating, pages: book.pages ?? detail?.pages ?? null, progress: book.progress };
 		return { bookId: null, status: null, rating: null, pages: detail?.pages ?? null, progress: null };
@@ -138,20 +138,12 @@
 	const failure = async (res: Response) =>
 		((await res.json().catch(() => null)) as { message?: string } | null)?.message ?? `HTTP ${res.status}`;
 
-	/** Save one of your own books (Seek): book details plus what changed. */
-	function saveOwn(change: Record<string, unknown>) {
-		return fetch('/api/books/entries', {
+	/** Save to your Hardcover shelf: one change (status, rating or pages). */
+	function save(change: { status?: BookReadStatus | null; rating?: number | null; pages?: number }) {
+		return fetch('/api/books/mine', {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				hardcoverId,
-				title,
-				author,
-				coverUrl: detail?.coverUrl ?? card?.coverUrl ?? book?.coverUrl ?? null,
-				year,
-				pages: detail?.pages ?? mine.pages,
-				...change
-			})
+			body: JSON.stringify({ hardcoverId, ...change })
 		});
 	}
 
@@ -174,50 +166,26 @@
 
 	function pickStatus(next: BookReadStatus | 'remove') {
 		statusOpen = false;
-		if (next === 'remove') {
-			void run({ status: null, rating: null, progress: null }, () =>
-				fetch('/api/books/entries', {
-					method: 'DELETE',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ hardcoverId })
-				})
-			);
+		if (!hardcoverId) return;
+		// "Not started" (a library book) and "Remove" both take it off your shelf.
+		if (next === 'remove' || next === 'unread') {
+			void run({ status: owned ? 'unread' : null, rating: null, progress: null }, () => save({ status: null }));
 			return;
 		}
 		if (next === mine.status) return;
 		// Finishing a book fills its progress, like a reader would.
-		const optimistic: Partial<Mine> = { status: next, ...(next === 'read' ? { progress: 1 } : {}) };
-		if (owned) {
-			void run(optimistic, () =>
-				fetch('/api/books/status', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ bookId: mine.bookId, status: next })
-				})
-			);
-		} else if (hardcoverId) {
-			void run(optimistic, () => saveOwn({ status: next }));
-		}
+		void run({ status: next, ...(next === 'read' ? { progress: 1 } : {}) }, () => save({ status: next }));
 	}
 
 	function pickRating(n: number | null) {
 		ratingOpen = false;
-		if (owned) {
-			void run({ rating: n }, () =>
-				fetch('/api/books/rating', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ bookId: mine.bookId, rating: n })
-				})
-			);
-		} else if (hardcoverId) {
-			// Rating a book you weren't tracking means you've read it.
-			const status = mine.status ?? 'read';
-			void run({ rating: n, status }, () => saveOwn({ rating: n, ...(mine.status ? {} : { status: 'read' }) }));
-		}
+		if (!hardcoverId) return;
+		// Rating a book you weren't tracking files it under Read.
+		const status = mine.status && mine.status !== 'unread' ? mine.status : 'read';
+		void run({ rating: n, status }, () => save({ rating: n }));
 	}
 
-	/* ── Pages, for one of your own books (a reader reports it for library ones) ── */
+	/* ── The page you're on (an e-reader reports it via BookOrbit's sync) ── */
 	let pageEdit = $state<string | null>(null);
 	function savePages() {
 		const n = Number(pageEdit);
@@ -227,7 +195,7 @@
 		}
 		pageEdit = null;
 		const pages = mine.pages;
-		void run({ progress: pages ? Math.min(1, n / pages) : mine.progress }, () => saveOwn({ progressPages: n }));
+		void run({ progress: pages ? Math.min(1, n / pages) : mine.progress, status: 'reading' }, () => save({ pages: n }));
 	}
 
 	const reading = $derived(mine.status === 'reading' || mine.status === 'rereading' || mine.status === 'on_hold');
@@ -256,7 +224,7 @@
 			</div>
 		</div>
 
-		{#if owned || hardcoverId}
+		{#if hardcoverId}
 			<!-- Same shape as a show's row: status opens a picker, the star rates. -->
 			<div class="chips">
 				<button class="chip main" class:on={mine.status !== null} disabled={busy} onclick={() => (statusOpen = true)}>
@@ -273,6 +241,8 @@
 					{#if mine.rating !== null}<span class="tnum">{mine.rating}</span>{/if}
 				</button>
 			</div>
+		{:else if owned && !loading}
+			<p class="nohc">Hardcover doesn't have this book yet, so Seek can't track it. Add it on hardcover.app and it'll match.</p>
 		{/if}
 
 		{#if reading || (mine.progress !== null && mine.progress > 0 && mine.status !== 'read')}
@@ -289,7 +259,7 @@
 				{:else}
 					<span class="track"><span class="fill" style:width={`${Math.round((mine.progress ?? 0) * 100)}%`}></span></span>
 					<span class="ptext tnum">{progressLine ?? 'Not started'}</span>
-					{#if !owned && hardcoverId}
+					{#if hardcoverId}
 						<button
 							class="update"
 							onclick={() => (pageEdit = String(mine.pages && mine.progress != null ? Math.round(mine.progress * mine.pages) : ''))}
@@ -406,4 +376,5 @@
 	}
 	.more { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
 	.readers { margin: 14px 0 0; font-size: 12px; color: var(--text-dim); }
+	.nohc { margin: 12px 0 0; font-size: 13px; line-height: 1.4; color: var(--text-dim); }
 </style>

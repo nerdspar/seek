@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { listMyRequests, requestBook } from '$lib/server/books/bookorbit';
-import { getEntry, saveEntry } from '$lib/server/books/entries';
+import { wantIfNew } from '$lib/server/books/shelf';
 import { relayRefusal } from '$lib/server/books/http';
 import { bookIsbns } from '$lib/server/books/hardcover';
 import type { RequestHandler } from './$types';
@@ -30,7 +30,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	};
 	try {
 		const out = await requestBook(book, mediaKind, await bookIsbns(book.hardcoverId));
-		if (!getEntry(book.hardcoverId)) saveEntry(book, { status: 'want_to_read' });
+		// On your list too — a shelf hiccup never fails the request.
+		await wantIfNew(book.hardcoverId).catch(() => {});
 		return json(out);
 	} catch (e) {
 		// BookOrbit's refusals explain themselves ("Pick a destination library…").

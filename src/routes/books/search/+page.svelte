@@ -81,12 +81,12 @@
 		}
 		added = { ...added, [c.hardcoverId]: 'want_to_read' };
 		try {
-			const res = await fetch('/api/books/entries', {
+			const res = await fetch('/api/books/mine', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ ...c, status: 'want_to_read' })
+				body: JSON.stringify({ hardcoverId: c.hardcoverId, status: 'want_to_read' })
 			});
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			note = `Added “${c.title}” to Want to read`;
 			stale = true;
 		} catch (e) {

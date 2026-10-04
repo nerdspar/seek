@@ -8,8 +8,8 @@ vi.mock('$lib/server/books/bookorbit', () => ({
 	BookOrbitError: class extends Error {}
 }));
 
-const saveEntry = vi.fn();
-vi.mock('$lib/server/books/entries', () => ({ getEntry: () => null, saveEntry: (...a: unknown[]) => saveEntry(...a) }));
+const wantIfNew = vi.fn(async (..._a: unknown[]) => {});
+vi.mock('$lib/server/books/shelf', () => ({ wantIfNew: (...a: unknown[]) => wantIfNew(...a) }));
 
 import { POST } from './+server';
 import { mapReleaseSearch } from '$lib/books';
@@ -25,7 +25,7 @@ const call = async (body: unknown) => {
 beforeEach(() => {
 	searchReleases.mockReset();
 	grabRelease.mockReset().mockResolvedValue({ id: 3, status: 'grabbed', hardcoverId: 7, title: 'Dune', author: 'Frank Herbert', coverUrl: null });
-	saveEntry.mockReset();
+	wantIfNew.mockClear();
 });
 
 describe('Automatic download', () => {
@@ -44,7 +44,7 @@ describe('Automatic download', () => {
 		expect(out.grabbed).toBe(true);
 		expect(grabRelease).toHaveBeenCalledWith(3, expect.objectContaining({ indexerId: 2, guid: 'best' }));
 		// Only a real download puts the book on your list.
-		expect(saveEntry).toHaveBeenCalledWith(expect.objectContaining({ hardcoverId: 7, title: 'Dune' }), { status: 'want_to_read' });
+		expect(wantIfNew).toHaveBeenCalledWith(7);
 	});
 
 	it('says why when there is nothing to grab, and grabs nothing', async () => {
@@ -52,7 +52,7 @@ describe('Automatic download', () => {
 		const out = await call({ auto: true });
 		expect(out).toMatchObject({ grabbed: false, reason: 'No releases found (searched 1 source).' });
 		expect(grabRelease).not.toHaveBeenCalled();
-		expect(saveEntry).not.toHaveBeenCalled();
+		expect(wantIfNew).not.toHaveBeenCalled();
 	});
 
 	it('grabs exactly the release you picked', async () => {

@@ -10,6 +10,10 @@
 			title: 'Link your Floppy account',
 			body: 'Your watchlist, shows, stats and Upcoming come from your own Floppy. Add your Floppy calendar link to see them.'
 		},
+		hardcover: {
+			title: 'Link your Hardcover account',
+			body: 'What you read, want to read and rate lives on your own Hardcover shelf. Add your Hardcover token to see it.'
+		},
 		bookorbit: {
 			title: 'Link your BookOrbit account',
 			body: 'Your books, reading progress and goals come from your own BookOrbit login.'

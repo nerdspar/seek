@@ -215,6 +215,14 @@ export const MIGRATIONS: string[] = [
 		SELECT household_id, 'tv', source, media_id, title, added_by, created_at FROM shared_shows;
 	DROP TABLE shared_shows;
 	ALTER TABLE shared_shows_v9 RENAME TO shared_shows;
+	`,
+	// v10 — reading state moved to Hardcover: who has had their books moved
+	// there (once each — see books/moveToHardcover.ts).
+	`
+	CREATE TABLE books_moved (
+		user_id   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		moved_at  TEXT NOT NULL
+	);
 	`
 ];
 

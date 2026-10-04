@@ -19,7 +19,7 @@
 		{ value: 'want_to_read', label: 'Want to read' },
 		{ value: 'reading', label: 'Reading' },
 		{ value: 'read', label: 'Read' },
-		{ value: 'on_hold', label: 'On hold' },
+		{ value: 'on_hold', label: 'Paused' },
 		{ value: 'abandoned', label: 'Did not finish' }
 	];
 	// Rereading and skimmed (set on a reader) read as their nearest choice.

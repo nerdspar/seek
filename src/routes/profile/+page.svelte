@@ -138,10 +138,10 @@
 				{/if}
 			{/await}
 			{#if data.reading}
-				{#await data.reading then snap}
-					<ReadingCard {snap} />
+				{#await data.reading then goal}
+					<ReadingCard {goal} />
 				{:catch}
-					<!-- BookOrbit unreachable: the numbers above still stand. -->
+					<!-- Hardcover unreachable: the numbers above still stand. -->
 				{/await}
 			{/if}
 		{:else}

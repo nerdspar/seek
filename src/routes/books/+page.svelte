@@ -177,6 +177,7 @@
 	</header>
 
 	<main use:tabReselect={{ tab: 'watchlist' }}>
+		{#if data.hardcoverLinked}
 		{#await data.goal then loaded}
 			{@const goal = goalSaved ?? loaded}
 			{#if editingGoal}
@@ -205,23 +206,25 @@
 				<button class="setgoal" onclick={() => editGoal(goal)}>+ Set a reading goal for {goal?.year ?? new Date().getFullYear()}</button>
 			{/if}
 		{/await}
+		{/if}
 
-		{#if !data.linked}
+		{#if !data.hardcoverLinked}
 			<p class="linkhint">
-				{#if data.canLink}
-					Link your BookOrbit login in <a href="/profile/settings?s=accounts">Settings → Your accounts</a> to see your library here. Books you add yourself work either way.
-				{:else}
-					Books you add with + are kept here.
-				{/if}
+				Link your Hardcover account in <a href="/profile/settings?s=accounts">Settings → Your accounts</a> — it's
+				where what you read, want to read and rate is kept.
+			</p>
+		{:else if !data.linked && data.canLink}
+			<p class="linkhint">
+				Link your BookOrbit login in <a href="/profile/settings?s=accounts">Settings → Your accounts</a> to see the library here too.
 			</p>
 		{/if}
 
-		{#await data.library}
+		{#await Promise.all([data.library, data.shelf])}
 			<ul class="rows">
 				{#each Array(5) as _, i (i)}<li><Skeleton height="98px" radius={14} /></li>{/each}
 			</ul>
-		{:then library}
-			{@const all = myBooks(library, data.entries)}
+		{:then [library, shelf]}
+			{@const all = myBooks(library, shelf)}
 			{@const shown = sortBooks(filterBooks(all, filters, shelfIds), sort)}
 			{@const filtering = bookFiltersActive(filters)}
 			{@const groups = readingSections(shown, filtering ? [] : requests)}
@@ -308,7 +311,7 @@
 			{/if}
 
 		{:catch err}
-			<div class="empty"><h2>Can't reach BookOrbit</h2><p>{err.message}</p></div>
+			<div class="empty"><h2>Can't reach Hardcover</h2><p>{err.message}</p></div>
 		{/await}
 	</main>
 

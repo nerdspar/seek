@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { startDownload } from '$lib/server/books/bookorbit';
 import { relayRefusal } from '$lib/server/books/http';
-import { getEntry, saveEntry } from '$lib/server/books/entries';
+import { wantIfNew } from '$lib/server/books/shelf';
 import { bookIsbns } from '$lib/server/books/hardcover';
 import { BOOKORBIT_URL } from '$lib/server/env';
 import type { RequestHandler } from './$types';
@@ -32,6 +32,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	};
 	const kind = body.mediaKind === 'audiobook' ? 'audiobook' : 'ebook';
 	const out = await startDownload(book, kind, await bookIsbns(hardcoverId)).catch(relayRefusal);
-	if (!out.selfServe && !getEntry(hardcoverId)) saveEntry(book, { status: 'want_to_read' });
+	if (!out.selfServe) await wantIfNew(hardcoverId).catch(() => {});
 	return json({ ...out, bookorbitUrl: BOOKORBIT_URL() || null });
 };

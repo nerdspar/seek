@@ -96,7 +96,7 @@ const STATUS_LABELS: Record<BookReadStatus, string> = {
 	unread: 'In your library',
 	want_to_read: 'Want to read',
 	reading: 'Reading',
-	on_hold: 'On hold',
+	on_hold: 'Paused',
 	rereading: 'Rereading',
 	read: 'Read',
 	skimmed: 'Skimmed',
@@ -118,7 +118,7 @@ export function cardBadge(c: { owned?: { status: BookReadStatus } | null; mine?:
 export const READING_SECTIONS: { title: string; statuses: BookReadStatus[] }[] = [
 	{ title: 'Reading', statuses: ['reading', 'rereading'] },
 	{ title: 'Want to read', statuses: ['want_to_read'] },
-	{ title: 'On hold', statuses: ['on_hold'] },
+	{ title: 'Paused', statuses: ['on_hold'] },
 	{ title: 'Read', statuses: ['read', 'skimmed'] },
 	{ title: 'Did not finish', statuses: ['abandoned'] }
 ];
@@ -133,33 +133,95 @@ export function groupReading(
 	})).filter((s) => s.books.length);
 }
 
-/* ── Your books outside the library ─────────────────────────────────────────
-   A book you track that isn't in BookOrbit (a physical copy, a loan, one you
-   want) — Seek keeps your status, rating and page for it. */
+/* ── Your shelf on Hardcover ────────────────────────────────────────────────
+   Hardcover is where each person's reading lives: status, rating, dates, page
+   progress — for any book, in the library or not (docs/books-hardcover-plan.md).
+   BookOrbit only says which books are in the library. */
 
-/** The statuses a book outside the library can have ('unread' means "in the
- *  library, not started", which doesn't apply). */
-export type EntryStatus = Exclude<BookReadStatus, 'unread' | 'rereading' | 'skimmed'>;
+/** What a book on your shelf can be — Hardcover's five shelves. ('unread' in
+ *  BookReadStatus is a library book with nothing on your shelf yet.) */
+export type EntryStatus = 'want_to_read' | 'reading' | 'on_hold' | 'read' | 'abandoned';
 export const ENTRY_STATUSES: EntryStatus[] = ['want_to_read', 'reading', 'on_hold', 'read', 'abandoned'];
 
-export type BookEntry = BookCard & {
+/** Hardcover's status ids (user_book_statuses). 6, "Ignored", is never shown. */
+export const HC_STATUS_ID: Record<EntryStatus, number> = {
+	want_to_read: 1,
+	reading: 2,
+	read: 3,
+	on_hold: 4,
+	abandoned: 5
+};
+const HC_STATUS: Record<number, EntryStatus> = { 1: 'want_to_read', 2: 'reading', 3: 'read', 4: 'on_hold', 5: 'abandoned' };
+
+/** One book on your Hardcover shelf, with its latest read. */
+export type ShelfBook = {
+	/** Hardcover's id for your shelf entry (user_book) — what writes address. */
+	userBookId: number;
+	hardcoverId: number;
+	title: string;
+	authors: string[];
+	coverUrl: string | null;
+	year: number | null;
 	pages: number | null;
+	genres: string[];
 	status: EntryStatus;
-	/** Your rating, 1–5. */
-	myRating: number | null;
-	progressPages: number | null;
+	/** 1–5 (Hardcover's half stars round). */
+	rating: number | null;
+	/** The latest read (user_book_read): its id, dates and page. */
+	readId: number | null;
 	startedAt: string | null;
 	finishedAt: string | null;
-	addedAt: string;
-	updatedAt: string;
+	progressPages: number | null;
+	addedAt: string | null;
+	updatedAt: string | null;
 };
 
-/* ── One list: library books and your own entries ───────────────────────────── */
+/* Hardcover dates are calendar days ("2026-03-14"). As instants they're read at
+   midday UTC, so they stay the same day everywhere from UTC−11 to UTC+11. */
+const day = (v: unknown): string | null => {
+	const s = str(v);
+	return s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00.000Z` : s;
+};
 
-/** A book on your reading list, wherever its state lives. */
+/** A `me { user_books { … } }` row → ShelfBook; null for Ignored or a broken row. */
+export function mapShelfRow(raw: unknown): ShelfBook | null {
+	const ub = rec(raw);
+	const status = HC_STATUS[num(ub.status_id) ?? 0];
+	const book = rec(ub.book);
+	const id = num(book.id);
+	const userBookId = num(ub.id);
+	if (!status || !id || !userBookId) return null;
+	const card = mapHardcoverBook(book);
+	const read = rec(Array.isArray(ub.user_book_reads) ? ub.user_book_reads[0] : null);
+	const rating = num(ub.rating);
+	return {
+		userBookId,
+		hardcoverId: id,
+		title: card.title,
+		authors: contributorAuthors(book.cached_contributors).length ? contributorAuthors(book.cached_contributors) : card.author ? [card.author] : [],
+		coverUrl: card.coverUrl,
+		year: card.year,
+		pages: num(book.pages),
+		genres: tagNames(book.cached_tags, 'Genre', 6),
+		status,
+		rating: rating ? Math.max(1, Math.round(rating)) : null,
+		readId: num(read.id),
+		startedAt: day(read.started_at),
+		finishedAt: day(read.finished_at),
+		progressPages: num(read.progress_pages),
+		addedAt: day(ub.date_added),
+		updatedAt: str(ub.updated_at)
+	};
+}
+
+/* ── One list: your shelf, joined to the library ──────────────────────────── */
+
+/** A book on your reading list: on your Hardcover shelf, in the library, or both. */
 export type MyBook = {
-	/** Unique across both sources: `lib:<bookorbit id>` or `hc:<hardcover id>`. */
+	/** `hc:<hardcover id>` for a shelf book, `lib:<bookorbit id>` for a library
+	 *  book with nothing on your shelf yet. */
 	key: string;
+	/** 'library': BookOrbit has it; 'entry': only on your shelf (paper, a loan…). */
 	source: 'library' | 'entry';
 	libraryId: number | null;
 	hardcoverId: number | null;
@@ -184,7 +246,35 @@ export type MyBook = {
 	finishedAt: string | null;
 };
 
-export const fromLibrary = (b: ReadingBook): MyBook => ({
+function fromShelf(s: ShelfBook, lib: ReadingBook | null): MyBook {
+	const pages = s.pages ?? lib?.pageCount ?? null;
+	return {
+		key: `hc:${s.hardcoverId}`,
+		source: lib ? 'library' : 'entry',
+		libraryId: lib?.id ?? null,
+		hardcoverId: s.hardcoverId,
+		title: lib?.title ?? s.title,
+		authors: lib?.authors.length ? lib.authors : s.authors,
+		coverUrl: lib?.coverUrl ?? s.coverUrl,
+		year: s.year ?? lib?.year ?? null,
+		status: s.status,
+		myRating: s.rating,
+		pages,
+		progress: s.status === 'read' ? 1 : pages && s.progressPages != null ? Math.min(1, s.progressPages / pages) : null,
+		seriesName: lib?.seriesName ?? null,
+		seriesIndex: lib?.seriesIndex ?? null,
+		genres: lib?.genres.length ? lib.genres : s.genres,
+		formats: lib?.formats ?? [],
+		addedAt: lib?.addedAt ?? s.addedAt,
+		activeAt: s.updatedAt ?? s.addedAt,
+		startedAt: s.startedAt,
+		finishedAt: s.finishedAt
+	};
+}
+
+/** A library book with nothing on your shelf: "In your library". BookOrbit's own
+ *  status for it is ignored — Hardcover is where reading state lives. */
+const unstarted = (b: ReadingBook): MyBook => ({
 	key: `lib:${b.id}`,
 	source: 'library',
 	libraryId: b.id,
@@ -193,58 +283,39 @@ export const fromLibrary = (b: ReadingBook): MyBook => ({
 	authors: b.authors,
 	coverUrl: b.coverUrl,
 	year: b.year,
-	status: b.status,
-	myRating: b.rating,
+	status: 'unread',
+	myRating: null,
 	pages: b.pageCount,
-	progress: b.progress,
+	progress: null,
 	seriesName: b.seriesName,
 	seriesIndex: b.seriesIndex,
 	genres: b.genres,
 	formats: b.formats,
 	addedAt: b.addedAt,
-	activeAt: b.statusAt ?? b.addedAt,
-	startedAt: b.startedAt,
-	finishedAt: b.finishedAt
+	activeAt: b.addedAt,
+	startedAt: null,
+	finishedAt: null
 });
 
-export const fromEntry = (e: BookEntry): MyBook => ({
-	key: `hc:${e.hardcoverId}`,
-	source: 'entry',
-	libraryId: null,
-	hardcoverId: e.hardcoverId,
-	title: e.title,
-	authors: e.author ? [e.author] : [],
-	coverUrl: e.coverUrl,
-	year: e.year,
-	status: e.status,
-	myRating: e.myRating,
-	pages: e.pages,
-	progress: e.pages && e.progressPages != null ? Math.min(1, e.progressPages / e.pages) : null,
-	seriesName: null,
-	seriesIndex: null,
-	genres: [],
-	formats: [],
-	addedAt: e.addedAt,
-	activeAt: e.updatedAt,
-	startedAt: e.startedAt,
-	finishedAt: e.finishedAt
-});
-
-/** Your entries matched to the library copy that has since arrived. */
-export function arrivedEntries(entries: BookEntry[], library: ReadingBook[]): { entry: BookEntry; book: ReadingBook }[] {
+/** The library copy of a shelf book: by Hardcover id, else title + author (the
+ *  fallback until BookOrbit has matched it). */
+export function libraryCopyOf(library: ReadingBook[]): (b: { hardcoverId: number | null; title: string; author: string | null | undefined }) => ReadingBook | null {
 	const byHc = new Map(library.filter((b) => b.hardcoverId).map((b) => [b.hardcoverId!, b]));
 	const byKey = new Map(library.map((b) => [bookKey(b.title, b.authors[0]), b]));
-	return entries.flatMap((entry) => {
-		const book = byHc.get(entry.hardcoverId) ?? byKey.get(bookKey(entry.title, entry.author));
-		return book ? [{ entry, book }] : [];
-	});
+	return (b) => (b.hardcoverId ? byHc.get(b.hardcoverId) : undefined) ?? byKey.get(bookKey(b.title, b.author)) ?? null;
 }
 
-/** The whole list: every library book plus your entries for books you don't
- *  own. Once a book is in the library, its library copy is the one shown. */
-export function myBooks(library: ReadingBook[], entries: BookEntry[]): MyBook[] {
-	const arrived = new Set(arrivedEntries(entries, library).map((a) => a.entry.hardcoverId));
-	return [...library.map(fromLibrary), ...entries.filter((e) => !arrived.has(e.hardcoverId)).map(fromEntry)];
+/** The whole list: every book on your shelf (with its library copy, if any),
+ *  then the library books you haven't put on your shelf. */
+export function myBooks(library: ReadingBook[], shelf: ShelfBook[]): MyBook[] {
+	const copyOf = libraryCopyOf(library);
+	const used = new Set<number>();
+	const mine = shelf.map((s) => {
+		const lib = copyOf({ hardcoverId: s.hardcoverId, title: s.title, author: s.authors[0] });
+		if (lib) used.add(lib.id);
+		return fromShelf(s, lib);
+	});
+	return [...mine, ...library.filter((b) => !used.has(b.id)).map(unstarted)];
 }
 
 /** "123 / 400 pages · 31%" (or just the percent when the page count is unknown). */
@@ -652,64 +723,6 @@ export function librarySeeds(books: MyBook[], max = 3): MyBook[] {
 }
 
 /* Hardcover's user_books.status_id. 6 ("ignored") and anything new is skipped. */
-const SHELF_STATUS: Record<number, BookReadStatus> = {
-	1: 'want_to_read',
-	2: 'reading',
-	3: 'read',
-	4: 'on_hold',
-	5: 'abandoned'
-};
-
-/**
- * Your books on Hardcover (`me { user_books { … } }`) as MyBooks — what you've
- * read and rated there, for recommendations only. Ratings (half-stars) round.
- */
-export function mapHardcoverShelf(raw: unknown): MyBook[] {
-	if (!Array.isArray(raw)) return [];
-	const out: MyBook[] = [];
-	for (const r of raw) {
-		const ub = rec(r);
-		const status = SHELF_STATUS[num(ub.status_id) ?? 0];
-		const book = rec(ub.book);
-		const id = num(book.id);
-		if (!status || !id) continue;
-		const card = mapHardcoverBook(book);
-		const rating = num(ub.rating);
-		const finished = str(ub.last_read_date);
-		out.push({
-			key: `hc:${id}`,
-			source: 'entry',
-			libraryId: null,
-			hardcoverId: id,
-			title: card.title,
-			authors: card.author ? [card.author] : [],
-			coverUrl: card.coverUrl,
-			year: card.year,
-			status,
-			myRating: rating ? Math.round(rating) : null,
-			pages: null,
-			progress: null,
-			seriesName: null,
-			seriesIndex: null,
-			genres: tagNames(book.cached_tags, 'Genre', 6),
-			formats: [],
-			addedAt: null,
-			activeAt: finished,
-			startedAt: null,
-			finishedAt: finished
-		});
-	}
-	return out;
-}
-
-/** Your books plus the Hardcover shelf books Seek doesn't already have (by
- *  Hardcover id, or title + author). Your own copy's status always wins. */
-export function withShelf(books: MyBook[], shelf: MyBook[]): MyBook[] {
-	const ids = new Set(books.map((b) => b.hardcoverId).filter(Boolean));
-	const keys = new Set(books.map((b) => bookKey(b.title, b.authors[0])));
-	return [...books, ...shelf.filter((b) => !ids.has(b.hardcoverId) && !keys.has(bookKey(b.title, b.authors[0])))];
-}
-
 /** The genres you read most, weighting books you rated highly. */
 export function favoriteGenres(books: MyBook[], extra: Map<string, string[]> = new Map(), max = 2): string[] {
 	const counts = new Map<string, { name: string; n: number }>();
@@ -899,6 +912,19 @@ type Raw = Record<string, unknown>;
 const rec = (v: unknown): Raw => (v && typeof v === 'object' ? (v as Raw) : {});
 const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** Hardcover's `cached_contributors`: the authors' names (narrators,
+ *  translators, illustrators… dropped), in Hardcover's order. */
+export function contributorAuthors(raw: unknown): string[] {
+	if (!Array.isArray(raw)) return [];
+	return raw
+		.filter((c) => {
+			const role = str(rec(c).contribution);
+			return !role || /author/i.test(role);
+		})
+		.map((c) => str(rec(rec(c).author).name))
+		.filter((n): n is string => Boolean(n));
+}
 
 /** Author lists arrive as plain strings or as `{name}` objects depending on the
  *  source; accept either and drop anything empty. */

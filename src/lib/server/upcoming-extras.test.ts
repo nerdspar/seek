@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { filmReleases, authorsYouRead, windowAround } from './upcoming-extras';
-import { myBooks, mapReadingBook } from '$lib/books';
+import { myBooks, mapReadingBook, type ShelfBook } from '$lib/books';
 
 describe('filmReleases', () => {
 	it('takes the first wide theatrical and first digital date; skips premieres and disc', () => {
@@ -26,13 +26,29 @@ describe('filmReleases', () => {
 
 describe('authorsYouRead', () => {
 	it('lists the authors of what you finished or loved, once each', () => {
-		const lib = [
-			{ id: 1, title: 'A', authors: ['Andy Weir'], readStatus: { status: 'read' }, rating: 5 },
-			{ id: 2, title: 'B', authors: ['Andy Weir'], readStatus: { status: 'read' } },
-			{ id: 3, title: 'C', authors: ['N. K. Jemisin'], readStatus: { status: 'read' } },
-			{ id: 4, title: 'D', authors: ['Unread Author'], readStatus: { status: 'unread' } }
-		].map(mapReadingBook);
-		expect(authorsYouRead(myBooks(lib, []))).toEqual(['Andy Weir', 'N. K. Jemisin']);
+		const shelf = (hardcoverId: number, author: string, status: ShelfBook['status'], rating: number | null = null): ShelfBook => ({
+			userBookId: hardcoverId,
+			hardcoverId,
+			title: `T${hardcoverId}`,
+			authors: [author],
+			coverUrl: null,
+			year: null,
+			pages: null,
+			genres: [],
+			status,
+			rating,
+			readId: null,
+			startedAt: null,
+			finishedAt: null,
+			progressPages: null,
+			addedAt: null,
+			updatedAt: null
+		});
+		const books = myBooks(
+			[mapReadingBook({ id: 9, title: 'In the library', authors: ['Unread Author'] })],
+			[shelf(1, 'Andy Weir', 'read', 5), shelf(2, 'Andy Weir', 'read'), shelf(3, 'N. K. Jemisin', 'read'), shelf(4, 'Someone', 'want_to_read')]
+		);
+		expect(authorsYouRead(books)).toEqual(['Andy Weir', 'N. K. Jemisin']);
 	});
 });
 

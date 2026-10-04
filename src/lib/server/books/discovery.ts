@@ -1,10 +1,10 @@
 /**
- * Discovery results joined with *your* library: Hardcover says what a book is,
- * BookOrbit says whether you own it and where you are in it. Kept apart from
- * both clients so each stays about one service.
+ * Discovery results joined with *your* books: Hardcover says what a book is,
+ * your Hardcover shelf says where you are with it, and BookOrbit says whether
+ * it's in the library (docs/books-hardcover-plan.md). Kept apart from the
+ * clients so each stays about one service.
  */
 import {
-	arrivedEntries,
 	bookKey,
 	favoriteGenres,
 	librarySeeds,
@@ -12,74 +12,64 @@ import {
 	notYours,
 	recommendationSeeds,
 	topGenres,
-	withShelf,
 	type BookCard,
 	type BookRail,
+	type BookReadStatus,
 	type EntryStatus,
-	type MyBook,
-	type ReadingBook
+	type MyBook
 } from '$lib/books';
-import { bookorbitLinked, getAllBooks, setBookRating, setReadStatus } from './bookorbit';
-import { authorBooks, bookDetail, genreBooks, readShelf, searchBooks, seriesAfter } from './hardcover';
+import { bookorbitLinked, getAllBooks } from './bookorbit';
+import { authorBooks, bookDetail, genreBooks, searchBooks, seriesAfter } from './hardcover';
+import { myShelf, shelfLinked } from './shelf';
 import { memo } from '../memo';
-import { hardcoverUserToken } from '../userctx';
-import { entryStatuses, listEntries, removeEntry } from './entries';
 
-/** What the UI needs to badge a discovery card you already own. */
+/** What the UI needs to badge a discovery card that's in the library. */
 export type Owned = {
 	bookId: number;
-	status: ReadingBook['status'];
+	/** Your status on it ('unread': in the library, not on your shelf). */
+	status: BookReadStatus;
 	progress: number | null;
 	/** Your rating (1–5) and the page count, for the book sheet. */
 	rating: number | null;
 	pages: number | null;
 };
 
-/** `mine`: your status on it as one of your own books (not owned — owning it
- *  supersedes that). */
+/** `mine`: your status on a book that isn't in the library (owning it
+ *  supersedes that — `owned` carries the status then). */
 export type OwnedCard = BookCard & { owned: Owned | null; mine: EntryStatus | null };
 
-/* Your library two ways: by Hardcover id (exact, once BookOrbit has matched the
-   book) and by normalised title + author (the fallback until it has — on a
-   fresh library none have ids yet). Plus your statuses on books you don't own. */
-export type OwnedIndex = {
-	byHc: Map<number, ReadingBook>;
-	byKey: Map<string, ReadingBook>;
-	mine: Map<number, EntryStatus>;
-};
+/* Your books two ways: by Hardcover id (exact) and by normalised title + author
+   (for a library book BookOrbit hasn't matched to Hardcover yet). */
+export type OwnedIndex = { byHc: Map<number, MyBook>; byKey: Map<string, MyBook> };
 
-export function indexLibrary(books: ReadingBook[], mine: Map<number, EntryStatus> = new Map()): OwnedIndex {
-	const byHc = new Map<number, ReadingBook>();
-	const byKey = new Map<string, ReadingBook>();
+export function indexBooks(books: MyBook[]): OwnedIndex {
+	const byHc = new Map<number, MyBook>();
+	const byKey = new Map<string, MyBook>();
 	for (const b of books) {
 		if (b.hardcoverId) byHc.set(b.hardcoverId, b);
 		byKey.set(bookKey(b.title, b.authors[0]), b);
 	}
-	return { byHc, byKey, mine };
+	return { byHc, byKey };
 }
 
 export function markOwned(cards: BookCard[], idx: OwnedIndex): OwnedCard[] {
 	return cards.map((c) => {
-		const lib = idx.byHc.get(c.hardcoverId) ?? idx.byKey.get(bookKey(c.title, c.author));
+		const b = idx.byHc.get(c.hardcoverId) ?? idx.byKey.get(bookKey(c.title, c.author)) ?? null;
+		const lib = b?.source === 'library' && b.libraryId !== null ? b : null;
 		return {
 			...c,
-			owned: lib
-				? { bookId: lib.id, status: lib.status, progress: lib.progress, rating: lib.rating, pages: lib.pageCount }
-				: null,
-			mine: lib ? null : (idx.mine.get(c.hardcoverId) ?? null)
+			owned: lib ? { bookId: lib.libraryId!, status: lib.status, progress: lib.progress, rating: lib.myRating, pages: lib.pages } : null,
+			mine: b && !lib ? (b.status as EntryStatus) : null
 		};
 	});
 }
 
-/** Your library index, or an empty one if you haven't linked BookOrbit or it's
- *  down — discovery must never fail just because the badge can't be computed.
- *  Your own books are Seek's, so they count even without BookOrbit. */
+/** Your books as a lookup, or an empty one if Hardcover or BookOrbit is down —
+ *  discovery must never fail just because a badge can't be computed. */
 export async function ownedIndex(): Promise<OwnedIndex> {
-	const mine = entryStatuses();
-	if (!bookorbitLinked()) return indexLibrary([], mine);
-	return getAllBooks()
-		.then((books) => indexLibrary(books, mine))
-		.catch(() => indexLibrary([], mine));
+	return myBookList()
+		.then(indexBooks)
+		.catch(() => indexBooks([]));
 }
 
 export async function railsWithOwned(
@@ -101,38 +91,6 @@ export async function matchHardcover(title: string, author: string | null): Prom
 	return hits.find((h) => bookKey(h.title, h.author) === want)?.hardcoverId ?? null;
 }
 
-/**
- * One of your own books that has landed in the library (you requested it, or
- * uploaded your copy) comes in as "unread" — BookOrbit doesn't know what you'd
- * done with it. Carry it over: your status and rating move to the library
- * copy, then your entry goes, since the library copy now carries them. A copy
- * you'd already given a status or rating keeps it. Best-effort: a failed write
- * leaves the entry for next time.
- */
-export async function settleArrivals(library: ReadingBook[]): Promise<ReadingBook[]> {
-	const arrived = arrivedEntries(listEntries(), library);
-	if (!arrived.length) return library;
-	const updated = new Map<number, ReadingBook>();
-	for (const { entry, book } of arrived) {
-		try {
-			let next = book;
-			if (book.status === 'unread') {
-				await setReadStatus(book.id, entry.status);
-				next = { ...next, status: entry.status };
-			}
-			if (book.rating === null && entry.myRating !== null) {
-				await setBookRating(book.id, entry.myRating);
-				next = { ...next, rating: entry.myRating };
-			}
-			updated.set(book.id, next);
-			removeEntry(entry.hardcoverId);
-		} catch {
-			/* keep the entry; try again on the next visit */
-		}
-	}
-	return library.map((b) => updated.get(b.id) ?? b);
-}
-
 /* ── Personal shelves: "Because you read …" / "Because you like …" ───────────── */
 
 /**
@@ -141,9 +99,9 @@ export async function settleArrivals(library: ReadingBook[]): Promise<ReadingBoo
  *   author — for your most-loved, most recent finishes;
  * - "Because you like <genre>": the most-read recent books in the genres you
  *   read most (genres from BookOrbit, or Hardcover for books it hasn't tagged).
- * What you've read and rated on your own Hardcover account (Your accounts)
- * counts too. With nothing finished or loved anywhere yet, it grows from the
- * books you added to the library most recently ("More like …").
+ * Everything on your Hardcover shelf counts (her Goodreads history included).
+ * With nothing finished or loved anywhere yet, it grows from the books added
+ * to the library most recently ("More like …").
  * Nothing you already have is recommended. Cached per person for a few hours;
  * empty (not an error) when there's nothing to grow from yet.
  */
@@ -151,23 +109,21 @@ export function personalRails(): Promise<BookRail[]> {
 	return memo('books:personal', 6 * 60 * 60 * 1000, buildPersonalRails);
 }
 
-/** All your books — the library (when linked) and your own — as one list. A
- *  BookOrbit hiccup gives just your own books rather than an error. */
+/** All your books — your Hardcover shelf joined to the library — as one list.
+ *  A BookOrbit hiccup gives just your shelf; a Hardcover problem is an error
+ *  (the reading list can't be shown without it). Without your own Hardcover
+ *  token linked it's just the library, all "not started". */
 export async function myBookList(): Promise<MyBook[]> {
-	const library = bookorbitLinked() ? await getAllBooks().catch(() => []) : [];
-	return myBooks(library, listEntries());
-}
-
-/** Your Hardcover shelves, when you've linked your own token; [] otherwise or
- *  if Hardcover is unreachable — recommendations just grow from less. */
-async function myShelf(): Promise<MyBook[]> {
-	const token = hardcoverUserToken();
-	return token ? readShelf(token).catch(() => []) : [];
+	const [library, shelf] = await Promise.all([
+		bookorbitLinked() ? getAllBooks().catch(() => []) : Promise.resolve([]),
+		shelfLinked() ? myShelf() : Promise.resolve([])
+	]);
+	return myBooks(library, shelf);
 }
 
 async function buildPersonalRails(): Promise<BookRail[]> {
-	const [own, shelf] = await Promise.all([myBookList(), myShelf()]);
-	const books = withShelf(own, shelf);
+	// Recommendations grow from less (rather than fail) when a service is down.
+	const books = await myBookList().catch(() => [] as MyBook[]);
 	const loved = recommendationSeeds(books);
 	const seeds = loved.length ? loved : librarySeeds(books);
 	if (!seeds.length) return [];

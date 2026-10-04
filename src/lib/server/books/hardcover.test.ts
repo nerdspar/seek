@@ -158,14 +158,4 @@ describe('your own Hardcover account', () => {
 		expect(await hc.checkHardcoverToken('  ')).toMatchObject({ ok: false });
 	});
 
-	it('reads the shelf with the person’s token, not the household’s', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			ok({ me: [{ user_books: [{ status_id: 3, rating: 5, last_read_date: '2026-01-02', book: book(7) }] }] })
-		);
-		vi.stubGlobal('fetch', fetchMock);
-		const hc = await load();
-		const shelf = await hc.readShelf('Bearer theirs');
-		expect(shelf.map((b) => [b.hardcoverId, b.status, b.myRating])).toEqual([[7, 'read', 5]]);
-		expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer theirs');
-	});
 });

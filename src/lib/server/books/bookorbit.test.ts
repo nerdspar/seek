@@ -66,7 +66,7 @@ describe('bookorbit client', () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal('fetch', fetchMock);
 		const bo = await load();
-		await expect(bo.getReadingGoal()).rejects.toThrow(/No BookOrbit account linked/);
+		await expect(bo.listLibraries()).rejects.toThrow(/No BookOrbit account linked/);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
@@ -74,19 +74,19 @@ describe('bookorbit client', () => {
 		const fetchMock = vi
 			.fn()
 			.mockResolvedValueOnce(json(LOGIN))
-			.mockResolvedValueOnce(json({ goalBooks: 24, completedBooks: 3, year: 2026 }))
-			.mockResolvedValueOnce(json({ trackedBooks: 5 }));
+			.mockResolvedValueOnce(json([{ id: 1, name: 'Books' }]))
+			.mockResolvedValueOnce(json([{ id: 1, name: 'Books' }]));
 		vi.stubGlobal('fetch', fetchMock);
 		const bo = await load();
 
-		expect(await bo.getReadingGoal()).toEqual({ goalBooks: 24, completedBooks: 3, year: 2026 });
-		await bo.getStatsSummary();
+		expect(await bo.listLibraries()).toEqual([{ id: 1, name: 'Books' }]);
+		await bo.listLibraries();
 
 		const urls = fetchMock.mock.calls.map((c) => c[0]);
 		expect(urls).toEqual([
 			'https://bo.test/api/v1/auth/login',
-			'https://bo.test/api/v1/dashboard/widgets/reading-goal',
-			'https://bo.test/api/v1/user-statistics/summary'
+			'https://bo.test/api/v1/libraries',
+			'https://bo.test/api/v1/libraries'
 		]);
 		expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ username: 'svc', password: 'pw' });
 		expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer tok-1');
@@ -98,21 +98,21 @@ describe('bookorbit client', () => {
 			.mockResolvedValueOnce(json(LOGIN))
 			.mockResolvedValueOnce(json({}, 401))
 			.mockResolvedValueOnce(json({ ...LOGIN, accessToken: 'tok-2' }))
-			.mockResolvedValueOnce(json({ goalBooks: 1, completedBooks: 0, year: 2026 }));
+			.mockResolvedValueOnce(json([{ id: 2, name: 'Audio' }]));
 		vi.stubGlobal('fetch', fetchMock);
 		const bo = await load();
 
-		expect((await bo.getReadingGoal()).goalBooks).toBe(1);
+		expect((await bo.listLibraries())[0].id).toBe(2);
 		expect(fetchMock.mock.calls[3][1].headers.Authorization).toBe('Bearer tok-2');
 	});
 
 	it('surfaces a failed login as an error', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({}, 401)));
 		const bo = await load();
-		await expect(bo.getReadingGoal()).rejects.toThrow(/login failed/);
+		await expect(bo.listLibraries()).rejects.toThrow(/login failed/);
 	});
 
-	it('pages through the library (BookOrbit pagination shape) and filters by status in Seek', async () => {
+	it('pages through the library (BookOrbit pagination shape), and caches it', async () => {
 		const fetchMock = vi
 			.fn()
 			.mockResolvedValueOnce(json(LOGIN))
@@ -121,117 +121,14 @@ describe('bookorbit client', () => {
 		vi.stubGlobal('fetch', fetchMock);
 		const bo = await load();
 
-		const reading = await bo.getReadingList(['reading', 'want_to_read']);
-		expect(reading.map((b) => b.id)).toEqual([1, 3]);
+		expect((await bo.getAllBooks()).map((b) => b.id)).toEqual([1, 2, 3]);
 		// 0-based pages under `pagination` — anything else BookOrbit silently ignores.
 		expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ pagination: { page: 0, size: 200 } });
 		expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ pagination: { page: 1, size: 200 } });
 
 		// Cached: no further fetches for another view of the same list.
-		expect((await bo.getReadingList()).length).toBe(3);
+		expect((await bo.getAllBooks()).length).toBe(3);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
-	});
-});
-
-describe('setReadStatus', () => {
-	beforeEach(() => {
-		process.env.BOOKORBIT_URL = 'https://bo.test';
-		process.env.BOOKORBIT_USER = 'svc';
-		process.env.BOOKORBIT_PASSWORD = 'pw';
-	});
-	afterEach(() => {
-		vi.unstubAllGlobals();
-		delete process.env.BOOKORBIT_URL;
-		delete process.env.BOOKORBIT_USER;
-		delete process.env.BOOKORBIT_PASSWORD;
-	});
-
-	it('PATCHes your status and refreshes your cached list', async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValueOnce(json(LOGIN))
-			.mockResolvedValueOnce(json({ items: [book(1, 'unread')], total: 1 })) // list, cached
-			.mockResolvedValueOnce(json({ status: 'want_to_read', source: 'manual' })) // the write
-			.mockResolvedValueOnce(json({ items: [book(1, 'want_to_read')], total: 1 })); // refetch
-		vi.stubGlobal('fetch', fetchMock);
-		const bo = await load();
-
-		expect((await bo.getAllBooks())[0].status).toBe('unread');
-		expect(await bo.setReadStatus(1, 'want_to_read')).toBe('want_to_read');
-		const [url, init] = fetchMock.mock.calls[2];
-		expect(url).toBe('https://bo.test/api/v1/books/1/status');
-		expect(init.method).toBe('PATCH');
-		expect(JSON.parse(init.body)).toEqual({ status: 'want_to_read' });
-		// The cache was dropped, so the list reflects the change.
-		expect((await bo.getAllBooks())[0].status).toBe('want_to_read');
-	});
-});
-
-describe('reading snapshot mappers', () => {
-	it('maps the streak and challenge widgets', async () => {
-		const bo = await load();
-		expect(bo.toStreak({ currentStreak: 3, longestStreak: 9, lastSevenDays: [true, false, 1, 0, true, true, false, true] })).toEqual({
-			current: 3,
-			longest: 9,
-			lastSevenDays: [true, false, true, false, true, true, false]
-		});
-		expect(bo.toChallenge({ title: 'Genre Explorer', description: 'd', progress: 0, target: 0, completed: false })).toMatchObject({
-			title: 'Genre Explorer',
-			target: 1 // never a divide-by-zero
-		});
-		expect(bo.toChallenge({})).toBeNull();
-	});
-
-	it('totals achievements and picks the three most recently earned', async () => {
-		const bo = await load();
-		const a = (name: string, awardedAt: string | null) => ({ name, description: '', earned: Boolean(awardedAt), awardedAt });
-		const out = bo.toAchievements({
-			totalEarned: 4,
-			totalAvailable: 87,
-			categories: [
-				{ achievements: [a('Old', '2026-01-01T00:00:00Z'), a('Not yet', null)] },
-				{ achievements: [a('Newest', '2026-09-30T00:00:00Z'), a('Mid', '2026-05-01T00:00:00Z'), a('Older', '2026-03-01T00:00:00Z')] }
-			]
-		});
-		expect(out.earned).toBe(4);
-		expect(out.available).toBe(87);
-		expect(out.recent.map((x) => x.name)).toEqual(['Newest', 'Mid', 'Older']);
-	});
-});
-
-describe('getReadingSnapshot', () => {
-	beforeEach(() => {
-		process.env.BOOKORBIT_URL = 'https://bo.test';
-		process.env.BOOKORBIT_USER = 'svc';
-		process.env.BOOKORBIT_PASSWORD = 'pw';
-	});
-	afterEach(() => {
-		vi.unstubAllGlobals();
-		delete process.env.BOOKORBIT_URL;
-		delete process.env.BOOKORBIT_USER;
-		delete process.env.BOOKORBIT_PASSWORD;
-	});
-
-	it('assembles every widget, and one failing widget only blanks itself', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn(async (url: string) => {
-				if (url.endsWith('/auth/login')) return json(LOGIN);
-				if (url.endsWith('/reading-goal')) return json({ goalBooks: 24, completedBooks: 5, year: 2026 });
-				if (url.endsWith('/reading-streak')) return json({ currentStreak: 2, longestStreak: 4, lastSevenDays: [] });
-				if (url.endsWith('/summary')) return json({}, 500);
-				if (url.endsWith('/monthly-challenge')) return json({ title: 'T', progress: 1, target: 2 });
-				if (url.endsWith('/achievements')) return json({ totalEarned: 1, totalAvailable: 87, categories: [] });
-				return json({}, 404);
-			})
-		);
-		const bo = await load();
-		const snap = await bo.getReadingSnapshot();
-		expect(snap.goal?.goalBooks).toBe(24);
-		expect(snap.streak?.current).toBe(2);
-		expect(snap.summary).toBeNull();
-		expect(snap.challenge?.title).toBe('T');
-		expect(snap.achievements?.earned).toBe(1);
 	});
 });
 
@@ -298,8 +195,8 @@ describe('bookorbit per person', () => {
 		});
 		vi.stubGlobal('fetch', fetchMock);
 
-		const mine = await ctx.runAs(owner, () => bo.getReadingList());
-		const hers = await ctx.runAs(member, () => bo.getReadingList());
+		const mine = await ctx.runAs(owner, () => bo.getAllBooks());
+		const hers = await ctx.runAs(member, () => bo.getAllBooks());
 		expect(mine[0].status).toBe('reading');
 		expect(hers[0].status).toBe('want_to_read');
 
@@ -615,7 +512,7 @@ describe('shelves', () => {
 	});
 });
 
-describe('goal and send to device', () => {
+describe('send to device', () => {
 	beforeEach(() => {
 		process.env.BOOKORBIT_URL = 'https://bo.test';
 		process.env.BOOKORBIT_USER = 'svc';
@@ -626,22 +523,6 @@ describe('goal and send to device', () => {
 		delete process.env.BOOKORBIT_URL;
 		delete process.env.BOOKORBIT_USER;
 		delete process.env.BOOKORBIT_PASSWORD;
-	});
-
-	it('changes only the goal, keeping the rest of your BookOrbit dashboard', async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValueOnce(json(LOGIN))
-			.mockResolvedValueOnce(json({ settings: { dashboardConfig: { widgets: [{ id: 'streak' }], readingGoal: 12 } } }))
-			.mockResolvedValueOnce(json({}))
-			.mockResolvedValueOnce(json({ goalBooks: 30, completedBooks: 4, year: 2026 }));
-		vi.stubGlobal('fetch', fetchMock);
-		const bo = await load();
-		expect(await bo.setReadingGoal(30)).toEqual({ goalBooks: 30, completedBooks: 4, year: 2026 });
-		const [url, init] = fetchMock.mock.calls[2];
-		expect(url).toBe('https://bo.test/api/v1/users/me/settings');
-		expect(init.method).toBe('PATCH');
-		expect(JSON.parse(init.body)).toEqual({ settings: { dashboardConfig: { widgets: [{ id: 'streak' }], readingGoal: 30 } } });
 	});
 
 	it('lists devices (default first), reports the last send, and sends to one', async () => {

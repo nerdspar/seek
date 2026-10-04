@@ -1,19 +1,19 @@
 /**
- * BookOrbit server client — the self-hosted book library/reading backend.
+ * BookOrbit server client — the self-hosted book *library*: what's here to
+ * read, downloads and requests, uploads, shelves, send-to-device. Reading state
+ * (status, rating, dates, goal) lives on each person's Hardcover shelf, not here
+ * (books/shelf.ts, docs/books-hardcover-plan.md).
  *
- * Per person. Reading status, progress, goals and stats are per-account in
- * BookOrbit, so Seek calls it *as the signed-in user* with their own login
- * (userctx.bookorbitLogin — the owner falls back to the env login; a member
- * never does). Each user gets their own session and their own cached list.
+ * Per person: Seek calls it *as the signed-in user* with their own login
+ * (userctx.bookorbitLogin). Each user gets their own session and cached list.
  *
  * Auth is a session (no static API key): log in, cache the short-lived access
  * token, re-login when it expires (stateless — simpler and sturdier than storing
  * a rotating refresh token). Tokens never leave the server.
  *
- * Writes are deliberate, one function each: setReadStatus (your own reading
- * state) and requestBook/cancelRequest (asking BookOrbit to fetch a book — its
- * own approval rules and automation decide what happens next). Never a book's
- * metadata or files.
+ * Writes are deliberate, one function each: requests and downloads (asking
+ * BookOrbit to fetch a book — its own approval rules decide what happens next),
+ * uploads, shelves and send-to-device. Never a book's metadata or reading state.
  */
 import { BOOKORBIT_URL } from '$lib/server/env';
 import { TTLCache } from '$lib/server/cache';
@@ -170,40 +170,6 @@ export async function getAllBooks(): Promise<ReadingBook[]> {
 	return rows;
 }
 
-/** Reading-list rows filtered to the given statuses (all when omitted). */
-export async function getReadingList(statuses?: BookReadStatus[]): Promise<ReadingBook[]> {
-	const all = await getAllBooks();
-	if (!statuses?.length) return all;
-	const want = new Set(statuses);
-	return all.filter((b) => want.has(b.status));
-}
-
-/**
- * Set *your* reading status on a book you own (want to read, reading, read, …).
- * Per-user in BookOrbit — it changes your state, never the book or anyone
- * else's. Drops your cached list and Profile snapshot so both reflect it.
- */
-export async function setReadStatus(bookId: number, status: BookReadStatus): Promise<BookReadStatus> {
-	const res = await bo<{ status?: string }>(`/books/${bookId}/status`, {
-		method: 'PATCH',
-		body: { status }
-	});
-	dropBooksCache();
-	invalidate('books:snapshot');
-	return (res.status as BookReadStatus) ?? status;
-}
-
-/**
- * Set *your* rating (1–5, or null to clear) on a book you own. Per person in
- * BookOrbit. Needs the "edit metadata" permission on the BookOrbit account —
- * without it BookOrbit says so, and that message is passed on.
- */
-export async function setBookRating(bookId: number, rating: number | null): Promise<void> {
-	await bo<unknown>('/books/bulk-set-rating', { method: 'POST', body: { bookIds: [bookId], rating } });
-	dropBooksCache();
-	invalidate('books:snapshot');
-}
-
 /** Drop the current user's cached list (after a status change) and, with
  *  `session`, their BookOrbit session too (after they relink the account). */
 export function dropBooksCache(opts: { session?: boolean } = {}): void {
@@ -217,106 +183,9 @@ export function forgetBookOrbitSessions(): void {
 	listCache.clear();
 }
 
-export type ReadingGoal = { goalBooks: number; completedBooks: number; year: number };
-export type StatsSummary = {
-	trackedBooks: number;
-	startedBooks: number;
-	inProgressBooks: number;
-	completedBooks: number;
-	meanProgressPercent: number;
-};
-
-/** This year's reading goal (books). */
-export const getReadingGoal = () => bo<ReadingGoal>('/dashboard/widgets/reading-goal');
-
-/**
- * Set your yearly goal (books). BookOrbit keeps it in your dashboard settings,
- * and replaces that object whole on save — so read it and change just the goal,
- * leaving your BookOrbit dashboard layout as it was.
- */
-export async function setReadingGoal(books: number): Promise<ReadingGoal> {
-	const me = await bo<{ settings?: { dashboardConfig?: Record<string, unknown> } }>('/auth/me');
-	const dashboardConfig = { ...(me.settings?.dashboardConfig ?? {}), readingGoal: books };
-	await bo<unknown>('/users/me/settings', { method: 'PATCH', body: { settings: { dashboardConfig } } });
-	invalidate('books:snapshot');
-	return getReadingGoal();
-}
-
-/** Headline reading stats for the Profile books section. */
-export const getStatsSummary = () => bo<StatsSummary>('/user-statistics/summary');
-
-/* ── Profile → Reading: the per-person numbers BookOrbit keeps ─────────────── */
-
-export type ReadingStreak = { current: number; longest: number; lastSevenDays: boolean[] };
-export type MonthlyChallenge = {
-	title: string;
-	description: string;
-	progress: number;
-	target: number;
-	completed: boolean;
-};
-export type Achievement = { name: string; description: string; awardedAt: string };
-export type AchievementSummary = { earned: number; available: number; recent: Achievement[] };
-export type ReadingSnapshot = {
-	goal: ReadingGoal | null;
-	streak: ReadingStreak | null;
-	summary: StatsSummary | null;
-	challenge: MonthlyChallenge | null;
-	achievements: AchievementSummary | null;
-};
-
 type RawObj = Record<string, unknown>;
 const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const s = (v: unknown) => (typeof v === 'string' ? v : '');
-
-export function toStreak(raw: unknown): ReadingStreak {
-	const r = (raw ?? {}) as RawObj;
-	return {
-		current: n(r.currentStreak),
-		longest: n(r.longestStreak),
-		lastSevenDays: Array.isArray(r.lastSevenDays) ? r.lastSevenDays.map(Boolean).slice(0, 7) : []
-	};
-}
-
-export function toChallenge(raw: unknown): MonthlyChallenge | null {
-	const r = (raw ?? {}) as RawObj;
-	if (!s(r.title)) return null;
-	return {
-		title: s(r.title),
-		description: s(r.description),
-		progress: n(r.progress),
-		target: Math.max(1, n(r.target)),
-		completed: Boolean(r.completed)
-	};
-}
-
-/** Earned/available totals and the three most recently earned. */
-export function toAchievements(raw: unknown): AchievementSummary {
-	const r = (raw ?? {}) as RawObj;
-	const all = (Array.isArray(r.categories) ? r.categories : []).flatMap((c) =>
-		Array.isArray((c as RawObj).achievements) ? ((c as RawObj).achievements as RawObj[]) : []
-	);
-	const recent = all
-		.filter((a) => a.earned && s(a.awardedAt))
-		.sort((a, b) => s(b.awardedAt).localeCompare(s(a.awardedAt)))
-		.slice(0, 3)
-		.map((a) => ({ name: s(a.name), description: s(a.description), awardedAt: s(a.awardedAt) }));
-	return { earned: n(r.totalEarned), available: n(r.totalAvailable), recent };
-}
-
-/** Everything Profile → Reading shows, for the signed-in person. Each widget
- *  stands alone — one failing never blanks the others. */
-export async function getReadingSnapshot(): Promise<ReadingSnapshot> {
-	const safe = <T>(p: Promise<T>) => p.catch(() => null);
-	const [goal, streak, summary, challenge, achievements] = await Promise.all([
-		safe(getReadingGoal()),
-		safe(bo<unknown>('/dashboard/widgets/reading-streak').then(toStreak)),
-		safe(getStatsSummary()),
-		safe(bo<unknown>('/dashboard/widgets/monthly-challenge').then(toChallenge)),
-		safe(bo<unknown>('/achievements').then(toAchievements))
-	]);
-	return { goal, streak, summary, challenge, achievements };
-}
 
 export type Library = { id: number; name: string };
 

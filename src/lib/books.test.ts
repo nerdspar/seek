@@ -13,7 +13,6 @@ import {
 	coverThumb,
 	readingSections,
 	myBooks,
-	arrivedEntries,
 	progressText,
 	sortBooks,
 	filterBooks,
@@ -28,15 +27,15 @@ import {
 	emptySearchReason,
 	recommendationSeeds,
 	librarySeeds,
-	mapHardcoverShelf,
-	withShelf,
+	mapShelfRow,
+	contributorAuthors,
 	favoriteGenres,
 	readingStats,
 	bookDiary,
 	bookRequestBody,
 	mapReview,
 	notYours,
-	type BookEntry,
+	type ShelfBook,
 	type MyBook,
 	mapBookRequest,
 	requestLabel,
@@ -44,41 +43,52 @@ import {
 	requestFor
 } from './books';
 
-const owned = (id: number, status: string, title: string, author = 'A', hardcoverId: number | null = null, extra: Record<string, unknown> = {}) =>
-	({ ...mapReadingBook({ id, title, authors: [author], readStatus: { status }, ...extra }), hardcoverId });
-const entry = (hardcoverId: number, title: string, over: Partial<BookEntry> = {}): BookEntry => ({
+/* A library book (BookOrbit): only says the book is in the library. Its own
+   status is ignored — reading state lives on your Hardcover shelf. */
+const owned = (id: number, title: string, author = 'A', hardcoverId: number | null = null, extra: Record<string, unknown> = {}) =>
+	({ ...mapReadingBook({ id, title, authors: [author], readStatus: { status: 'read' }, ...extra }), hardcoverId });
+/* A book on your Hardcover shelf. */
+const sb = (hardcoverId: number, title: string, over: Partial<ShelfBook> = {}): ShelfBook => ({
+	userBookId: 1000 + hardcoverId,
 	hardcoverId,
 	title,
-	author: 'A',
+	authors: ['A'],
 	coverUrl: null,
 	year: null,
-	rating: null,
 	pages: null,
+	genres: [],
 	status: 'want_to_read',
-	myRating: null,
-	progressPages: null,
+	rating: null,
+	readId: null,
 	startedAt: null,
 	finishedAt: null,
-	addedAt: '2026-10-01T00:00:00Z',
+	progressPages: null,
+	addedAt: '2026-10-01T12:00:00.000Z',
 	updatedAt: '2026-10-01T00:00:00Z',
 	...over
 });
 
 describe('myBooks', () => {
-	it('lists library books and your own entries together; a library copy supersedes your entry', () => {
-		const lib = [owned(1, 'unread', 'Hyperion', 'Dan Simmons'), owned(2, 'reading', 'Dune', 'A', 77)];
-		const list = myBooks(lib, [entry(50, 'Hyperion', { author: 'Dan Simmons' }), entry(77, 'Dune'), entry(9, 'Paper copy', { status: 'reading' })]);
-		expect(list.map((b) => [b.key, b.source, b.status])).toEqual([
-			['lib:1', 'library', 'unread'],
-			['lib:2', 'library', 'reading'],
-			['hc:9', 'entry', 'reading']
+	it('lists your shelf with each book’s library copy, then the library books you haven’t shelved', () => {
+		const lib = [owned(1, 'Hyperion', 'Dan Simmons'), owned(2, 'Dune', 'A', 77), owned(3, 'Untouched', 'B')];
+		const list = myBooks(lib, [
+			sb(50, 'Hyperion', { authors: ['Dan Simmons'], status: 'read' }), // matched by title + author
+			sb(77, 'Dune', { status: 'reading' }), // matched by Hardcover id
+			sb(9, 'Paper copy', { status: 'reading' }) // not in the library
 		]);
-		expect(arrivedEntries([entry(50, 'Hyperion', { author: 'Dan Simmons' })], lib).map((a) => a.book.id)).toEqual([1]);
+		expect(list.map((b) => [b.key, b.source, b.libraryId, b.status])).toEqual([
+			['hc:50', 'library', 1, 'read'],
+			['hc:77', 'library', 2, 'reading'],
+			['hc:9', 'entry', null, 'reading'],
+			// BookOrbit says "read", but nothing's on your shelf: in your library, not started.
+			['lib:3', 'library', 3, 'unread']
+		]);
 	});
 
-	it("turns an entry's pages read into progress", () => {
-		const [b] = myBooks([], [entry(9, 'X', { status: 'reading', pages: 400, progressPages: 124 })]);
+	it("turns the pages you've read into progress, and a finished book into 100%", () => {
+		const [b, done] = myBooks([], [sb(9, 'X', { status: 'reading', pages: 400, progressPages: 124 }), sb(10, 'Y', { status: 'read' })]);
 		expect(b.progress).toBeCloseTo(0.31);
+		expect(done.progress).toBe(1);
 		expect(progressText(b)).toBe('124 / 400 pages · 31%');
 		expect(progressText({ progress: 0.5, pages: null })).toBe('50%');
 		expect(progressText({ progress: null, pages: 400 })).toBeNull();
@@ -89,8 +99,8 @@ describe('readingSections', () => {
 	const req = (id: number, status: string, hc: number | null) =>
 		mapBookRequest({ id, status, title: `R${id}`, ...(hc ? { providerKey: 'hardcover', providerId: String(hc) } : {}) });
 
-	it('groups by status; your own entries sit in their status like library books', () => {
-		const books = myBooks([owned(1, 'reading', 'Dune')], [entry(50, 'Hyperion'), entry(51, 'Paper', { status: 'reading' })]);
+	it('groups by status, library or not', () => {
+		const books = myBooks([owned(1, 'Dune')], [sb(1, 'Dune', { status: 'reading' }), sb(50, 'Hyperion'), sb(51, 'Paper', { status: 'reading' })]);
 		expect(readingSections(books).map((s) => [s.title, s.books.map((b) => b.title)])).toEqual([
 			['Reading', ['Dune', 'Paper']],
 			['Want to read', ['Hyperion']]
@@ -98,7 +108,7 @@ describe('readingSections', () => {
 	});
 
 	it('shows requests on the way after Reading, and takes those wants out of Want to read', () => {
-		const books = myBooks([owned(1, 'reading', 'Dune')], [entry(50, 'Hyperion'), entry(51, 'Wanted')]);
+		const books = myBooks([], [sb(1, 'Dune', { status: 'reading' }), sb(50, 'Hyperion'), sb(51, 'Wanted')]);
 		const sections = readingSections(books, [req(7, 'downloading', 50), req(8, 'pending', null), req(9, 'cancelled', 51)]);
 		expect(sections.map((s) => [s.title, s.requests.map((r) => r.id), s.books.map((b) => b.title)])).toEqual([
 			['Reading', [], ['Dune']],
@@ -110,24 +120,15 @@ describe('readingSections', () => {
 
 describe('sorting and filtering', () => {
 	const lib = [
-		owned(1, 'reading', 'The Way of Kings', 'Brandon Sanderson', null, {
-			readingProgress: 0.6,
-			rating: 5,
-			genres: ['Fantasy'],
-			files: [{ format: 'epub' }],
-			addedAt: '2026-01-01T00:00:00Z',
-			readStatus: { status: 'reading', updatedAt: '2026-09-01T00:00:00Z' }
-		}),
-		owned(2, 'read', 'Dune', 'Frank Herbert', null, {
-			rating: 3,
-			genres: ['Science Fiction', 'Fantasy'],
-			files: [{ format: 'm4b' }],
-			addedAt: '2026-05-01T00:00:00Z',
-			readStatus: { status: 'read', updatedAt: '2026-10-01T00:00:00Z' }
-		}),
-		owned(3, 'unread', 'A Wizard of Earthsea', 'Ursula K. Le Guin', null, { genres: ['fantasy'], addedAt: '2026-03-01T00:00:00Z' })
+		owned(1, 'The Way of Kings', 'Brandon Sanderson', 101, { genres: ['Fantasy'], files: [{ format: 'epub' }], addedAt: '2026-01-01T00:00:00Z' }),
+		owned(2, 'Dune', 'Frank Herbert', 102, { genres: ['Science Fiction', 'Fantasy'], files: [{ format: 'm4b' }], addedAt: '2026-05-01T00:00:00Z' }),
+		owned(3, 'A Wizard of Earthsea', 'Ursula K. Le Guin', null, { genres: ['fantasy'], addedAt: '2026-03-01T00:00:00Z' })
 	];
-	const books = myBooks(lib, [entry(9, 'Paper copy', { status: 'reading', updatedAt: '2026-08-01T00:00:00Z' })]);
+	const books = myBooks(lib, [
+		sb(101, 'The Way of Kings', { status: 'reading', rating: 5, pages: 1000, progressPages: 600, updatedAt: '2026-09-01T00:00:00Z' }),
+		sb(102, 'Dune', { status: 'read', rating: 3, updatedAt: '2026-10-01T00:00:00Z' }),
+		sb(9, 'Paper copy', { status: 'reading', updatedAt: '2026-08-01T00:00:00Z', addedAt: '2026-10-02T12:00:00.000Z' })
+	]);
 	const titles = (bs: MyBook[]) => bs.map((b) => b.title);
 
 	it('sorts every way the sheet offers, ignoring leading articles', () => {
@@ -135,7 +136,7 @@ describe('sorting and filtering', () => {
 		expect(titles(sortBooks(books, 'active'))).toEqual(['Dune', 'The Way of Kings', 'Paper copy', 'A Wizard of Earthsea']);
 		expect(titles(sortBooks(books, 'author'))[0]).toBe('Paper copy'); // "A"
 		expect(titles(sortBooks(books, 'rating')).slice(0, 2)).toEqual(['The Way of Kings', 'Dune']);
-		expect(titles(sortBooks(books, 'progress'))[0]).toBe('The Way of Kings');
+		expect(titles(sortBooks(books, 'progress'))[0]).toBe('Dune'); // finished = 100%
 		expect(titles(sortBooks(books, 'added'))[0]).toBe('Paper copy');
 	});
 
@@ -481,63 +482,74 @@ describe('release search', () => {
 });
 
 describe('your Hardcover shelf', () => {
-	const ub = (id: number, status_id: number, { book, ...over }: Record<string, unknown> = {}) => ({
+	const ub = (id: number, status_id: number, { book, user_book_reads, ...over }: Record<string, unknown> = {}) => ({
+		id: 5000 + id,
 		status_id,
 		rating: null,
-		last_read_date: null,
+		date_added: '2026-04-02',
+		updated_at: '2026-05-01T10:00:00+00:00',
 		...over,
+		user_book_reads: user_book_reads ?? [],
 		book: {
 			id,
 			title: `Book ${id}`,
-			cached_contributors: [{ author: { name: 'Ann Author' }, primary: true }],
+			pages: 320,
+			cached_contributors: [
+				{ author: { name: 'Ann Author' }, contribution: null },
+				{ author: { name: 'Nate Narrator' }, contribution: 'Narrator' }
+			],
 			cached_tags: { Genre: [{ tag: 'Fantasy' }, { tag: 'fantasy' }, { tag: 'Adventure' }] },
 			...((book as object) ?? {})
 		}
 	});
 
-	it('maps read, rated and shelved books; skips statuses it does not know', () => {
-		const shelf = mapHardcoverShelf([
-			ub(1, 3, { rating: 4.5, last_read_date: '2026-05-01' }),
-			ub(2, 1),
-			ub(3, 2),
-			ub(4, 5),
-			ub(5, 6),
-			{ status_id: 3, book: null }
-		]);
-		expect(shelf.map((b) => [b.key, b.status])).toEqual([
-			['hc:1', 'read'],
-			['hc:2', 'want_to_read'],
-			['hc:3', 'reading'],
-			['hc:4', 'abandoned']
-		]);
-		expect(shelf[0]).toMatchObject({
+	it('maps a shelf row: status, rounded rating, the latest read, calendar days at midday UTC', () => {
+		const b = mapShelfRow(
+			ub(1, 3, { rating: 4.5, user_book_reads: [{ id: 77, started_at: '2026-04-20', finished_at: '2026-05-01', progress_pages: 320 }] })
+		);
+		expect(b).toEqual({
+			userBookId: 5001,
 			hardcoverId: 1,
+			title: 'Book 1',
 			authors: ['Ann Author'],
-			myRating: 5,
-			finishedAt: '2026-05-01',
+			coverUrl: null,
+			year: null,
+			pages: 320,
 			genres: ['Fantasy', 'Adventure'],
-			source: 'entry',
-			libraryId: null
+			status: 'read',
+			rating: 5,
+			readId: 77,
+			startedAt: '2026-04-20T12:00:00.000Z',
+			finishedAt: '2026-05-01T12:00:00.000Z',
+			progressPages: 320,
+			addedAt: '2026-04-02T12:00:00.000Z',
+			updatedAt: '2026-05-01T10:00:00+00:00'
 		});
 	});
 
-	it('adds only what Seek does not already know about — your own books win', () => {
-		const mine = myBooks([owned(1, 'unread', 'Book 1', 'Ann Author', 1)], []);
-		const merged = withShelf(mine, mapHardcoverShelf([ub(1, 3), ub(7, 3, { book: { id: 99, title: 'Book 1' } }), ub(8, 3)]));
-		// hc:1 matches by Hardcover id, #99 by title+author; only #8 is new.
-		expect(merged.map((b) => b.key)).toEqual(['lib:1', 'hc:8']);
-		expect(merged[0].status).toBe('unread');
+	it("knows Hardcover's five shelves and skips Ignored and broken rows", () => {
+		const rows = [ub(1, 1), ub(2, 2), ub(3, 3), ub(4, 4), ub(5, 5), ub(6, 6), { id: 9, status_id: 3, book: null }];
+		expect(rows.map(mapShelfRow).map((b) => b?.status ?? null)).toEqual(['want_to_read', 'reading', 'read', 'on_hold', 'abandoned', null, null]);
+	});
+
+	it('names only the authors among the contributors', () => {
+		expect(contributorAuthors([{ author: { name: 'A' } }, { author: { name: 'B' }, contribution: 'Translator' }, { author: { name: 'C' }, contribution: 'Author' }])).toEqual(['A', 'C']);
 	});
 });
 
 describe('what recommendations grow from', () => {
 	const lib = [
-		owned(1, 'read', 'Mistborn', 'Brandon Sanderson', 5, { rating: 5, genres: ['Fantasy'], readStatus: { status: 'read', finishedAt: '2026-01-01T00:00:00Z' } }),
-		owned(2, 'read', 'Dune', 'Frank Herbert', 6, { rating: 2, genres: ['Science Fiction'], readStatus: { status: 'read', finishedAt: '2026-09-01T00:00:00Z' } }),
-		owned(3, 'reading', 'Piranesi', 'Susanna Clarke', 7, { genres: ['Fantasy'] }),
-		owned(4, 'unread', 'Unopened', 'X', 8, { genres: ['Horror', 'Horror'] })
+		owned(1, 'Mistborn', 'Brandon Sanderson', 5, { genres: ['Fantasy'] }),
+		owned(2, 'Dune', 'Frank Herbert', 6, { genres: ['Science Fiction'] }),
+		owned(3, 'Piranesi', 'Susanna Clarke', 7, { genres: ['Fantasy'] }),
+		owned(4, 'Unopened', 'X', 8, { genres: ['Horror', 'Horror'] })
 	];
-	const books = myBooks(lib, [entry(9, 'Loved paper copy', { status: 'reading', myRating: 5 })]);
+	const books = myBooks(lib, [
+		sb(5, 'Mistborn', { status: 'read', rating: 5, finishedAt: '2026-01-01T12:00:00.000Z', updatedAt: '2026-01-01T00:00:00Z' }),
+		sb(6, 'Dune', { status: 'read', rating: 2, finishedAt: '2026-09-01T12:00:00.000Z', updatedAt: '2026-09-01T00:00:00Z' }),
+		sb(7, 'Piranesi', { status: 'reading' }),
+		sb(9, 'Loved paper copy', { status: 'reading', rating: 5, updatedAt: '2026-10-02T00:00:00Z' })
+	]);
 
 	it('grows from what you finished or loved, loved first', () => {
 		// Both loved: the more recently active one leads; the 2-star read comes last.
@@ -547,11 +559,11 @@ describe('what recommendations grow from', () => {
 	it('falls back to the newest books in your library when nothing is finished or loved', () => {
 		const unread = myBooks(
 			[
-				owned(1, 'unread', 'Old', 'A', 1, { addedAt: '2025-01-01T00:00:00Z' }),
-				owned(2, 'unread', 'New', 'B', 2, { addedAt: '2026-09-01T00:00:00Z' }),
-				owned(3, 'abandoned', 'Gave up', 'C', 3, { addedAt: '2026-10-01T00:00:00Z' })
+				owned(1, 'Old', 'A', 1, { addedAt: '2025-01-01T00:00:00Z' }),
+				owned(2, 'New', 'B', 2, { addedAt: '2026-09-01T00:00:00Z' }),
+				owned(3, 'Gave up', 'C', 3, { addedAt: '2026-10-01T00:00:00Z' })
 			],
-			[entry(9, 'Just a wish', { status: 'want_to_read' })]
+			[sb(3, 'Gave up', { authors: ['C'], status: 'abandoned' }), sb(9, 'Just a wish')]
 		);
 		expect(recommendationSeeds(unread)).toEqual([]);
 		expect(librarySeeds(unread).map((b) => b.title)).toEqual(['New', 'Old']);
@@ -575,13 +587,15 @@ describe('what recommendations grow from', () => {
 
 describe('reading over time', () => {
 	const now = new Date('2026-10-15T12:00:00');
-	const lib = [
-		owned(1, 'read', 'A', 'X', null, { pageCount: 300, rating: 4, genres: ['Fantasy'], readStatus: { status: 'read', startedAt: '2026-09-20T10:00:00Z', finishedAt: '2026-10-02T10:00:00Z' } }),
-		owned(2, 'read', 'B', 'X', null, { pageCount: 200, rating: 2, genres: ['Fantasy', 'Horror'], readStatus: { status: 'read', finishedAt: '2026-03-01T10:00:00Z' } }),
-		owned(3, 'read', 'C', 'X', null, { pageCount: 500, readStatus: { status: 'read', finishedAt: '2025-06-01T10:00:00Z' } }),
-		owned(4, 'reading', 'D', 'X', null, { readStatus: { status: 'reading', startedAt: '2026-10-10T10:00:00Z' } })
-	];
-	const books = myBooks(lib, []);
+	const books = myBooks(
+		[owned(1, 'A', 'X', 1, { genres: ['Fantasy'] })],
+		[
+			sb(1, 'A', { status: 'read', pages: 300, rating: 4, startedAt: '2026-09-20T12:00:00.000Z', finishedAt: '2026-10-02T12:00:00.000Z' }),
+			sb(2, 'B', { status: 'read', pages: 200, rating: 2, genres: ['Fantasy', 'Horror'], finishedAt: '2026-03-01T12:00:00.000Z' }),
+			sb(3, 'C', { status: 'read', pages: 500, finishedAt: '2025-06-01T12:00:00.000Z' }),
+			sb(4, 'D', { status: 'reading', startedAt: '2026-10-10T12:00:00.000Z' })
+		]
+	);
 
 	it('counts what you finished in a range, with pages, ratings and genres', () => {
 		expect(readingStats(books, 'this_month', now)).toMatchObject({ finished: 1, pages: 300, avgRating: 4, reading: 1 });

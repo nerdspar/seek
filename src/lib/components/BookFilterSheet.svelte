@@ -21,7 +21,7 @@
 		{ id: 'reading', label: 'Reading' },
 		{ id: 'want_to_read', label: 'Want to read' },
 		{ id: 'read', label: 'Read' },
-		{ id: 'on_hold', label: 'On hold' },
+		{ id: 'on_hold', label: 'Paused' },
 		{ id: 'abandoned', label: 'Did not finish' },
 		{ id: 'unstarted', label: 'Not started' }
 	];

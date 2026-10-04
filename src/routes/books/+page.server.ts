@@ -1,41 +1,36 @@
 import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
-import {
-	bookorbitConfigured,
-	bookorbitLinked,
-	getAllBooks,
-	getReadingGoal,
-	listMyRequests
-} from '$lib/server/books/bookorbit';
+import { bookorbitConfigured, bookorbitLinked, getAllBooks, listMyRequests } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
-import { listEntries } from '$lib/server/books/entries';
-import { settleArrivals } from '$lib/server/books/discovery';
-import type { ReadingBook } from '$lib/books';
+import { myShelf, readingGoal, shelfLinked } from '$lib/server/books/shelf';
+import type { ReadingBook, ShelfBook } from '$lib/books';
 import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
 
 /**
- * Watchlist → Books: your reading list — your BookOrbit library (each person's
- * statuses and progress are their own) plus your own books outside it (Seek's).
- * Streamed like the other tabs, so the shell paints immediately. Without a
- * BookOrbit login you still get your own books; the page says how to link.
+ * Watchlist → Books: your reading list — your Hardcover shelf (status, rating,
+ * dates, pages — any book) joined to the BookOrbit library (what's here to
+ * read). Streamed like the other tabs, so the shell paints immediately. Each
+ * link is optional; the page says what linking either one adds.
  */
 export const load: PageServerLoad = async () => {
 	const prefs = await getPrefs();
 	if (!prefs.booksEnabled || (!bookorbitConfigured() && !hardcoverConfigured())) redirect(303, '/');
 	const linked = bookorbitLinked();
+	const onShelf = shelfLinked();
 	return {
 		// Which other segments to offer (shows / movies can be switched off).
 		media: mediaOn(prefs, bookorbitConfigured() || hardcoverConfigured()),
 		linked,
 		canLink: bookorbitConfigured(),
-		// Your own books that have since landed carry their status over on the way in.
-		library: linked ? getAllBooks().then(settleArrivals) : Promise.resolve([] as ReadingBook[]),
+		// What's in the library. A BookOrbit hiccup shows just your shelf.
+		library: linked ? getAllBooks().catch(() => [] as ReadingBook[]) : Promise.resolve([] as ReadingBook[]),
+		// Where you are with every book (your own Hardcover account).
+		hardcoverLinked: onShelf,
+		shelf: onShelf ? myShelf() : Promise.resolve([] as ShelfBook[]),
 		// What you've asked BookOrbit to fetch; a nicety, never fails the page.
 		requests: linked ? listMyRequests().catch(() => []) : Promise.resolve([]),
 		// The goal is a nicety: never let it fail the page.
-		goal: linked ? getReadingGoal().catch(() => null) : Promise.resolve(null),
-		// Your books outside the library (Seek's own) — they join the list.
-		entries: listEntries()
+		goal: onShelf ? readingGoal().catch(() => null) : Promise.resolve(null)
 	};
 };

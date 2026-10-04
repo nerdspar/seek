@@ -38,11 +38,12 @@ function creds(ctx: Ctx): Credentials {
 	return ctx.creds;
 }
 
-export type LinkedService = 'floppy' | 'bookorbit';
+export type LinkedService = 'floppy' | 'bookorbit' | 'hardcover';
 
 const NOT_LINKED: Record<LinkedService, string> = {
 	floppy: 'No Floppy account linked — add your Floppy token in Settings → Your accounts.',
-	bookorbit: 'No BookOrbit account linked — add your BookOrbit login in Settings → Your accounts.'
+	bookorbit: 'No BookOrbit account linked — add your BookOrbit login in Settings → Your accounts.',
+	hardcover: 'No Hardcover account linked — add your Hardcover token in Settings → Your accounts.'
 };
 
 /** This person hasn't connected the service a feature needs. The message is

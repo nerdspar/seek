@@ -14,8 +14,6 @@ import {
 	mapHardcoverBook,
 	mapHardcoverDetail,
 	mapHardcoverHit,
-	mapHardcoverShelf,
-	type MyBook,
 	type BookCard,
 	type BookDetail,
 	type BookRail,
@@ -45,7 +43,7 @@ async function hc<T>(query: string, variables?: Record<string, unknown>): Promis
 }
 
 /** A query as a given token's owner — the household's, or someone's own. */
-async function hcAs<T>(token: string, query: string, variables?: Record<string, unknown>): Promise<T> {
+export async function hcAs<T>(token: string, query: string, variables?: Record<string, unknown>): Promise<T> {
 	const res = await fetch(ENDPOINT, {
 		method: 'POST',
 		headers: { Authorization: authorization(token), 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -342,16 +340,4 @@ export async function checkHardcoverToken(
 		const m = (e as Error).message;
 		return { ok: false, error: /HTTP 40[13]|JWT|invalid/i.test(m) ? 'Hardcover refused that token.' : m };
 	}
-}
-
-/* Depth 3: me → user_books → book (contributors/tags are JSON). Read and loved
-   first, so the limit keeps what recommendations grow from. */
-const SHELF_QUERY = `query { me { user_books(order_by: [{rating: desc_nulls_last}, {last_read_date: desc_nulls_last}], limit: 300) {
-  status_id rating last_read_date book { id title release_year cached_contributors cached_tags image { url } }
-} } }`;
-
-/** Everything on someone's Hardcover shelves, with their status and rating. */
-export async function readShelf(token: string): Promise<MyBook[]> {
-	const data = await hcAs<{ me: { user_books?: unknown }[] }>(token, SHELF_QUERY);
-	return mapHardcoverShelf(data.me?.[0]?.user_books);
 }
