@@ -49,13 +49,12 @@ let started = false;
 
 export function startScheduler(): void {
 	if (started) return;
-	// Shared-show mirroring is independent of push and Jellyfin; with fewer than
+	// Shared-show mirroring is independent of push; with fewer than
 	// two linked people (or nothing shared) each pass is a couple of DB reads.
 	startMirroring();
 	started = true;
-	/* Always scheduled: Jellyfin can be connected later in Settings → Services,
-	   so the sync checks on each run rather than once at boot. Push is always
-	   available (Seek generates its own keys). */
+	/* Always scheduled: the anime tags follow Floppy's genres, and push is
+	   always available (Seek generates its own keys). */
 	startAnimeSync();
 
 	/* A tick's work (a cold calendar build plus a push fan-out) can in principle

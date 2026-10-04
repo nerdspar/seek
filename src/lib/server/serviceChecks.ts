@@ -126,13 +126,6 @@ export async function checkGroup(group: string, opts: CheckOptions = {}): Promis
 			const info = (await r.json().catch(() => ({}))) as { version?: string };
 			return { ok: true, message: `Connected to ${name}${info.version ? ` ${info.version}` : ''}.` };
 		}
-		case 'jellyfin': {
-			const url = get('JELLYFIN_URL');
-			const key = get('JELLYFIN_API_KEY');
-			if (!url || !key) return url || key ? both('Jellyfin') : off('Jellyfin');
-			const r = await reach(f, `${url}/System/Info`, { headers: { Authorization: `MediaBrowser Token="${key}"` } });
-			return typeof r === 'string' ? failed('Jellyfin didn’t accept it', r) : { ok: true, message: 'Connected to Jellyfin.' };
-		}
 		case 'email': {
 			const key = get('RESEND_API_KEY');
 			const from = opts.values?.MAIL_FROM !== undefined ? opts.values.MAIL_FROM.trim() : setting('MAIL_FROM');

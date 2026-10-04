@@ -59,7 +59,7 @@ The image is public, so no `docker login` is needed. Then:
 
 There's nothing to configure in the compose file beyond `TZ`. Seek generates its own secrets into `/data/secrets.json`, and everything else is set in the app:
 
-- **Settings → Services** (the household owner): Floppy's address, TMDB key, BookOrbit address and Hardcover token, Sonarr, Radarr, Jellyfin, and Resend email. Secrets are stored encrypted and never sent back to the browser; each service is checked when saved.
+- **Settings → Services** (the household owner): Floppy's address, TMDB key, BookOrbit address and Hardcover token, Sonarr, Radarr, and Resend email. Secrets are stored encrypted and never sent back to the browser; each service is checked when saved.
 - **Settings → Your accounts** (each person): their own Floppy token, Floppy calendar, and BookOrbit login.
 
 Optional environment variables: `ORIGIN` and `ADDRESS_HEADER` behind a reverse proxy or tunnel (see [DEPLOY.md](DEPLOY.md#security)); `SEEK_TOKEN_KEY` to keep the encryption key outside `/data`. A Seek upgraded from the older env-based setup copies its old variables in on first boot, after which they can be removed — see [`.env.example`](.env.example).

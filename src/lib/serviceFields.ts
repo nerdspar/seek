@@ -14,9 +14,6 @@ export type ServiceKey =
 	| 'SONARR_API_KEY'
 	| 'RADARR_URL'
 	| 'RADARR_API_KEY'
-	| 'JELLYFIN_URL'
-	| 'JELLYFIN_API_KEY'
-	| 'JELLYFIN_ANIME_LIBRARY'
 	| 'RESEND_API_KEY'
 	| 'MAIL_FROM';
 
@@ -104,17 +101,6 @@ export const SERVICE_GROUPS: ServiceGroup[] = [
 		fields: [
 			{ key: 'RADARR_URL', label: 'Address', kind: 'url', placeholder: 'http://10.0.1.14:7878' },
 			{ key: 'RADARR_API_KEY', label: 'API key', secret: true }
-		]
-	},
-	{
-		id: 'jellyfin',
-		needs: ['JELLYFIN_URL', 'JELLYFIN_API_KEY'],
-		title: 'Jellyfin',
-		about: 'Optional — its Anime library decides which shows count as anime.',
-		fields: [
-			{ key: 'JELLYFIN_URL', label: 'Address', kind: 'url', placeholder: 'http://10.0.1.14:8096' },
-			{ key: 'JELLYFIN_API_KEY', label: 'API key', secret: true },
-			{ key: 'JELLYFIN_ANIME_LIBRARY', label: 'Anime library name', placeholder: 'Anime' }
 		]
 	},
 	{

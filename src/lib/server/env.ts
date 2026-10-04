@@ -38,15 +38,6 @@ export const RADARR_URL = () => url(setting('RADARR_URL'));
 export const RADARR_API_KEY = () => setting('RADARR_API_KEY');
 
 /**
- * Jellyfin connection (optional). Seek uses Jellyfin purely as the anime
- * classifier: which shows sit in its "Anime" library is the source of truth for
- * the Shows/Anime split. JELLYFIN_ANIME_LIBRARY names that library.
- */
-export const JELLYFIN_URL = () => url(setting('JELLYFIN_URL'));
-export const JELLYFIN_API_KEY = () => setting('JELLYFIN_API_KEY');
-export const JELLYFIN_ANIME_LIBRARY = () => setting('JELLYFIN_ANIME_LIBRARY') || 'Anime';
-
-/**
  * BookOrbit — the self-hosted book library (optional). Session-authenticated:
  * each person's own login (Your accounts), never a shared one.
  */

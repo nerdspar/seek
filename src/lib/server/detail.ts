@@ -37,7 +37,7 @@ const showPath = (source: string, mediaId: string) =>
 
 /** Fetch a TV detail (a show or one of its seasons). Anime is tracked in the
  *  plain `tv` library like everything else now (the Shows/Anime split is a
- *  Jellyfin-sourced tag, see anime-sync.ts), so there is no separate bucket to
+ *  tag, see anime-sync.ts), so there is no separate bucket to
  *  reach into. */
 async function fetchTvDetail(path: string): Promise<Record<string, unknown>> {
 	return rec(await floppy(path));

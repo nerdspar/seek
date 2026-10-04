@@ -3,7 +3,7 @@
 # The image is built by GitHub Actions and pulled from GHCR; TrueNAS just runs
 # it. Nothing secret goes in this file: Seek generates its own secrets, and the
 # household's services (Floppy, TMDB, BookOrbit, Hardcover, Sonarr, Radarr,
-# Jellyfin, email) are set in the app under Settings → Services.
+# email) are set in the app under Settings → Services.
 #
 # ── 1. Create the storage folder on your NAS ─────────────────────────────
 #        mkdir -p /mnt/NAS/Data/seek

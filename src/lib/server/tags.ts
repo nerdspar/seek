@@ -13,7 +13,8 @@ import { floppy } from './floppy';
 import { expire } from './memo';
 
 export const JOINT_TAG = 'joint';
-/** Mirrors Jellyfin's Anime library membership; written by the anime-sync job,
+/** Whether a show counts as anime (Floppy's "Anime" genre, or the household's
+ *  say-so); written by the anime-sync job,
  *  read as the Shows/Anime split (see anime-sync.ts). */
 export const ANIME_TAG = 'anime';
 

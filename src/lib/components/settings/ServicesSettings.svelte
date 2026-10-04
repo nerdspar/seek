@@ -5,7 +5,7 @@
 	import StatusDot, { type DotState } from './StatusDot.svelte';
 
 	/** The household's services — addresses and keys for Floppy, TMDB, BookOrbit,
-	 *  Hardcover, Sonarr, Radarr, Jellyfin and email. Owner only. Secrets are
+	 *  Hardcover, Sonarr, Radarr and email. Owner only. Secrets are
 	 *  never sent back here: a secret shows only as "set", and is sent again only
 	 *  when it's being replaced. */
 	type Display = Record<string, { value?: string; set: boolean }>;
