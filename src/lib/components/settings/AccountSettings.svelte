@@ -81,17 +81,70 @@
 	}
 
 	/* ── Shared shows (household mirroring) ───────────────────────────────── */
+	type Bulk = { total: number; done: number; mirrored: number; failed: number; running: boolean };
 	type SharedState = {
 		mirroring: boolean;
 		waitingOn: string[];
 		shows: { source: string; mediaId: string; title: string | null }[];
+		bulk: Bulk | null;
 	};
 	let sharedShows = $state<SharedState | null>(null);
-	$effect(() => {
-		fetch('/api/household/shared')
+	function loadShared() {
+		return fetch('/api/household/shared')
 			.then((r) => (r.ok ? r.json() : null))
 			.then((d) => (sharedShows = d))
 			.catch(() => {});
+	}
+	$effect(() => void loadShared());
+	let showAllShared = $state(false);
+	const partnerName = $derived(
+		account.household.members.filter((m) => m.id !== me.id).map((m) => m.name).join(' and ') || 'the household'
+	);
+
+	/* The joint import: a link carrying a list of shows, `#share=<base64url JSON
+	   [[id, title] | [source, id, title], …]>`, opened while signed in. Nothing
+	   happens until you confirm. */
+	type Pick = { source: string; mediaId: string; title: string | null };
+	let importList = $state<Pick[] | null>(null);
+	let importBusy = $state(false);
+	$effect(() => {
+		const m = location.hash.match(/^#share=([A-Za-z0-9_-]+)$/);
+		if (!m) return;
+		try {
+			const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+			const rows = JSON.parse(new TextDecoder().decode(bytes)) as unknown[][];
+			importList = rows.map((r) =>
+				r.length >= 3
+					? { source: String(r[0]), mediaId: String(r[1]), title: r[2] == null ? null : String(r[2]) }
+					: { source: 'tmdb', mediaId: String(r[0]), title: r[1] == null ? null : String(r[1]) }
+			);
+		} catch {
+			memberMsg = 'That share link is damaged — ask for a fresh one.';
+		}
+	});
+	function dropImport() {
+		importList = null;
+		history.replaceState(history.state, '', location.pathname + location.search);
+	}
+	async function startImport() {
+		if (!importList) return;
+		importBusy = true;
+		try {
+			await call('/api/household/shared', 'POST', { shows: importList });
+			dropImport();
+			await loadShared();
+		} catch (e) {
+			memberMsg = (e as Error).message;
+		} finally {
+			importBusy = false;
+		}
+	}
+	/* While an import runs, check on it every few seconds. */
+	$effect(() => {
+		if (!sharedShows?.bulk?.running) return;
+		const t = setInterval(() => void loadShared(), 4000);
+		return () => clearInterval(t);
 	});
 	async function unshareShow(show: { source: string; mediaId: string }) {
 		try {
@@ -291,14 +344,45 @@
 				{sharedShows.waitingOn.join(' and ')}
 				{sharedShows.waitingOn.length === 1 && sharedShows.waitingOn[0] !== 'you' ? 'links' : 'link'} a Floppy account under Your accounts.
 			</p>
-		{:else if !sharedShows.shows.length}
+		{/if}
+		{#if importList && sharedShows.mirroring}
+			<div class="import">
+				<p class="label">Share {importList.length} shows with {sharedShows.waitingOn.length ? 'the household' : partnerName}?</p>
+				<p class="hint">
+					Each one's watched episodes are copied to whoever hasn't seen them, with the original dates, and
+					from then on a play by either of you counts for both. Shows not on this list stay solo.
+				</p>
+				<details>
+					<summary class="hint">See the list</summary>
+					<ul class="importlist">
+						{#each importList as p (p.source + p.mediaId)}<li>{p.title ?? `${p.source} ${p.mediaId}`}</li>{/each}
+					</ul>
+				</details>
+				<div class="importbtns">
+					<button class="primary small" disabled={importBusy} onclick={startImport}>
+						{importBusy ? 'Starting…' : `Share ${importList.length} shows`}
+					</button>
+					<button class="link" onclick={dropImport}>Cancel</button>
+				</div>
+			</div>
+		{:else if importList}
+			<p class="hint msg">This share link works once both of you have Floppy linked.</p>
+		{/if}
+		{#if sharedShows.bulk}
+			{@const b = sharedShows.bulk}
+			<p class="hint msg" class:ok={!b.running}>
+				{b.running ? 'Sharing…' : 'Shared.'}
+				{b.done}/{b.total} shows · {b.mirrored} episode{b.mirrored === 1 ? '' : 's'} copied{b.failed ? ` · ${b.failed} failed (run the link again to retry)` : ''}
+			</p>
+		{/if}
+		{#if sharedShows.mirroring && !sharedShows.shows.length}
 			<p class="hint">
 				None yet. Mark a show <strong>Together</strong> on its page and plays of it count for you both —
 				including ones Jellyfin logs. Episodes one of you has already seen are filled in for the other.
 			</p>
-		{:else}
+		{:else if sharedShows.mirroring}
 			<ul class="members">
-				{#each sharedShows.shows as sh (sh.source + sh.mediaId)}
+				{#each showAllShared ? sharedShows.shows : sharedShows.shows.slice(0, 8) as sh (sh.source + sh.mediaId)}
 					<li>
 						<a class="rowtext" href={`/show/${sh.source}/${sh.mediaId}`}>
 							<span class="label">{sh.title ?? `Show ${sh.mediaId}`}</span>
@@ -307,6 +391,9 @@
 					</li>
 				{/each}
 			</ul>
+			{#if sharedShows.shows.length > 8 && !showAllShared}
+				<button class="link more" onclick={() => (showAllShared = true)}>Show all {sharedShows.shows.length}</button>
+			{/if}
 			<p class="hint msg">Plays of these count for everyone here. Stopping keeps what's already been shared.</p>
 		{/if}
 	</section>
@@ -404,6 +491,13 @@
 	.link { flex: none; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
 	.link.danger { color: #ff8a8a; }
 
+	.import { margin: 0 0 12px; padding: 12px 14px; border-radius: var(--radius); background: var(--surface-raised); display: flex; flex-direction: column; gap: 8px; }
+	.import .label { margin: 0; }
+	.import .hint { margin: 0; line-height: 1.4; }
+	.importlist { max-height: 240px; overflow: auto; margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+	.importbtns { display: flex; align-items: center; gap: 16px; }
+	.more { margin-top: 6px; }
+	.msg.ok { color: var(--signal-solid); opacity: 1; }
 	.members { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 	.members li {
 		display: flex; align-items: center; justify-content: space-between; gap: 12px;

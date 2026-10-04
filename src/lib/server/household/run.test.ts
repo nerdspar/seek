@@ -15,7 +15,7 @@ import { openDatabase, useDatabase } from '../db';
 import * as users from '../users';
 import { runAs } from '../userctx';
 import { isShared, share } from './shared';
-import { afterMark, reconcileSoon, setShared, syncJointTags } from './run';
+import { afterMark, bulkProgress, reconcileSoon, setShared, shareMany, syncJointTags } from './run';
 
 let owner: users.User;
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -104,5 +104,38 @@ describe('syncJointTags', () => {
 		await syncJointTags(owner.householdId, show, true, owner.id);
 		expect(setJoint).toHaveBeenCalledTimes(1);
 		expect(setJoint).toHaveBeenCalledWith('tv', 'tmdb', '95350', true);
+	});
+});
+
+describe('shareMany (the one-time joint import)', () => {
+	const shows = [show, { source: 'tmdb', mediaId: '1', title: 'One' }, { source: 'tmdb', mediaId: '2', title: 'Two' }];
+
+	it('shares them all at once, then catches each up in turn and tags it for everyone', async () => {
+		backfillShow.mockResolvedValueOnce({ mirrored: 5, already: 0, failed: 0 }).mockResolvedValueOnce({ mirrored: 0, already: 2, failed: 1 });
+		const start = shareMany(owner.householdId, owner.id, shows);
+		expect(start).toMatchObject({ total: 3, done: 0, running: true });
+		// The registry flips immediately, so the Together chips are right at once.
+		expect(shows.every((s) => isShared(owner.householdId, s.source, s.mediaId))).toBe(true);
+		for (let i = 0; i < 10; i++) await flush();
+		expect(backfillShow.mock.calls.map((c) => c[2])).toEqual(['95350', '1', '2']);
+		expect(bulkProgress(owner.householdId)).toMatchObject({ total: 3, done: 3, mirrored: 5, failed: 1, running: false });
+		// Tagged for each linked member after its catch-up (two members × three shows).
+		expect(setJoint).toHaveBeenCalledTimes(6);
+	});
+
+	it('re-running catches up shows that were already shared (safe to resume)', async () => {
+		share(owner.householdId, owner.id, show);
+		shareMany(owner.householdId, owner.id, [show]);
+		for (let i = 0; i < 5; i++) await flush();
+		expect(backfillShow).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps going past a show that fails', async () => {
+		backfillShow.mockRejectedValueOnce(new Error('Floppy down'));
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		shareMany(owner.householdId, owner.id, shows);
+		for (let i = 0; i < 10; i++) await flush();
+		expect(bulkProgress(owner.householdId)).toMatchObject({ done: 3, failed: 1, running: false });
+		warn.mockRestore();
 	});
 });
