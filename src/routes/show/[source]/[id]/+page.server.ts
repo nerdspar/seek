@@ -2,7 +2,7 @@ import { FLOPPY_PUBLIC_URL } from '$lib/server/env';
 import { getShow } from '$lib/server/detail';
 import { getTracking, UNTRACKED } from '$lib/server/tracking';
 import { getPrefs } from '$lib/server/prefs';
-import { getItemTags, JOINT_TAG } from '$lib/server/tags';
+import { ANIME_TAG, getItemTags, JOINT_TAG } from '$lib/server/tags';
 import { getShowExtras } from '$lib/server/tmdb';
 import { memo } from '$lib/server/memo';
 import type { PageServerLoad } from './$types';
@@ -46,11 +46,10 @@ export const load: PageServerLoad = async ({ params }) => {
 	const members = me ? mirrorMembers(me.householdId) : [];
 	const mirroring = members.length >= 2;
 	const shared = mirroring && me ? isShared(me.householdId, params.source, params.id) : false;
-	const joint = mirroring
-		? Promise.resolve(shared)
-		: getItemTags('tv', params.source, params.id)
-				.then((tags) => tags.includes(JOINT_TAG))
-				.catch(() => false);
+	const tags = getItemTags('tv', params.source, params.id).catch(() => [] as string[]);
+	const joint = mirroring ? Promise.resolve(shared) : tags.then((t) => t.includes(JOINT_TAG));
+	// Whether it counts as anime (the Shows/Anime split), for the menu's switch.
+	const anime = params.source === 'tmdb' ? tags.then((t) => t.includes(ANIME_TAG)) : Promise.resolve(null);
 
 	return {
 		// Composed with tracking.floppyPath, which carries the slug Floppy requires.
@@ -61,6 +60,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		extras,
 		tracking,
 		joint,
+		anime,
 		// Who "together" shares with, when mirroring is on (else null).
 		sharedWith: mirroring ? members.filter((m) => m.id !== me?.id).map((m) => m.name) : null,
 		seasonArtwork: prefs.seasonArtwork,

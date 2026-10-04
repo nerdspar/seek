@@ -583,3 +583,4 @@ function normaliseServiceName(name: string): string {
 		.replace(/\s+(?:Premium\+|Premium Plus|Premium|Essential|Standard|Basic|Plus)$/i, '')
 		.trim();
 }
+

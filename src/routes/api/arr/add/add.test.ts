@@ -22,6 +22,8 @@ vi.mock('$lib/server/floppy', () => ({ FloppyError }));
 vi.mock('$lib/server/memo', () => ({ expire: vi.fn(), invalidate: vi.fn() }));
 const settleAdded = vi.fn((..._a: unknown[]) => 'pending');
 vi.mock('$lib/server/household/run', () => ({ settleAdded: (...a: unknown[]) => settleAdded(...a) }));
+const classifyShow = vi.fn(async (..._a: unknown[]) => null);
+vi.mock('$lib/server/anime-sync', () => ({ classifyShow: (...a: unknown[]) => classifyShow(...a) }));
 
 import { POST } from './+server';
 
@@ -32,6 +34,7 @@ beforeEach(() => {
 	addTitle.mockReset().mockResolvedValue({ ok: true });
 	addMedia.mockReset();
 	settleAdded.mockClear();
+	classifyShow.mockClear();
 });
 
 describe('downloading a show or film', () => {
@@ -56,5 +59,7 @@ describe('downloading a show or film', () => {
 		expect(settleAdded).toHaveBeenLastCalledWith({ source: 'tmdb', mediaId: '2', title: null }, undefined);
 		await add({ mediaType: 'movie', tmdbId: 3 });
 		expect(settleAdded).toHaveBeenCalledTimes(2);
+		// Shows are filed under Shows or Anime straight away; films aren't.
+		expect(classifyShow.mock.calls.map((c) => c[0])).toEqual(['1', '2']);
 	});
 });

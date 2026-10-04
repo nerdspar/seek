@@ -4,6 +4,7 @@ import { FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { expire, invalidate } from '$lib/server/memo';
 import type { MediaType } from '$lib/types';
 import { settleAdded } from '$lib/server/household/run';
+import { classifyShow } from '$lib/server/anime-sync';
 import type { RequestHandler } from './$types';
 
 type Body = { mediaType?: MediaType; source?: string; mediaId?: string; title?: string };
@@ -66,6 +67,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	/* A new show: together or solo? Settled per the household setting; 'pending'
 	   tells the button to offer "Watching together" right there. */
 	const household = mediaType === 'tv' ? settleAdded({ source, mediaId, title: body.title ?? null }) : null;
+	// Shows or Anime: tagged now rather than at the next six-hourly pass.
+	if (mediaType === 'tv' && source === 'tmdb') void classifyShow(mediaId);
 	return json({ ok: true, household });
 };
 

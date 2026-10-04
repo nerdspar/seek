@@ -184,6 +184,19 @@ export const MIGRATIONS: string[] = [
 		created_at    TEXT NOT NULL,
 		PRIMARY KEY (household_id, source, media_id)
 	);
+	`,
+	// v8 — anime, decided by hand: TMDB says what's anime (Animation from
+	// Japan), and this is where the household overrules it for a show.
+	`
+	CREATE TABLE anime_overrides (
+		household_id  INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		source        TEXT NOT NULL,
+		media_id      TEXT NOT NULL,
+		is_anime      INTEGER NOT NULL,
+		user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+		created_at    TEXT NOT NULL,
+		PRIMARY KEY (household_id, source, media_id)
+	);
 	`
 ];
 

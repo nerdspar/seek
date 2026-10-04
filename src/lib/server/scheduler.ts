@@ -9,7 +9,6 @@
 import { getPrefs } from './prefs';
 import { subscriptionCount } from './push';
 import { sendDailyDigest, sendAtTimeNotifications } from './digest';
-import { jellyfinConfigured } from './jellyfin';
 import { syncAnimeTags } from './anime-sync';
 import { listUsers, type User } from './users';
 import { runAs, NotLinkedError } from './userctx';
@@ -82,23 +81,23 @@ export function startScheduler(): void {
 }
 
 /**
- * Reconcile the Floppy `anime` tag to Jellyfin's Anime library — a few minutes
- * after boot (let warmup settle) and every six hours after. Idempotent and
- * diff-only, so a restart or a missed run costs nothing; a transient Jellyfin
- * outage throws and is logged, leaving existing tags untouched.
+ * Reconcile everyone's Floppy `anime` tag to what's anime (anime-sync.ts) — a
+ * few minutes after boot (let warmup settle) and every six hours after.
+ * Idempotent and diff-only, so a restart or a missed run costs nothing; a show
+ * Floppy has no genres for yet keeps its tag.
  */
 function startAnimeSync(): void {
 	let running = false;
 	const sync = async () => {
-		if (running || !jellyfinConfigured()) return;
+		if (running) return;
 		running = true;
 		try {
-			// Each person's Floppy carries its own anime tags; Jellyfin's library is
-			// the shared source of truth for all of them.
+			// Each person's Floppy carries its own anime tags; Floppy's "Anime"
+			// genre (and the household's overrides) decide for all of them.
 			await forEachUser(async (user) => {
 				const r = await syncAnimeTags();
 				if (r.added || r.removed) {
-					console.log(`[anime-sync] user ${user.id}: +${r.added} −${r.removed} (anime in Jellyfin: ${r.animeInJellyfin})`);
+					console.log(`[anime-sync] user ${user.id}: +${r.added} −${r.removed} (anime: ${r.anime})`);
 				}
 			});
 		} catch (err) {

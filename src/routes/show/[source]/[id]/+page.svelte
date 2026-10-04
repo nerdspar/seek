@@ -346,6 +346,28 @@
 
 	/* §11: joint vs solo is show-level in this household, so a tag on the item is
 	   the whole mechanism — no Floppy changes, no per-play attribution. */
+	/* Anime or not (the Shows/Anime split): Floppy's genre decides, and the menu
+	   overrules it for the household. Local value wins until the next load. */
+	let animeEdit = $state<boolean | null>(null);
+	async function setAnime(next: boolean, showTitle: string) {
+		const before = animeEdit;
+		animeEdit = next;
+		menuOpen = false;
+		try {
+			const res = await fetch('/api/anime', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mediaId: data.mediaId, anime: next })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			touchWatchlist();
+			void notify(next ? `${showTitle} is in Anime now` : `${showTitle} is in Shows now`);
+		} catch (err) {
+			animeEdit = before;
+			note = `Couldn't change that — ${err instanceof Error ? err.message : err}`;
+		}
+	}
+
 	let jointEdit = $state<boolean | null>(null);
 	let jointBusy = $state(false);
 
@@ -527,14 +549,18 @@
 			{/if}
 
 			{#if menuOpen && tracked}
-				<ItemMenu
-					title={show.title}
-					sourceUrl={show.sourceUrl}
-					floppyUrl={data.floppyBase && t.floppyPath ? `${data.floppyBase}${t.floppyPath}` : null}
-					busy={trackBusy}
-					onremove={() => toggleTracked(true, show.title)}
-					onclose={() => (menuOpen = false)}
-				/>
+				{#await data.anime then serverAnime}
+					<ItemMenu
+						title={show.title}
+						sourceUrl={show.sourceUrl}
+						floppyUrl={data.floppyBase && t.floppyPath ? `${data.floppyBase}${t.floppyPath}` : null}
+						busy={trackBusy}
+						anime={animeEdit ?? serverAnime}
+						onanime={(next) => setAnime(next, show.title)}
+						onremove={() => toggleTracked(true, show.title)}
+						onclose={() => (menuOpen = false)}
+					/>
+				{/await}
 			{/if}
 		{/await}
 

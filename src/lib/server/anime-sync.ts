@@ -1,25 +1,44 @@
 /**
- * Anime classification sync.
+ * What's anime, and the Floppy `anime` tag that records it.
  *
- * Jellyfin's "Anime" library is the source of truth for what's anime; Floppy is
- * where it's stored. This job reads the library (via jellyfin.ts) and reconciles
- * a Floppy `anime` tag to match: tag the tracked TV shows that are in the Anime
- * library, untag the ones that no longer are. The Shows/Anime split then reads
- * straight off that tag (`getWatchlist('tv', { tag })`), so a page load never
- * touches Jellyfin.
+ * Floppy's own metadata decides: a show is anime when its genres include
+ * "Anime". That follows the show wherever you watch it (Netflix, Crunchyroll,
+ * Jellyfin), which a Jellyfin library never could — anime streamed elsewhere
+ * was missed, and western animation filed in the Anime folder was counted.
+ * Compared across a real 406-show library, Floppy's genre matched TMDB and
+ * TVDB on 40 of its 42 anime; where it's a judgment call (a Chinese donghua,
+ * an American show in anime style) the household overrules it per show.
  *
- * Runs on a schedule and on demand. Idempotent — only the diff is written.
+ * Each person's Floppy carries its own tag. This job reconciles it to the
+ * verdicts — on a schedule, for everyone, and for one show right after it's
+ * added. The Shows/Anime split then reads straight off the tag
+ * (`getWatchlist('tv', { tag })`).
+ *
+ * Idempotent: only the diff is written. A show Floppy has no genres for yet
+ * keeps whatever tag it has.
  */
 import { getWatchlist } from './watchlist';
-import { fetchAnimeTmdbIds, jellyfinConfigured } from './jellyfin';
-import { ANIME_TAG, setItemTag } from './tags';
+import { floppy } from './floppy';
+import { ANIME_TAG, getItemTags, setItemTag } from './tags';
 import { expire } from './memo';
+import { db, nowIso } from './db';
+import { currentUser } from './userctx';
 import type { WatchlistRow } from '$lib/types';
+
+/** Anime per Floppy's genres (its own and implied); null when it has none yet
+ *  (metadata not fetched), which means "can't say", not "not anime". */
+export function animeByGenres(genres: unknown, implied: unknown = []): boolean | null {
+	const all = [...(Array.isArray(genres) ? genres : []), ...(Array.isArray(implied) ? implied : [])].filter(
+		(g): g is string => typeof g === 'string'
+	);
+	if (!all.length) return null;
+	return all.some((g) => g.toLowerCase() === 'anime');
+}
 
 /**
  * Decide which shows to tag / untag. Pure and total:
  *  - add: tracked shows that ARE anime but aren't tagged yet
- *  - remove: tagged shows that are no longer in the Anime library
+ *  - remove: tagged shows that are not anime
  * Anime ids that aren't tracked in Floppy are ignored — there's no row to tag.
  */
 export function reconcileAnimeTags(
@@ -38,7 +57,64 @@ export function reconcileAnimeTags(
 	return { add, remove };
 }
 
-/** TMDB ids of the rows sourced from TMDB (the only source the anime set keys on). */
+/* ── Overrides ───────────────────────────────────────────────────────────── */
+
+/** The household's own answers, where it disagrees with TMDB. */
+export function animeOverrides(householdId: number): Map<string, boolean> {
+	const rows = db()
+		.prepare('SELECT media_id, is_anime FROM anime_overrides WHERE household_id = ? AND source = ?')
+		.all(householdId, 'tmdb') as { media_id: string; is_anime: number }[];
+	return new Map(rows.map((r) => [r.media_id, r.is_anime === 1]));
+}
+
+/** Overrule TMDB for one show (null: go back to TMDB's answer). */
+export function setAnimeOverride(householdId: number, userId: number, tmdbId: string, isAnime: boolean | null): void {
+	if (isAnime === null) {
+		db()
+			.prepare('DELETE FROM anime_overrides WHERE household_id = ? AND source = ? AND media_id = ?')
+			.run(householdId, 'tmdb', tmdbId);
+		return;
+	}
+	db()
+		.prepare(
+			`INSERT INTO anime_overrides (household_id, source, media_id, is_anime, user_id, created_at)
+			 VALUES (?, 'tmdb', ?, ?, ?, ?)
+			 ON CONFLICT (household_id, source, media_id) DO UPDATE SET is_anime = excluded.is_anime, user_id = excluded.user_id`
+		)
+		.run(householdId, tmdbId, isAnime ? 1 : 0, userId, nowIso());
+}
+
+/* ── Verdicts ────────────────────────────────────────────────────────────── */
+
+/** The household's override where there is one, else Floppy's genre. */
+export function verdict(id: string, byGenre: boolean | null, overrides: Map<string, boolean>): boolean | null {
+	return overrides.has(id) ? overrides.get(id)! : byGenre;
+}
+
+type Raw = Record<string, unknown>;
+
+/** Every tracked TV show's anime-by-genre, from Floppy's library list (the
+ *  genres ride along on each row's item). Keyed by TMDB id. */
+async function libraryGenres(): Promise<Map<string, boolean | null>> {
+	const out = new Map<string, boolean | null>();
+	for (let offset = 0; offset < 20_000; ) {
+		const page = await floppy<{ results?: Raw[]; pagination?: { total?: number } }>('/api/v1/media/tv/', {
+			query: { limit: 100, offset }
+		});
+		const results = page.results ?? [];
+		for (const r of results) {
+			const item = (r.item ?? {}) as Raw;
+			if (item.source === 'tmdb' && typeof item.media_id === 'string') {
+				out.set(item.media_id, animeByGenres(item.genres, item.implied_genres));
+			}
+		}
+		offset += results.length;
+		if (!results.length || offset >= (page.pagination?.total ?? 0)) break;
+	}
+	return out;
+}
+
+/** TMDB ids of the rows sourced from TMDB (the only source verdicts key on). */
 function tmdbIdsOf(rows: WatchlistRow[]): Set<string> {
 	const set = new Set<string>();
 	for (const r of rows) {
@@ -47,49 +123,64 @@ function tmdbIdsOf(rows: WatchlistRow[]): Set<string> {
 	return set;
 }
 
-export type AnimeSyncResult = {
-	added: number;
-	removed: number;
-	animeInJellyfin: number;
-	skipped?: string;
-};
+export type AnimeSyncResult = { added: number; removed: number; anime: number; skipped?: string };
 
-/** Reconcile the Floppy `anime` tag to Jellyfin's Anime library. No-op (and no
- *  writes) when Jellyfin isn't configured. */
+function expireLists(): void {
+	expire('watchlist:');
+	expire('library:');
+	expire('collection:');
+}
+
+/** Reconcile this person's `anime` tags to the verdicts. */
 export async function syncAnimeTags(): Promise<AnimeSyncResult> {
-	if (!jellyfinConfigured()) {
-		return { added: 0, removed: 0, animeInJellyfin: 0, skipped: 'jellyfin-not-configured' };
-	}
+	const me = currentUser();
+	const overrides = me ? animeOverrides(me.householdId) : new Map<string, boolean>();
 
-	// Throws if Jellyfin is unreachable — the caller logs it and leaves existing
-	// tags alone rather than wiping them on a transient outage.
-	const animeTmdb = await fetchAnimeTmdbIds();
-
-	const [tracked, tagged] = await Promise.all([
-		getWatchlist('tv', { statuses: ['all'], all: true, enrich: false }),
+	const [genres, tagged] = await Promise.all([
+		libraryGenres(),
 		getWatchlist('tv', { statuses: ['all'], all: true, enrich: false, tag: ANIME_TAG })
 	]);
+	const trackedIds = new Set(genres.keys());
+	const taggedIds = tmdbIdsOf(tagged.rows);
 
-	const { add, remove } = reconcileAnimeTags(
-		animeTmdb,
-		tmdbIdsOf(tracked.rows),
-		tmdbIdsOf(tagged.rows)
-	);
+	// Anime: what the verdicts say — and, where they can't say, what's tagged now.
+	const anime = new Set<string>();
+	for (const id of trackedIds) {
+		const v = verdict(id, genres.get(id) ?? null, overrides);
+		if (v === true || (v === null && taggedIds.has(id))) anime.add(id);
+	}
+	const { add, remove } = reconcileAnimeTags(anime, trackedIds, taggedIds);
 
 	// Sequential: keeps well under Floppy's limits, and the diff is small after
-	// the first run. expireWatchlist is deferred to one sweep at the end.
-	for (const id of add) {
-		await setItemTag('tv', 'tmdb', id, ANIME_TAG, true, { expireWatchlist: false });
-	}
-	for (const id of remove) {
-		await setItemTag('tv', 'tmdb', id, ANIME_TAG, false, { expireWatchlist: false });
-	}
+	// the first run. The list caches are expired once at the end.
+	for (const id of add) await setItemTag('tv', 'tmdb', id, ANIME_TAG, true, { expireWatchlist: false });
+	for (const id of remove) await setItemTag('tv', 'tmdb', id, ANIME_TAG, false, { expireWatchlist: false });
+	if (add.length || remove.length) expireLists();
 
-	if (add.length || remove.length) {
-		expire('watchlist:');
-		expire('library:');
-		expire('collection:');
-	}
+	return { added: add.length, removed: remove.length, anime: anime.size };
+}
 
-	return { added: add.length, removed: remove.length, animeInJellyfin: animeTmdb.size };
+/** Tag one show right away (just added, or just overruled) for this person.
+ *  Returns whether it's anime now; never throws. */
+export async function classifyShow(tmdbId: string): Promise<boolean | null> {
+	try {
+		const me = currentUser();
+		const overrides = me ? animeOverrides(me.householdId) : new Map<string, boolean>();
+		let byGenre: boolean | null = null;
+		if (!overrides.has(tmdbId)) {
+			const d = await floppy<Raw>(`/api/v1/media/tv/tmdb/${encodeURIComponent(tmdbId)}/`);
+			byGenre = animeByGenres(d.genres);
+		}
+		const isAnime = verdict(tmdbId, byGenre, overrides);
+		if (isAnime === null) return null;
+		const tagged = (await getItemTags('tv', 'tmdb', tmdbId)).includes(ANIME_TAG);
+		if (tagged !== isAnime) {
+			await setItemTag('tv', 'tmdb', tmdbId, ANIME_TAG, isAnime, { expireWatchlist: false });
+			expireLists();
+		}
+		return isAnime;
+	} catch (err) {
+		console.warn(`[anime] classifying ${tmdbId} failed:`, err);
+		return null;
+	}
 }

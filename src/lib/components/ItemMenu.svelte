@@ -18,10 +18,14 @@
 		 *  Completed (which records a play) but moving off it leaves the play
 		 *  behind, so this is the only way to take one back. */
 		onclearhistory?: () => void;
+		/** Shows only: whether it counts as anime (null hides the row), and the
+		 *  household's say-so when Floppy's genre gets it wrong. */
+		anime?: boolean | null;
+		onanime?: (next: boolean) => void;
 		onremove: () => void;
 		onclose: () => void;
 	};
-	let { title, sourceUrl, floppyUrl, busy = false, onclearhistory, onremove, onclose }: Props = $props();
+	let { title, sourceUrl, floppyUrl, busy = false, onclearhistory, anime = null, onanime, onremove, onclose }: Props = $props();
 
 	async function share() {
 		if (!sourceUrl) return;
@@ -74,6 +78,13 @@
 					<span>Clear watch history</span>
 				</button>
 			{/if}
+			{#if anime !== null && onanime}
+				<button disabled={busy} onclick={() => onanime(!anime)}>
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z" /></svg>
+					<span>{anime ? 'Not anime' : 'Count as anime'}</span>
+					<span class="aside">{anime ? 'In Anime now' : 'In Shows now'}</span>
+				</button>
+			{/if}
 			<button class="danger" disabled={busy} onclick={onremove}>
 				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7" /><path d="M6.5 7l.8 11a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9L18.5 7" /></svg>
 				<span>Remove from library</span>
@@ -94,4 +105,5 @@
 	}
 	.rows .danger { color: #ff8a8a; }
 	button:disabled { opacity: 0.5; }
+	.aside { margin-left: auto; font-size: 12.5px; color: var(--text-dim); }
 </style>

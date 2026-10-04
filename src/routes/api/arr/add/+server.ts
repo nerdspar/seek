@@ -12,6 +12,7 @@ import { addMedia } from '$lib/server/search';
 import { FloppyError } from '$lib/server/floppy';
 import { expire, invalidate } from '$lib/server/memo';
 import { settleAdded } from '$lib/server/household/run';
+import { classifyShow } from '$lib/server/anime-sync';
 import type { RequestHandler } from './$types';
 
 type Body = {
@@ -98,6 +99,7 @@ export const POST: RequestHandler = async ({ request }) => {
 						typeof body.together === 'boolean' ? (body.together ? 'together' : 'solo') : undefined
 					)
 				: null;
+		if (tracked && body.mediaType !== 'movie') void classifyShow(tmdbId);
 		return json({ ...result, tracked, household });
 	} catch (err) {
 		if (err instanceof ArrUnreachable) error(503, `${service} is unreachable; nothing was added.`);

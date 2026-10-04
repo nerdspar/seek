@@ -3,9 +3,9 @@ import { syncAnimeTags } from '$lib/server/anime-sync';
 import type { RequestHandler } from './$types';
 
 /**
- * Reconcile the Floppy `anime` tag to Jellyfin's Anime library on demand — the
- * same job the scheduler runs, exposed so it can be triggered after moving shows
- * in Floppy without waiting for the next tick. Gated by the session check in
+ * Reconcile your Floppy `anime` tags to what's anime (Floppy's "Anime" genre,
+ * plus the household's overrides) on demand — the same job the scheduler runs, without waiting for the
+ * next tick. Gated by the session check in
  * hooks.server.ts (a no-session caller gets 401).
  */
 export const POST: RequestHandler = async () => {

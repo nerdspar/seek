@@ -16,7 +16,7 @@
 		subscribed: string[];
 		/** Off when the household does not track who watched (§8 preference). */
 		showCompany: boolean;
-		/** Off when Jellyfin isn't configured — there is no anime tag to split on. */
+		/** Only on the TV list — the anime tag lives on shows. */
 		showAnime: boolean;
 		/** How many titles the current filters match; null while that is loading. */
 		resultCount: number | null;

@@ -2,7 +2,6 @@ import { getWatchlist } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
 import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import { type Company, type AnimeFilter, animeTagQuery } from '$lib/server/tags';
-import { jellyfinConfigured } from '$lib/server/jellyfin';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import { landing, mediaOn } from '$lib/media';
@@ -57,11 +56,11 @@ export const load: PageServerLoad = async ({ url }) => {
 	const company = (COMPANIES as string[]).includes(rawCompany) ? (rawCompany as Company) : 'all';
 	const services = url.searchParams.getAll('service').filter(Boolean);
 
-	/* The Shows/Anime split is a Jellyfin-sourced `anime` tag (see anime-sync.ts),
-	   and it only exists on the tv list — so the anime filter is offered only there
-	   and only when Jellyfin is configured. 'only' keeps the tagged shows, 'hide'
+	/* The Shows/Anime split is the `anime` tag (from Floppy's "Anime" genre, see
+	   anime-sync.ts), and it only exists on the tv list — so the anime filter is
+	   offered only there. 'only' keeps the tagged shows, 'hide'
 	   keeps the rest; both take precedence over company (also a tag) in getWatchlist. */
-	const showAnime = jellyfinConfigured() && mediaType === 'tv';
+	const showAnime = mediaType === 'tv';
 	const rawAnime = showAnime ? (url.searchParams.get('anime') ?? 'all') : 'all';
 	const anime = (ANIME_FILTERS as string[]).includes(rawAnime)
 		? (rawAnime as AnimeFilter)
