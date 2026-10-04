@@ -475,6 +475,10 @@
 
 	</header>
 
+	<!-- Outside <main>: the pull-to-refresh body is moved with a transform, and a
+	     transform makes the sheet's position: fixed relative to it (off-screen). -->
+	{#if data.mediaType !== 'movie'}<div class="inbox"><NewShows /></div>{/if}
+
 	<main
 		use:tabReselect={{ tab: 'watchlist' }}
 		use:pullToRefresh={{
@@ -512,7 +516,6 @@
 			</svg>
 		</div>
 		<div class="ptr-body" class:settling={pullSettling} style:transform={`translateY(${refreshing ? REFRESH_REST : pullY}px)`}>
-		{#if data.mediaType !== 'movie'}<NewShows />{/if}
 		{#await data.page}
 			<ul class="rows">
 				{#each Array(6) as _, i (i)}
@@ -678,6 +681,9 @@
 	/* The fixed tab bar and the floating add button both overlay the bottom now
 	   (Model B), so the last row must clear the bar's footprint plus the FAB that
 	   floats above it. */
+	.inbox { padding: 4px var(--gutter) 0; }
+	.inbox:empty { display: none; }
+
 	main {
 		position: relative;
 		padding: 4px var(--gutter) calc(var(--tabbar-footprint) + 80px);

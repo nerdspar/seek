@@ -332,7 +332,7 @@ export async function getShow(
  */
 const showTitleCache = new TTLCache<string | null>(24 * 60 * 60 * 1000, 2000);
 
-async function showTitle(source: string, mediaId: string): Promise<string | null> {
+export async function showTitle(source: string, mediaId: string): Promise<string | null> {
 	const key = `${source}:${mediaId}`;
 	const hit = showTitleCache.get(key);
 	if (hit !== undefined) return hit;

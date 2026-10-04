@@ -4,6 +4,7 @@ import * as users from '../users';
 import { isShared, share } from './shared';
 import {
 	decide,
+	fillTitles,
 	noteShared,
 	newShowsMode,
 	pendingShows,
@@ -81,6 +82,28 @@ describe('settling a new show', () => {
 		decide(H(), wife.id, show('2'), 'solo', d);
 		expect(shared).toEqual(['1']);
 		expect(pendingShows(H())).toEqual([]);
+	});
+});
+
+describe('titles', () => {
+	it('fills in a title the inbox was missing, once, and keeps it', async () => {
+		const { d } = deps();
+		settle(H(), owner.id, { source: 'tmdb', mediaId: '291361', title: null }, d);
+		const lookups: string[] = [];
+		const titleOf = async (s: { mediaId: string }) => (lookups.push(s.mediaId), 'The Copenhagen Test');
+		await fillTitles(H(), titleOf);
+		await fillTitles(H(), titleOf);
+		expect(pendingShows(H())).toEqual([{ source: 'tmdb', mediaId: '291361', title: 'The Copenhagen Test' }]);
+		expect(lookups).toEqual(['291361']);
+	});
+
+	it('leaves it blank (and tries again later) when the lookup fails', async () => {
+		const { d } = deps();
+		settle(H(), owner.id, { source: 'tmdb', mediaId: '1', title: null }, d);
+		await fillTitles(H(), async () => {
+			throw new Error('Floppy down');
+		});
+		expect(pendingShows(H())[0].title).toBeNull();
 	});
 });
 

@@ -77,6 +77,19 @@ export function pendingShows(householdId: number): ShowRef[] {
 	).map((r) => ({ source: r.source, mediaId: r.media_id, title: r.title }));
 }
 
+/** Fill in titles the inbox doesn't have yet (a show Floppy hadn't fetched
+ *  details for when it was first seen), and keep them. */
+export async function fillTitles(householdId: number, titleOf: (show: ShowRef) => Promise<string | null>): Promise<void> {
+	for (const show of pendingShows(householdId).filter((s) => !s.title)) {
+		const title = await titleOf(show).catch(() => null);
+		if (title) {
+			db()
+				.prepare('UPDATE show_choices SET title = ? WHERE household_id = ? AND source = ? AND media_id = ?')
+				.run(title, householdId, show.source, show.mediaId);
+		}
+	}
+}
+
 /** A show just appeared in someone's library: settle it per the setting.
  *  'known' = already shared or already answered — nothing to do. */
 export function settle(householdId: number, userId: number, show: ShowRef, deps: Pick<Deps, 'share'>): Settled {

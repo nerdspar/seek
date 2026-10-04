@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { mirroringAvailable, newShowDeps } from '$lib/server/household/run';
-import { decide, isMode, newShowsMode, pendingShows, setNewShowsMode } from '$lib/server/household/newShows';
+import { decide, fillTitles, isMode, newShowsMode, pendingShows, setNewShowsMode } from '$lib/server/household/newShows';
+import { showTitle } from '$lib/server/detail';
 import type { RequestHandler } from './$types';
 
 /** Together or solo for new shows: the setting and the shows waiting for an answer. */
@@ -8,6 +9,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const me = locals.user;
 	if (!me) error(401);
 	const mirroring = mirroringAvailable(me.householdId);
+	if (mirroring) await fillTitles(me.householdId, (s) => showTitle(s.source, s.mediaId));
 	return json({
 		mirroring,
 		mode: newShowsMode(me.householdId),
