@@ -78,7 +78,7 @@
 		{
 			title: 'Household',
 			rows: [
-				{ id: 'household', title: 'Household', hint: 'Members, invites, shared shows', show: true },
+				{ id: 'household', title: 'Household', hint: 'Members, invites, watching together', show: true },
 				{ id: 'services', title: 'Services', hint: 'Where Seek finds your apps', show: isOwner && Boolean(data.services) }
 			]
 		},
@@ -86,7 +86,7 @@
 			title: 'Seek',
 			rows: [
 				{ id: 'media', title: 'Shows, movies & books', hint: 'What Seek is for', show: true },
-				{ id: 'watchlist', title: 'Watchlist', hint: 'Swipe, default tab, watching with', show: true },
+				{ id: 'watchlist', title: 'Watchlist', hint: 'Swipe, default tab', show: true },
 				{ id: 'appearance', title: 'Appearance', hint: 'Theme, accent, show page', show: true },
 				{ id: 'discover', title: 'Discover', hint: 'Streaming services, chips', show: true },
 				{ id: 'notifications', title: 'Notifications', hint: 'Daily digest, airing alerts', show: true }
@@ -416,6 +416,24 @@
 		<AccountSettings account={data.account} part="account" />
 	{:else if section === 'household'}
 		<AccountSettings account={data.account} part="household" />
+	<section>
+		<h3>Watching with</h3>
+		<!-- Whether anyone else is in the room is a household-specific idea. Off, the
+		     chip disappears from both detail pages and the watchlist filter goes with
+		     it; the tags already in Floppy are left alone. -->
+		<button
+			class="row"
+			role="switch"
+			aria-checked={local.companyTracking}
+			onclick={() => patch({ companyTracking: !local.companyTracking })}
+		>
+			<span class="rowtext">
+				<span class="label">Track who you watched with</span>
+				<span class="hint">Alone or together, on shows and films</span>
+			</span>
+			<span class="toggle" class:on={local.companyTracking}><span class="knob"></span></span>
+		</button>
+	</section>
 	{:else if section === 'accounts'}
 		<LinkedAccounts account={data.account} />
 	<section>
@@ -503,25 +521,6 @@
 				>{tab.label}</button>
 			{/each}
 		</div>
-	</section>
-
-	<section>
-		<h3>Watching with</h3>
-		<!-- Whether anyone else is in the room is a household-specific idea. Off, the
-		     chip disappears from both detail pages and the watchlist filter goes with
-		     it; the tags already in Floppy are left alone. -->
-		<button
-			class="row"
-			role="switch"
-			aria-checked={local.companyTracking}
-			onclick={() => patch({ companyTracking: !local.companyTracking })}
-		>
-			<span class="rowtext">
-				<span class="label">Track who you watched with</span>
-				<span class="hint">Alone or together, on shows and films</span>
-			</span>
-			<span class="toggle" class:on={local.companyTracking}><span class="knob"></span></span>
-		</button>
 	</section>
 
 	{:else if section === 'appearance'}

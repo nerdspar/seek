@@ -289,7 +289,7 @@
 			<p class="hint">
 				Mark a show <strong>Together</strong> and a play by either of you counts for both — once
 				{sharedShows.waitingOn.join(' and ')}
-				{sharedShows.waitingOn.length === 1 && sharedShows.waitingOn[0] !== 'you' ? 'links' : 'link'} a Floppy account under Connections.
+				{sharedShows.waitingOn.length === 1 && sharedShows.waitingOn[0] !== 'you' ? 'links' : 'link'} a Floppy account under Your accounts.
 			</p>
 		{:else if !sharedShows.shows.length}
 			<p class="hint">
