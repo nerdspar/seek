@@ -89,8 +89,8 @@ export async function sendDailyDigest(
  */
 function airMoment(item: UpcomingItem): number {
 	if (item.hasTime) return new Date(item.start).getTime();
-	// item.start is midnight UTC of the date; reinterpret that date as local
-	// midnight (no trailing Z parses as local time).
+	// item.start carries the date (anchored at midday UTC); reinterpret that
+	// date as local midnight (no trailing Z parses as local time).
 	return new Date(`${item.start.slice(0, 10)}T00:00:00`).getTime();
 }
 

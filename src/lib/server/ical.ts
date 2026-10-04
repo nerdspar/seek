@@ -63,7 +63,10 @@ function parseIcalDate(raw: string): { iso: string; hasTime: boolean } | null {
 	const dateOnly = v.match(/^(\d{4})(\d{2})(\d{2})$/);
 	if (dateOnly) {
 		const [, y, mo, d] = dateOnly;
-		const parsed = new Date(`${y}-${mo}-${d}T00:00:00Z`);
+		// A date, not an instant: anchor it at midday UTC so it reads as the same
+		// calendar day everywhere from UTC−11 to UTC+11. (Midnight UTC is the
+		// evening before in the Americas — every all-day episode showed a day early.)
+		const parsed = new Date(`${y}-${mo}-${d}T12:00:00Z`);
 		if (Number.isNaN(parsed.getTime())) return null;
 		return { iso: parsed.toISOString(), hasTime: false };
 	}
