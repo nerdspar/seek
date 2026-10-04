@@ -347,7 +347,7 @@
 		{/if}
 		{#if importList && sharedShows.mirroring}
 			<div class="import">
-				<p class="label">Share {importList.length} shows with {sharedShows.waitingOn.length ? 'the household' : partnerName}?</p>
+				<p class="label">Share {importList.length === 1 ? '1 show' : `${importList.length} shows`} with {sharedShows.waitingOn.length ? 'the household' : partnerName}?</p>
 				<p class="hint">
 					Each one's watched episodes are copied to whoever hasn't seen them, with the original dates, and
 					from then on a play by either of you counts for both. Shows not on this list stay solo.
@@ -360,7 +360,7 @@
 				</details>
 				<div class="importbtns">
 					<button class="primary small" disabled={importBusy} onclick={startImport}>
-						{importBusy ? 'Starting…' : `Share ${importList.length} shows`}
+						{importBusy ? 'Starting…' : `Share ${importList.length === 1 ? '1 show' : `${importList.length} shows`}`}
 					</button>
 					<button class="link" onclick={dropImport}>Cancel</button>
 				</div>
@@ -372,7 +372,7 @@
 			{@const b = sharedShows.bulk}
 			<p class="hint msg" class:ok={!b.running}>
 				{b.running ? 'Sharing…' : 'Shared.'}
-				{b.done}/{b.total} shows · {b.mirrored} episode{b.mirrored === 1 ? '' : 's'} copied{b.failed ? ` · ${b.failed} failed (run the link again to retry)` : ''}
+				{b.done}/{b.total} show{b.total === 1 ? '' : 's'} · {b.mirrored} episode{b.mirrored === 1 ? '' : 's'} copied{b.failed ? ` · ${b.failed} failed (run the link again to retry)` : ''}
 			</p>
 		{/if}
 		{#if sharedShows.mirroring && !sharedShows.shows.length}
