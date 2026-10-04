@@ -157,66 +157,6 @@ export function setShared(
 	return true;
 }
 
-/* ── The one-time joint import ───────────────────────────────────────────── */
-
-export type BulkProgress = {
-	total: number;
-	done: number;
-	/** Plays carried across so far. */
-	mirrored: number;
-	failed: number;
-	running: boolean;
-	startedAt: string;
-};
-const bulk = new Map<number, BulkProgress>();
-
-/** How the last bulk share for this household is going (in memory: a restart
- *  forgets it, and running the same link again resumes safely). */
-export const bulkProgress = (householdId: number): BulkProgress | null => bulk.get(householdId) ?? null;
-
-/**
- * Share many shows at once — the household's first "these we watch together".
- * All are marked shared straight away; then each is caught up in turn (the
- * same backfill as sharing one) and tagged Together for everyone. Shows already
- * shared are caught up too, so re-running after an interruption picks up where
- * it stopped: the backfill skips episodes the other person already has.
- */
-export function shareMany(
-	householdId: number,
-	userId: number,
-	shows: SharedRef[]
-): BulkProgress {
-	const progress: BulkProgress = {
-		total: shows.length,
-		done: 0,
-		mirrored: 0,
-		failed: 0,
-		running: true,
-		startedAt: new Date().toISOString()
-	};
-	bulk.set(householdId, progress);
-	for (const s of shows) share(householdId, userId, s);
-
-	void (async () => {
-		for (const s of shows) {
-			try {
-				const sum = await serial(householdId, () => backfillShow(householdId, s.source, s.mediaId, undefined, s.mediaType ?? 'tv'));
-				progress.mirrored += sum.mirrored;
-				progress.failed += sum.failed;
-				await syncJointTags(householdId, s, true);
-			} catch (err) {
-				progress.failed++;
-				console.warn(`[mirror] bulk: ${s.title ?? `${s.source}:${s.mediaId}`} failed:`, err);
-			}
-			progress.done++;
-			if (progress.done % 25 === 0) console.log(`[mirror] bulk ${progress.done}/${progress.total}, ${progress.mirrored} play(s) carried`);
-		}
-		progress.running = false;
-		console.log(`[mirror] bulk done: ${progress.total} shows, ${progress.mirrored} play(s) carried, ${progress.failed} failed`);
-	})();
-	return progress;
-}
-
 /**
  * Keep everyone's "together" tag in step with the shared list, so each person's
  * Together/Alone filter agrees with what mirrors. Best-effort: a tag is a label,

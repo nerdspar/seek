@@ -1,52 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const shareMany = vi.fn();
-let available = true;
-let progress: unknown = null;
+const setShared = vi.fn();
+const syncJointTags = vi.fn(async (..._a: unknown[]) => {});
 vi.mock('$lib/server/household/run', () => ({
-	mirroringAvailable: () => available,
-	bulkProgress: () => progress,
-	shareMany: (...a: unknown[]) => shareMany(...a),
-	setShared: vi.fn(),
-	syncJointTags: vi.fn()
+	setShared: (...a: unknown[]) => setShared(...a),
+	syncJointTags: (...a: unknown[]) => syncJointTags(...a)
 }));
+vi.mock('$lib/server/household/shared', () => ({ listShared: () => [] }));
+vi.mock('$lib/server/household/mirror', () => ({ mirrorMembers: () => [] }));
+vi.mock('$lib/server/users', () => ({ listMembers: () => [] }));
 
-import { POST } from './+server';
+import { DELETE } from './+server';
 
 const me = { id: 1, householdId: 7 };
-const post = (body: unknown) =>
-	POST({ locals: { user: me }, request: new Request('http://x', { method: 'POST', body: JSON.stringify(body) }) } as never);
-const status = (p: unknown) => Promise.resolve(p as Response).then((r) => r.status, (e: { status: number }) => e.status);
+const del = (body: unknown) =>
+	DELETE({ locals: { user: me }, request: new Request('http://x', { method: 'DELETE', body: JSON.stringify(body) }) } as never);
 
-beforeEach(() => {
-	available = true;
-	progress = null;
-	shareMany.mockReset().mockReturnValue({ total: 2, done: 0, running: true });
-});
+beforeEach(() => vi.clearAllMocks());
 
-describe('POST /api/household/shared (bulk)', () => {
-	it('starts the import for a clean list', async () => {
-		const res = await post({ shows: [{ source: 'tmdb', mediaId: '1', title: 'One' }, { source: 'tmdb', mediaId: '2' }] });
-		expect(res.status).toBe(200);
-		expect(shareMany).toHaveBeenCalledWith(7, 1, [
-			{ source: 'tmdb', mediaId: '1', mediaType: 'tv', title: 'One' },
-			{ source: 'tmdb', mediaId: '2', mediaType: 'tv', title: null }
-		]);
+describe('DELETE /api/household/shared (Stop sharing)', () => {
+	it('stops sharing a film as a film, and a show as a show', async () => {
+		await del({ source: 'tmdb', mediaId: '1204680', mediaType: 'movie' });
+		expect(setShared).toHaveBeenLastCalledWith(7, 1, { source: 'tmdb', mediaId: '1204680', mediaType: 'movie' }, false);
+		await del({ source: 'tmdb', mediaId: '1204680' });
+		expect(setShared).toHaveBeenLastCalledWith(7, 1, { source: 'tmdb', mediaId: '1204680', mediaType: 'tv' }, false);
+		expect(syncJointTags).toHaveBeenCalledTimes(2);
 	});
 
-	it('carries films as films', async () => {
-		await post({ shows: [{ source: 'tmdb', mediaId: '603', mediaType: 'movie', title: 'The Matrix' }] });
-		expect(shareMany).toHaveBeenCalledWith(7, 1, [{ source: 'tmdb', mediaId: '603', mediaType: 'movie', title: 'The Matrix' }]);
-	});
-
-	it('refuses before both of you are linked, a malformed list, or a second run', async () => {
-		available = false;
-		expect(await status(post({ shows: [{ source: 'tmdb', mediaId: '1' }] }))).toBe(409);
-		available = true;
-		expect(await status(post({ shows: [{ source: 'tmdb' }] }))).toBe(400);
-		expect(await status(post({ shows: [] }))).toBe(400);
-		progress = { running: true };
-		expect(await status(post({ shows: [{ source: 'tmdb', mediaId: '1' }] }))).toBe(409);
-		expect(shareMany).not.toHaveBeenCalled();
+	it('needs a source and id', async () => {
+		await expect(del({ mediaId: '1' })).rejects.toMatchObject({ status: 400 });
 	});
 });
