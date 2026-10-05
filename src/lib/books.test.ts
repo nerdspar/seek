@@ -278,7 +278,7 @@ describe('groupReading', () => {
 	});
 	it('labels statuses for people', () => {
 		expect(statusLabel('abandoned')).toBe('Did not finish');
-		expect(statusLabel('unread')).toBe('In your library');
+		expect(statusLabel('unread')).toBe('In my library');
 	});
 });
 

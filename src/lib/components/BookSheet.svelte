@@ -220,8 +220,14 @@
 				{#if series}
 					<p class="series">{series.name}{series.position ? ` · Book ${series.position}` : ''}</p>
 				{/if}
-				{#if owned}<p class="where">In your library</p>{/if}
+				{#if owned}<p class="where">In my library</p>{/if}
 			</div>
+			{#if owned}
+				<!-- A show's "in Sonarr" mark: the accent inbox, top right. -->
+				<span class="inlib" role="img" aria-label="In my library" title="In my library">
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg>
+				</span>
+			{/if}
 		</div>
 
 		{#if hardcoverId}
@@ -322,7 +328,11 @@
 <style>
 	.pad { padding: 4px var(--gutter) 8px; }
 	.hero { display: flex; gap: 14px; align-items: flex-start; }
-	.facts { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+	.facts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+	.inlib {
+		flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%;
+		background: var(--signal-solid); color: #fff;
+	}
 	h2 { margin: 0; font-size: 19px; font-weight: 650; line-height: 1.25; letter-spacing: -0.01em; }
 	.by { margin: 0; font-size: 14px; color: var(--text); }
 	.meta, .series, .where { margin: 0; font-size: 12.5px; color: var(--text-dim); }

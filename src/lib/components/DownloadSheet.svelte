@@ -221,7 +221,7 @@
 	const pct = (p: number) => `${Math.round(p * 100)}%`;
 	const statusText = (r: BookRequest) =>
 		r.status === 'available'
-			? '✓ In your library'
+			? '✓ In my library'
 			: r.status === 'importing'
 				? 'Downloaded — adding to your library'
 				: r.status === 'needs_review'

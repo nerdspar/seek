@@ -93,7 +93,7 @@ export type BookDetail = BookCard & {
 };
 
 const STATUS_LABELS: Record<BookReadStatus, string> = {
-	unread: 'In your library',
+	unread: 'In my library',
 	want_to_read: 'Want to read',
 	reading: 'Reading',
 	on_hold: 'Paused',
@@ -107,7 +107,7 @@ export const statusLabel = (s: BookReadStatus) => STATUS_LABELS[s];
 
 /** The badge on a discovery cover: your status if it's in your library, else
  *  your status on it as one of your own books, else nothing. A library book
- *  you haven't started shows "In your library". */
+ *  you haven't started shows "In my library". */
 export function cardBadge(c: { owned?: { status: BookReadStatus } | null; mine?: BookReadStatus | null }): string | null {
 	if (c.owned) return statusLabel(c.owned.status);
 	return c.mine ? statusLabel(c.mine) : null;
@@ -272,7 +272,7 @@ function fromShelf(s: ShelfBook, lib: ReadingBook | null): MyBook {
 	};
 }
 
-/** A library book with nothing on your shelf: "In your library". BookOrbit's own
+/** A library book with nothing on your shelf: "In my library". BookOrbit's own
  *  status for it is ignored — Hardcover is where reading state lives. */
 const unstarted = (b: ReadingBook): MyBook => ({
 	key: `lib:${b.id}`,
@@ -506,7 +506,7 @@ const REQUEST_LABELS: Record<BookRequestStatus, string> = {
 	downloading: 'Downloading',
 	importing: 'Adding to library',
 	needs_review: 'Needs a look in BookOrbit',
-	available: 'In your library',
+	available: 'In my library',
 	failed: "Couldn't get it"
 };
 
