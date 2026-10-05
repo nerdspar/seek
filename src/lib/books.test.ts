@@ -13,6 +13,7 @@ import {
 	coverThumb,
 	readingSections,
 	myBooks,
+	linkRequested,
 	progressText,
 	sortBooks,
 	filterBooks,
@@ -235,6 +236,22 @@ describe('mapBookRequest', () => {
 		expect(requestFor([req(1, 'cancelled'), req(2, 'downloading'), req(3, 'searching', 8)], 7)?.id).toBe(2);
 		expect(requestFor([req(1, 'cancelled'), req(4, 'rejected')], 7)?.id).toBe(4);
 		expect(requestFor([req(1, 'cancelled'), req(5, 'available')], 7)).toBeNull();
+	});
+
+	it('ties a filed download to the Hardcover book that was asked for, whatever BookOrbit named it', () => {
+		// You asked for "1984"; BookOrbit filed it as "Nineteen Eighty-Four" with no Hardcover link.
+		const filed = mapReadingBook({ id: 324, title: 'Nineteen Eighty-Four', authors: ['George Orwell'] });
+		const other = mapReadingBook({ id: 5, title: 'Other', hardcoverId: 99 });
+		const req = (status: string, matchedBookId: number | null) =>
+			mapBookRequest({ id: 1, status, providerKey: 'hardcover', providerId: '1984', matchedBookId });
+		const linked = linkRequested([filed, other], [req('available', 324)]);
+		expect(linked.map((b) => b.hardcoverId)).toEqual([1984, 99]);
+		// Your Want to read "1984" now finds its library copy.
+		const [mine] = myBooks(linked, [sb(1984, '1984', { authors: ['George Orwell'] })]);
+		expect(mine).toMatchObject({ source: 'library', libraryId: 324 });
+		// Only a fulfilled request counts, and BookOrbit's own link is never overridden.
+		expect(linkRequested([filed], [req('needs_review', 324)])[0].hardcoverId).toBeNull();
+		expect(linkRequested([other], [mapBookRequest({ id: 2, status: 'available', providerKey: 'hardcover', providerId: '7', matchedBookId: 5 })])[0].hardcoverId).toBe(99);
 	});
 
 	it('treats an unknown status as pending', () => {

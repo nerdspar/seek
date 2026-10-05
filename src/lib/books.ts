@@ -305,6 +305,17 @@ export function libraryCopyOf(library: ReadingBook[]): (b: { hardcoverId: number
 	return (b) => (b.hardcoverId ? byHc.get(b.hardcoverId) : undefined) ?? byKey.get(bookKey(b.title, b.author)) ?? null;
 }
 
+/** Library books BookOrbit hasn't tied to Hardcover, tied by the request that
+ *  brought them in: a fulfilled request records both the Hardcover book you
+ *  asked for and the library book it became — "1984" filed as "Nineteen
+ *  Eighty-Four" is still your 1984. BookOrbit's own link always wins. */
+export function linkRequested(library: ReadingBook[], requests: BookRequest[]): ReadingBook[] {
+	const asked = new Map<number, number>();
+	for (const r of requests) if (r.status === 'available' && r.bookId && r.hardcoverId) asked.set(r.bookId, r.hardcoverId);
+	if (!asked.size) return library;
+	return library.map((b) => (!b.hardcoverId && asked.has(b.id) ? { ...b, hardcoverId: asked.get(b.id)! } : b));
+}
+
 /** The whole list: every book on your shelf (with its library copy, if any),
  *  then the library books you haven't put on your shelf. */
 export function myBooks(library: ReadingBook[], shelf: ShelfBook[]): MyBook[] {

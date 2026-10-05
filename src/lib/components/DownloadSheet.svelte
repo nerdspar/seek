@@ -176,14 +176,19 @@
 
 	/* ── Held for review: what you asked for vs what arrived ──────────────── */
 	let review = $state<DownloadReview | null>(null);
+	let reviewFailed = $state(false);
 	let deciding = $state(false);
 	$effect(() => {
 		if (request?.status !== 'needs_review' || review) return;
 		const id = request.id;
+		reviewFailed = false;
 		fetch(`/api/books/download/${id}/review`)
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
 			.then((b) => (review = b.review))
-			.catch(() => (problem = 'Couldn’t load what BookOrbit found — open it in BookOrbit to decide.'));
+			// Often it's just been settled (filed or discarded in BookOrbit) and the
+			// next look at the request shows that — so this only shows while it's
+			// still waiting on you.
+			.catch(() => (reviewFailed = true));
 	});
 
 	async function decide(action: 'file' | 'discard') {
@@ -334,6 +339,7 @@
 		{/if}
 
 		{#if note}<p class="note">{note}</p>{/if}
+		{#if reviewFailed && request?.status === 'needs_review'}<p class="bad">Couldn’t load what BookOrbit found — open it in BookOrbit to decide.</p>{/if}
 		{#if problem}<p class="bad">{problem}</p>{/if}
 	</div>
 </Sheet>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mapReadingBook, myBooks, type BookCard, type ReadingBook, type ShelfBook } from '$lib/books';
+import { mapBookRequest, mapReadingBook, myBooks, type BookCard, type ReadingBook, type ShelfBook } from '$lib/books';
 
 const searchBooks = vi.fn();
 const authorBooks = vi.fn();
@@ -14,7 +14,8 @@ vi.mock('./hardcover', () => ({
 	bookDetail: (...a: unknown[]) => bookDetail(...a)
 }));
 let library: ReadingBook[] = [];
-vi.mock('./bookorbit', () => ({ bookorbitLinked: () => true, getAllBooks: async () => library }));
+let requests: unknown[] = [];
+vi.mock('./bookorbit', () => ({ bookorbitLinked: () => true, getAllBooks: async () => library, listMyRequests: async () => requests }));
 let shelf: ShelfBook[] = [];
 let linked = true;
 vi.mock('./shelf', () => ({ shelfLinked: () => linked, myShelf: async () => shelf }));
@@ -56,6 +57,7 @@ beforeEach(() => {
 	searchBooks.mockReset();
 	library = [];
 	shelf = [];
+	requests = [];
 	linked = true;
 });
 
@@ -88,6 +90,13 @@ describe('myBookList', () => {
 			['hc:2', 'library', 'read'],
 			['hc:5', 'entry', 'want_to_read']
 		]);
+	});
+
+	it('a download filed under another title is still the book you asked for', async () => {
+		library = [lib(324, 'Nineteen Eighty-Four', 'George Orwell')];
+		shelf = [sb(1984, '1984', 'George Orwell')];
+		requests = [mapBookRequest({ id: 9, status: 'available', providerKey: 'hardcover', providerId: '1984', matchedBookId: 324 })];
+		expect((await myBookList()).map((b) => [b.key, b.source, b.libraryId])).toEqual([['hc:1984', 'library', 324]]);
 	});
 
 	it('without your own Hardcover token, is just the library, nothing started', async () => {

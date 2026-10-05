@@ -8,6 +8,7 @@ import {
 	bookKey,
 	favoriteGenres,
 	librarySeeds,
+	linkRequested,
 	myBooks,
 	notYours,
 	recommendationSeeds,
@@ -18,7 +19,7 @@ import {
 	type EntryStatus,
 	type MyBook
 } from '$lib/books';
-import { bookorbitLinked, getAllBooks } from './bookorbit';
+import { bookorbitLinked, getAllBooks, listMyRequests } from './bookorbit';
 import { authorBooks, bookDetail, genreBooks, searchBooks, seriesAfter } from './hardcover';
 import { myShelf, shelfLinked } from './shelf';
 import { memo } from '../memo';
@@ -114,11 +115,13 @@ export function personalRails(): Promise<BookRail[]> {
  *  (the reading list can't be shown without it). Without your own Hardcover
  *  token linked it's just the library, all "not started". */
 export async function myBookList(): Promise<MyBook[]> {
-	const [library, shelf] = await Promise.all([
+	const [library, shelf, requests] = await Promise.all([
 		bookorbitLinked() ? getAllBooks().catch(() => []) : Promise.resolve([]),
-		shelfLinked() ? myShelf() : Promise.resolve([])
+		shelfLinked() ? myShelf() : Promise.resolve([]),
+		// Your fulfilled requests tie a download to the Hardcover book you asked for.
+		bookorbitLinked() ? listMyRequests().catch(() => []) : Promise.resolve([])
 	]);
-	return myBooks(library, shelf);
+	return myBooks(linkRequested(library, requests), shelf);
 }
 
 async function buildPersonalRails(): Promise<BookRail[]> {
