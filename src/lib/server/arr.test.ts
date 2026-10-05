@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLangList, sortReleases, importLabel, type ArrRelease } from './arr';
+import { parseLangList, sortReleases, importLabel, mapServerTitle, notOnYourList, type ArrRelease } from './arr';
 
 describe('parseLangList', () => {
 	it('splits a slash list and dedupes', () => {
@@ -84,5 +84,48 @@ describe('sortReleases', () => {
 		const copy = [...input];
 		sortReleases(input);
 		expect(input).toEqual(copy);
+	});
+});
+
+describe('on the server, not on your list', () => {
+	const series = (tmdbId: number | null, title: string, added: string, extra: Record<string, unknown> = {}) => ({
+		tmdbId,
+		title,
+		added,
+		year: 2024,
+		images: [
+			{ coverType: 'banner', remoteUrl: 'https://img/banner.jpg' },
+			{ coverType: 'poster', remoteUrl: `https://img/${title}.jpg` }
+		],
+		...extra
+	});
+
+	it('turns a Sonarr series into a TMDB-keyed tile with its poster', () => {
+		expect(mapServerTitle('sonarr', series(1399, 'Got', '2026-01-01T00:00:00Z'))).toEqual({
+			mediaType: 'tv',
+			source: 'tmdb',
+			mediaId: '1399',
+			title: 'Got',
+			poster: 'https://img/Got.jpg',
+			year: 2024,
+			addedAt: '2026-01-01T00:00:00Z'
+		});
+		expect(mapServerTitle('radarr', series(603, 'Matrix', 'x'))?.mediaType).toBe('movie');
+		const tmdb = { ...series(603, 'Matrix', 'x'), images: [{ coverType: 'poster', remoteUrl: 'https://image.tmdb.org/t/p/original/abc.jpg' }] };
+		expect(mapServerTitle('radarr', tmdb)?.poster).toBe('https://image.tmdb.org/t/p/w342/abc.jpg');
+	});
+
+	it('skips rows with no TMDB id (nothing to match your list on)', () => {
+		expect(mapServerTitle('sonarr', series(null, 'Orphan', 'x'))).toBeNull();
+		expect(mapServerTitle('sonarr', series(0, 'Orphan', 'x'))).toBeNull();
+	});
+
+	it('keeps only what you are not tracking, newest to the server first', () => {
+		const titles = [
+			series(1, 'Old', '2025-01-01T00:00:00Z'),
+			series(2, 'Tracked', '2026-06-01T00:00:00Z'),
+			series(3, 'New', '2026-09-01T00:00:00Z')
+		].map((s) => mapServerTitle('sonarr', s)!);
+		expect(notOnYourList(titles, new Set(['2'])).map((t) => t.title)).toEqual(['New', 'Old']);
 	});
 });

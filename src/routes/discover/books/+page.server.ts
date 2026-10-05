@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
 import { BOOK_GENRES, discoverRails, hardcoverConfigured } from '$lib/server/books/hardcover';
-import { personalRails, railsWithOwned } from '$lib/server/books/discovery';
+import { myBookList, personalRails, railsWithOwned } from '$lib/server/books/discovery';
 import { bookorbitLinked } from '$lib/server/books/bookorbit';
 import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
@@ -22,6 +22,13 @@ export const load: PageServerLoad = async () => {
 			.catch(() => []),
 		genres: BOOK_GENRES,
 		// Uploading goes into BookOrbit as you, so it needs your login there.
-		canUpload: bookorbitLinked()
+		canUpload: bookorbitLinked(),
+		// The way into In my library: how big it is, and how much you haven't started.
+		library: bookorbitLinked()
+			? myBookList()
+					.then((all) => all.filter((b) => b.source === 'library'))
+					.then((lib) => ({ total: lib.length, unstarted: lib.filter((b) => b.status === 'unread').length }))
+					.catch(() => null)
+			: null
 	};
 };

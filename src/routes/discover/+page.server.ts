@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { getDiscoverRows } from '$lib/server/discover';
+import { onServerNotListed } from '$lib/server/onServer';
 import { memo } from '$lib/server/memo';
 import { DEFAULT_PRESET_LABELS, getProviders, tmdbConfigured } from '$lib/server/tmdb';
 import { getPrefs } from '$lib/server/prefs';
@@ -59,6 +60,9 @@ export const load: PageServerLoad = async ({ url }) => {
 		/* Streamed. Floppy builds these rows on its own schedule and they change
 		   slowly, so a stale read is fine and a blocking rebuild is not — and the
 		   movie side is not warmed at all. */
-		rows: memo(`discover:${mediaType}`, 30 * 60 * 1000, () => getDiscoverRows(mediaType))
+		rows: memo(`discover:${mediaType}`, 30 * 60 * 1000, () => getDiscoverRows(mediaType)),
+		/* On the server (Sonarr/Radarr) but not on your list — null without the
+		   service; a failure just hides the entry. */
+		onServer: onServerNotListed(mediaType === 'movie' ? 'movie' : 'tv')?.catch(() => []) ?? null
 	};
 };

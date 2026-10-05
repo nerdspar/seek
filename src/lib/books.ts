@@ -386,6 +386,25 @@ const STATUS_FILTER: Record<Exclude<BookFilters['status'], 'all'>, BookReadStatu
 	unstarted: ['unread']
 };
 
+/* ── Your books (Profile → Reading → Your books) ─────────────────────────────── */
+
+export type ShelfView = 'all' | 'reading' | 'want_to_read' | 'read' | 'archive';
+/** The shows Library's views, for books: Archive is what you've put down. */
+export const SHELF_VIEWS: { id: ShelfView; label: string }[] = [
+	{ id: 'all', label: 'All' },
+	{ id: 'reading', label: 'Reading' },
+	{ id: 'want_to_read', label: 'Want to read' },
+	{ id: 'read', label: 'Read' },
+	{ id: 'archive', label: 'Archive' }
+];
+
+/** Your books: everything on your Hardcover shelf — in the library or not —
+ *  and never the library books you haven't touched; narrowed to one view. */
+export function shelfView(books: MyBook[], view: ShelfView): MyBook[] {
+	const want = view === 'all' ? null : view === 'archive' ? [...STATUS_FILTER.on_hold, ...STATUS_FILTER.abandoned] : STATUS_FILTER[view];
+	return books.filter((b) => b.status !== 'unread' && (!want || want.includes(b.status)));
+}
+
 /** `shelfIds`: the library ids on the chosen shelf (fetched separately). */
 export function filterBooks(books: MyBook[], f: BookFilters, shelfIds: Set<number> | null = null): MyBook[] {
 	return books.filter((b) => {

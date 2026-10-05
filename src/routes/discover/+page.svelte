@@ -9,6 +9,7 @@
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import AddButton from '$lib/components/AddButton.svelte';
+	import ServerEntry from '$lib/components/ServerEntry.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
 	import { loadArrStatus } from '$lib/arr.svelte';
@@ -433,6 +434,17 @@
 				</ul>
 			{/if}
 		{:else}
+			{#if data.onServer}
+				{#await data.onServer then onServer}
+					{#if onServer.length}
+						<ServerEntry
+							title="On the server"
+							sub={`${onServer.length} ${data.mediaType === 'movie' ? (onServer.length === 1 ? 'movie' : 'movies') : onServer.length === 1 ? 'show' : 'shows'} not on your list`}
+							href={`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`}
+						/>
+					{/if}
+				{/await}
+			{/if}
 			{#await data.rows}
 				{@render skeletonShelves(3)}
 			{:then rows}

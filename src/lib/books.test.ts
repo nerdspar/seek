@@ -16,6 +16,7 @@ import {
 	progressText,
 	sortBooks,
 	filterBooks,
+	shelfView,
 	topGenres,
 	bookFiltersActive,
 	NO_BOOK_FILTERS,
@@ -160,6 +161,19 @@ describe('sorting and filtering', () => {
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, genre: 'FANTASY' }))).toHaveLength(3);
 		expect(bookFiltersActive(NO_BOOK_FILTERS)).toBe(false);
 		expect(bookFiltersActive({ ...NO_BOOK_FILTERS, genre: 'x' })).toBe(true);
+	});
+
+	it('your books: only what is on your shelf, by view (Archive = paused or did not finish)', () => {
+		const more = myBooks(lib, [
+			sb(101, 'The Way of Kings', { status: 'reading' }),
+			sb(102, 'Dune', { status: 'abandoned' }),
+			sb(9, 'Paper copy', { status: 'on_hold' }),
+			sb(10, 'Wanted', { status: 'want_to_read' })
+		]);
+		expect(titles(shelfView(more, 'all'))).toEqual(['The Way of Kings', 'Dune', 'Paper copy', 'Wanted']);
+		expect(titles(shelfView(more, 'archive'))).toEqual(['Dune', 'Paper copy']);
+		expect(titles(shelfView(more, 'want_to_read'))).toEqual(['Wanted']);
+		expect(titles(shelfView(more, 'read'))).toEqual([]);
 	});
 
 	it('offers the most common genres first, leaving out codes and placeholders', () => {

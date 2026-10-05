@@ -14,6 +14,7 @@
 		coverThumb,
 		finishedByMonth,
 		highestRated,
+		shelfView,
 		readingStats,
 		readingStreaks,
 		recentlyAdded,
@@ -183,8 +184,8 @@
 					<ul class="links">
 						<li>
 							<button onclick={() => goto('/books/library')}>
-								<span>Library</span>
-								<span class="count tnum">{all.filter((b) => b.source === 'library').length}<span class="chev">›</span></span>
+								<span>Your books</span>
+								<span class="count tnum">{shelfView(all, 'all').length}<span class="chev">›</span></span>
 							</button>
 						</li>
 						{#if data.shelves}
@@ -199,16 +200,16 @@
 						{/if}
 						{#if all.some((b) => b.source === 'entry')}
 							<li>
-								<button onclick={() => goto('/books?kind=mine')}>
-									<span>Not in the library</span>
+								<button onclick={() => goto('/books/library?kind=mine')}>
+									<span>Not in library</span>
 									<span class="count tnum">{all.filter((b) => b.source === 'entry').length}<span class="chev">›</span></span>
 								</button>
 							</li>
 						{/if}
 						<li>
-							<button onclick={() => goto('/books?status=abandoned')}>
-								<span>Did not finish</span>
-								<span class="count tnum">{all.filter((b) => b.status === 'abandoned').length}<span class="chev">›</span></span>
+							<button onclick={() => goto('/books/library?view=archive')}>
+								<span>Archive</span>
+								<span class="count tnum">{shelfView(all, 'archive').length}<span class="chev">›</span></span>
 							</button>
 						</li>
 					</ul>

@@ -233,6 +233,54 @@ export async function libraryStatus(): Promise<{ sonarr: string[]; radarr: strin
 	return { sonarr: [...sonarr], radarr: [...radarr] };
 }
 
+/* ── On the server, not on your list ───────────────────────────────────────── */
+
+/** A Sonarr series or Radarr movie, as a browse tile (TMDB-keyed, like Floppy). */
+export type ServerTitle = {
+	mediaType: 'tv' | 'movie';
+	source: 'tmdb';
+	mediaId: string;
+	title: string;
+	poster: string | null;
+	year: number | null;
+	addedAt: string | null;
+};
+
+/** One library row as a tile; null when it has no TMDB id to match Floppy on. */
+export function mapServerTitle(service: Service, raw: unknown): ServerTitle | null {
+	const r = rec(raw);
+	const tmdbId = r.tmdbId;
+	if (typeof tmdbId !== 'number' || tmdbId <= 0) return null;
+	const poster = arrList(r.images).map(rec).find((i) => i.coverType === 'poster');
+	return {
+		mediaType: service === 'sonarr' ? 'tv' : 'movie',
+		source: 'tmdb',
+		mediaId: String(tmdbId),
+		title: typeof r.title === 'string' ? r.title : 'Untitled',
+		// Radarr hands back TMDB's full-size original; a grid tile needs a thumbnail.
+		poster: typeof poster?.remoteUrl === 'string' ? poster.remoteUrl.replace('image.tmdb.org/t/p/original/', 'image.tmdb.org/t/p/w342/') : null,
+		year: typeof r.year === 'number' && r.year > 0 ? r.year : null,
+		addedAt: typeof r.added === 'string' ? r.added : null
+	};
+}
+
+/** What's on the server that isn't on your list, newest to the server first —
+ *  someone else's request, or something added straight in Sonarr/Radarr. */
+export function notOnYourList(titles: ServerTitle[], tracked: Set<string>): ServerTitle[] {
+	return titles
+		.filter((t) => !tracked.has(t.mediaId))
+		.sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''));
+}
+
+/** Every series (Sonarr) or movie (Radarr) on the server, as tiles. */
+export async function serverTitles(service: Service): Promise<ServerTitle[]> {
+	if (!configured(service)) return [];
+	const rows = await arr<unknown[]>(service, service === 'sonarr' ? '/series' : '/movie', { timeoutMs: 30_000 });
+	return arrList(rows)
+		.map((r) => mapServerTitle(service, r))
+		.filter((t): t is ServerTitle => t !== null);
+}
+
 /* ── Adding ────────────────────────────────────────────────────────────────── */
 
 export type AddOptions = {

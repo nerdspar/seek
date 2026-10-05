@@ -8,6 +8,7 @@
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import UploadSheet from '$lib/components/UploadSheet.svelte';
+	import ServerEntry from '$lib/components/ServerEntry.svelte';
 	import DownloadSheet from '$lib/components/DownloadSheet.svelte';
 	import BookTileButtons from '$lib/components/BookTileButtons.svelte';
 	import { tabReselect } from '$lib/tabReselect';
@@ -204,6 +205,17 @@
 				{/each}
 			{/if}
 		{:else}
+			{#if data.library}
+				{#await data.library then lib}
+					{#if lib?.total}
+						<ServerEntry
+							title="In my library"
+							sub={`${lib.total} ${lib.total === 1 ? 'book' : 'books'} · ${lib.unstarted} not started`}
+							href="/discover/books/library"
+						/>
+					{/if}
+				{/await}
+			{/if}
 			<!-- Yours first: "Because you read…/like…", when there's anything to grow from. -->
 			{#await data.personal then personal}
 				{#each personal as r (r.key)}

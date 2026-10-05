@@ -13,8 +13,9 @@
 		onchange: (f: BookFilters) => void;
 		onmanage: () => void;
 		onclose: () => void;
-		/** 'library': the whole library — adds "Not started", drops "Elsewhere". */
-		scope?: 'list' | 'library';
+		/** 'library' (In my library): adds "Not started", drops "Not in library".
+		 *  'shelf' (Your books): no Status — that page's views choose it. */
+		scope?: 'list' | 'library' | 'shelf';
 	};
 	let { filters, genres, resultCount, onchange, onmanage, onclose, scope = 'list' }: Props = $props();
 
@@ -52,12 +53,14 @@
 			<button class="reset" onclick={() => onchange(NO_BOOK_FILTERS)}>Reset</button>
 		</div>
 
-		<h3>Status</h3>
-		<div class="chips">
-			{#each scope === 'library' ? [...STATUS, { id: 'unstarted' as const, label: 'Not started' }] : STATUS as s (s.id)}
-				<button class:on={filters.status === s.id} aria-pressed={filters.status === s.id} onclick={() => set({ status: s.id })}>{s.label}</button>
-			{/each}
-		</div>
+		{#if scope !== 'shelf'}
+			<h3>Status</h3>
+			<div class="chips">
+				{#each scope === 'library' ? [...STATUS, { id: 'unstarted' as const, label: 'Not started' }] : STATUS as s (s.id)}
+					<button class:on={filters.status === s.id} aria-pressed={filters.status === s.id} onclick={() => set({ status: s.id })}>{s.label}</button>
+				{/each}
+			</div>
+		{/if}
 
 		<h3>Kind</h3>
 		<div class="chips">
