@@ -363,8 +363,9 @@ export function sortBooks(books: MyBook[], sort: BookSort): MyBook[] {
 /** Which books: by status, by where it lives / what kind of file, by one of
  *  your shelves, by genre. */
 export type BookFilters = {
-	status: 'all' | 'reading' | 'want_to_read' | 'on_hold' | 'read' | 'abandoned' | 'unstarted';
-	/** ebook / audiobook: files in BookOrbit; `mine`: your own books outside it. */
+	status: 'all' | 'reading' | 'want_to_read' | 'on_hold' | 'read' | 'abandoned';
+	/** ebook / audiobook: files in BookOrbit; `mine` ("Elsewhere"): books on your
+	 *  shelf that BookOrbit doesn't have — paper, loans, reading history. */
 	kind: 'all' | 'ebook' | 'audiobook' | 'mine';
 	/** A shelf (BookOrbit collection) id. */
 	shelf: number | null;
@@ -380,8 +381,7 @@ const STATUS_FILTER: Record<Exclude<BookFilters['status'], 'all'>, BookReadStatu
 	want_to_read: ['want_to_read'],
 	on_hold: ['on_hold'],
 	read: ['read', 'skimmed'],
-	abandoned: ['abandoned'],
-	unstarted: ['unread']
+	abandoned: ['abandoned']
 };
 
 /** `shelfIds`: the library ids on the chosen shelf (fetched separately). */
@@ -396,11 +396,16 @@ export function filterBooks(books: MyBook[], f: BookFilters, shelfIds: Set<numbe
 	});
 }
 
+/* Not genres: bookstore category codes ("FIC000000") and placeholders that
+   arrive in files' metadata. */
+const NOT_A_GENRE = /^([A-Z]{3}\d{6}|none|general|unknown|n\/a)$/i;
+
 /** The genres across your books, most common first — the filter's choices. */
 export function topGenres(books: MyBook[], max = 12): string[] {
 	const counts = new Map<string, { name: string; n: number }>();
 	for (const b of books)
 		for (const g of b.genres) {
+			if (NOT_A_GENRE.test(g.trim())) continue;
 			const k = g.toLowerCase();
 			const c = counts.get(k) ?? { name: g, n: 0 };
 			c.n++;
@@ -1114,4 +1119,79 @@ const METRIC_WORDS: Record<GoalMetric, [string, string]> = { book: ['book', 'boo
 export function goalProgressText(g: Pick<ReadingGoalItem, 'metric' | 'target' | 'done'>): string {
 	const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
 	return `${fmt(g.done)} of ${fmt(g.target)} ${METRIC_WORDS[g.metric][g.target === 1 ? 0 : 1]}`;
+}
+
+/* ── Profile → Reading: the week, streaks, months, rails ─────────────────── */
+
+const addDays = (day: string, n: number) => {
+	const d = new Date(`${day}T12:00:00Z`);
+	d.setUTCDate(d.getUTCDate() + n);
+	return d.toISOString().slice(0, 10);
+};
+
+/** The last seven days ending today, oldest first: did you read that day?
+ *  `days` are the calendar days (yyyy-mm-dd) with reading on them. */
+export function weekActivity(days: string[], today: string): { day: string; read: boolean }[] {
+	const set = new Set(days);
+	return Array.from({ length: 7 }, (_, i) => {
+		const day = addDays(today, i - 6);
+		return { day, read: set.has(day) };
+	});
+}
+
+/** Your reading streaks: the current run (alive if you read today or
+ *  yesterday) and the longest run among `days`. */
+export function readingStreaks(days: string[], today: string): { current: number; longest: number } {
+	const set = new Set(days);
+	let current = 0;
+	for (let d = set.has(today) ? today : addDays(today, -1); set.has(d); d = addDays(d, -1)) current++;
+	let longest = 0;
+	for (const d of set) {
+		if (set.has(addDays(d, -1))) continue; // not the start of a run
+		let n = 0;
+		for (let x = d; set.has(x); x = addDays(x, 1)) n++;
+		longest = Math.max(longest, n);
+	}
+	return { current, longest };
+}
+
+/** Books finished in each month of `year` (twelve numbers, January first). */
+export function finishedByMonth(books: MyBook[], year: number): number[] {
+	const out = Array<number>(12).fill(0);
+	for (const b of books) {
+		if (b.status !== 'read' || !b.finishedAt) continue;
+		const d = new Date(b.finishedAt);
+		if (d.getFullYear() === year) out[d.getMonth()]++;
+	}
+	return out;
+}
+
+/** The authors you've finished most, most first. */
+export function topAuthors(books: MyBook[], max = 5): { name: string; count: number }[] {
+	const counts = new Map<string, { name: string; count: number }>();
+	for (const b of books) {
+		if (b.status !== 'read') continue;
+		const a = b.authors[0];
+		if (!a) continue;
+		const c = counts.get(a.toLowerCase()) ?? { name: a, count: 0 };
+		c.count++;
+		counts.set(a.toLowerCase(), c);
+	}
+	return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, max);
+}
+
+/** Your highest-rated books, best (then most recent) first. */
+export function highestRated(books: MyBook[], max = 12): MyBook[] {
+	return books
+		.filter((b) => b.myRating !== null)
+		.sort((a, b) => b.myRating! - a.myRating! || (b.finishedAt ?? b.activeAt ?? '').localeCompare(a.finishedAt ?? a.activeAt ?? ''))
+		.slice(0, max);
+}
+
+/** The newest arrivals in the library. */
+export function recentlyAdded(books: MyBook[], max = 12): MyBook[] {
+	return books
+		.filter((b) => b.source === 'library' && b.addedAt)
+		.sort((a, b) => b.addedAt!.localeCompare(a.addedAt!))
+		.slice(0, max);
 }

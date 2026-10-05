@@ -22,14 +22,13 @@
 		{ id: 'want_to_read', label: 'Want to read' },
 		{ id: 'read', label: 'Read' },
 		{ id: 'on_hold', label: 'Paused' },
-		{ id: 'abandoned', label: 'Did not finish' },
-		{ id: 'unstarted', label: 'Not started' }
+		{ id: 'abandoned', label: 'Did not finish' }
 	];
 	const KIND: { id: BookFilters['kind']; label: string }[] = [
 		{ id: 'all', label: 'All' },
 		{ id: 'ebook', label: 'Ebook' },
 		{ id: 'audiobook', label: 'Audiobook' },
-		{ id: 'mine', label: 'Not in library' }
+		{ id: 'mine', label: 'Elsewhere' }
 	];
 
 	type Shelf = { id: number; name: string; count: number };

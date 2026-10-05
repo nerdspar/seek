@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import GoalSheet from '$lib/components/GoalSheet.svelte';
 	import { setSegment } from '$lib/segment';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -95,12 +96,22 @@
 	const VIEW_KEY = 'seek:books:view';
 	let sort = $state<BookSort>('active');
 	let filters = $state<BookFilters>({ ...NO_BOOK_FILTERS });
-	try {
-		const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
-		if (saved?.sort) sort = saved.sort;
-		if (saved?.filters) filters = { ...NO_BOOK_FILTERS, ...saved.filters };
-	} catch {
-		/* private mode, or nothing saved */
+	const STATUSES: BookFilters['status'][] = ['all', 'reading', 'want_to_read', 'on_hold', 'read', 'abandoned'];
+	{
+		let start: BookFilters = { ...NO_BOOK_FILTERS };
+		try {
+			const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
+			if (saved?.sort) sort = saved.sort;
+			if (saved?.filters) start = { ...NO_BOOK_FILTERS, ...saved.filters };
+		} catch {
+			/* private mode, or nothing saved */
+		}
+		// A filter saved by an older Seek ("Not started") no longer exists.
+		if (!STATUSES.includes(start.status)) start = { ...start, status: 'all' };
+		// Profile → Reading links here for one status (e.g. ?status=abandoned).
+		const asked = page.url.searchParams.get('status') as BookFilters['status'] | null;
+		if (asked && STATUSES.includes(asked)) start = { ...NO_BOOK_FILTERS, status: asked };
+		filters = start;
 	}
 	function remember() {
 		try {
@@ -132,10 +143,6 @@
 	/* Long sections would bury everything after them; they open on request. */
 	const CAP = 8;
 	let expanded = $state<Record<string, boolean>>({});
-	/* Owned but never started — the library, not the reading list. Collapsed,
-	   unless you filtered to it. */
-	let showLibrary = $state(false);
-	let libraryShown = $state(40);
 </script>
 
 <div class="app">
@@ -190,11 +197,13 @@
 				{#each Array(5) as _, i (i)}<li><Skeleton height="98px" radius={14} /></li>{/each}
 			</ul>
 		{:then [library, shelf]}
-			{@const all = myBooks(library, shelf)}
+			{@const everything = myBooks(library, shelf)}
+			<!-- Your list is your shelf. The shared library (whatever anyone
+			     downloaded) is browsed from Profile → Reading → Library. -->
+			{@const all = everything.filter((b) => b.status !== 'unread')}
 			{@const shown = sortBooks(filterBooks(all, filters, shelfIds), sort)}
 			{@const filtering = bookFiltersActive(filters)}
 			{@const groups = readingSections(shown, filtering ? [] : requests)}
-			{@const unstarted = shown.filter((b) => b.status === 'unread')}
 			{@const genres = topGenres(all)}
 			{#each groups as g (g.title)}
 				{@const open = expanded[g.title]}
@@ -227,37 +236,18 @@
 				</section>
 			{/each}
 
-			{#if !groups.length && !unstarted.length}
+			{#if !groups.length}
 				<div class="empty">
 					{#if filtering}
 						<h2>No books match</h2>
 						<p><button class="linkbtn" onclick={() => { filters = { ...NO_BOOK_FILTERS }; remember(); }}>Clear the filters</button></p>
 					{:else}
 						<h2>Nothing on your reading list yet</h2>
-						<p>Tap + to add a book — one you're reading, have read, or want to. Or find something new in Discover → Books.</p>
+						<p>Tap + to add a book — one you're reading, have read, or want to. Browse the whole library from Profile → Reading → Library, or find something new in Discover → Books.</p>
 					{/if}
 				</div>
 			{/if}
 
-			{#if unstarted.length}
-				{@const libOpen = showLibrary || filters.status === 'unstarted'}
-				<section class="group">
-					<button class="libhead" onclick={() => (showLibrary = !showLibrary)}>
-						<h2>Your library <span class="count tnum">{unstarted.length}</span></h2>
-						<span class="chev">{libOpen ? '−' : '+'}</span>
-					</button>
-					{#if libOpen}
-						<ul class="rows">
-							{#each unstarted.slice(0, libraryShown) as b (b.key)}
-								<li><BookRow book={b} onopen={(x) => (openBook = x)} /></li>
-							{/each}
-						</ul>
-						{#if unstarted.length > libraryShown}
-							<button class="more" onclick={() => (libraryShown += 60)}>Show more</button>
-						{/if}
-					{/if}
-				</section>
-			{/if}
 
 			{#if filterOpen}
 				<BookFilterSheet
@@ -371,9 +361,6 @@
 	.count { margin-left: 4px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	.rows { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 	.more { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--signal-solid); }
-	.libhead { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; }
-	.libhead h2 { margin: 0 0 8px; }
-	.chev { font-size: 20px; color: var(--text-dim); }
 
 	.empty { margin: 14vh 0 24px; text-align: center; }
 	.empty h2 { margin: 0 0 8px; font-size: 17px; }

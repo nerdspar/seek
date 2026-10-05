@@ -10,7 +10,19 @@
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import { onMount } from 'svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
-	import { coverThumb, readingStats, type MyBook, type ReadingRange } from '$lib/books';
+	import {
+		coverThumb,
+		finishedByMonth,
+		highestRated,
+		readingStats,
+		readingStreaks,
+		recentlyAdded,
+		topAuthors,
+		weekActivity,
+		type MyBook,
+		type ReadingRange
+	} from '$lib/books';
+	import ShelvesSheet from '$lib/components/ShelvesSheet.svelte';
 	import type { PageData } from './$types';
 
 	onMount(() => void loadArrStatus());
@@ -34,6 +46,10 @@
 	const href = (range: string, view: string) =>
 		`/profile?range=${range}${view === 'reading' ? '&view=reading' : ''}`;
 	let openBook = $state<MyBook | null>(null);
+	let shelvesOpen = $state(false);
+	const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	/** "M", "T"… for a calendar day. */
+	const weekday = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'narrow', timeZone: 'UTC' });
 	const peakOf = (weekday: { hours: number }[]) => Math.max(1, ...weekday.map((d) => d.hours));
 
 	/** Total minutes as "361 days, 20 hours, 20 minutes". Days are dropped when
@@ -94,35 +110,120 @@
 
 	<main use:tabReselect={{ tab: 'profile' }}>
 		{#if data.view === 'reading'}
-			<!-- Reading, laid out like Watching: the chosen range first (from your
-			     library and your own books alike), then this year's goal and streaks. -->
+			<!-- Reading, laid out like Watching: the chosen range, month by month,
+			     the week and streaks, goals, the collection, then rails. -->
 			{#await data.books then books}
-				{@const rs = readingStats(books ?? [], data.range as ReadingRange)}
+				{@const all = books ?? []}
+				{@const rs = readingStats(all, data.range as ReadingRange)}
+				{@const year = data.range === 'last_year' ? new Date().getFullYear() - 1 : new Date().getFullYear()}
+				{@const authors = topAuthors(all)}
 				<section class="headline">
 					<span class="big tnum">{fmt(rs.finished)}</span>
 					<span class="unit">{rs.finished === 1 ? 'book' : 'books'} finished · {RANGES.find((r) => r.id === data.range)?.label.toLowerCase()}</span>
 					{#if rs.pages}<span class="breakdown tnum">{fmt(rs.pages)} pages</span>{/if}
 				</section>
+
+				{#if data.range === 'this_year' || data.range === 'last_year'}
+					{@const months = finishedByMonth(all, year)}
+					{@const peak = Math.max(1, ...months)}
+					{#if months.some((m) => m > 0)}
+						<section>
+							<h2>Books by month</h2>
+							<div class="bars twelve">
+								{#each months as m, i (i)}
+									<div class="bar" title={`${m} in ${MONTHS[i]}`}>
+										<div class="col"><div class="fill" style:height={`${m ? Math.max(6, (m / peak) * 100) : 0}%`}></div></div>
+										<span class="lab">{MONTHS[i][0]}</span>
+									</div>
+								{/each}
+							</div>
+						</section>
+					{/if}
+				{/if}
+
 				<ul class="tiles three">
 					<li><span class="n tnum">{rs.reading}</span><span class="l">Reading now</span></li>
 					<li><span class="n tnum">{rs.avgRating ?? '—'}</span><span class="l">Avg rating</span></li>
-					<li><span class="n tnum">{fmt((books ?? []).filter((b) => b.status === 'want_to_read').length)}</span><span class="l">Want to read</span></li>
+					<li><span class="n tnum">{fmt(all.filter((b) => b.status === 'want_to_read').length)}</span><span class="l">Want to read</span></li>
 				</ul>
-				{#if rs.recent.length}
-					<section class="recent">
-						<h2>Finished</h2>
-						<ul class="rail">
-							{#each rs.recent as b (b.key)}
+
+				{#if data.readingDays}
+					{#await data.readingDays then days}
+						{@const today = new Date().toLocaleDateString('en-CA')}
+						{@const week = weekActivity(days, today)}
+						{@const streak = readingStreaks(days, today)}
+						<section>
+							<h2>This week</h2>
+							<div class="week" aria-label="Days you read in the last week">
+								{#each week as d (d.day)}
+									<span class="day">
+										<span class="dot" class:on={d.read}></span>
+										<span class="dl">{weekday(d.day)}</span>
+									</span>
+								{/each}
+							</div>
+						</section>
+						<section class="streaks">
+							<div><span class="n tnum">{streak.current}</span><span class="l">Day streak</span></div>
+							<div><span class="n tnum">{streak.longest}</span><span class="l">Longest streak</span></div>
+						</section>
+					{/await}
+				{/if}
+
+				{#if data.reading}
+					{#await data.reading then goals}
+						<ReadingCard {goals} />
+					{:catch}
+						<!-- Hardcover unreachable: the numbers above still stand. -->
+					{/await}
+				{/if}
+
+				<section class="collection">
+					<h2>Collection</h2>
+					<ul class="links">
+						<li>
+							<button onclick={() => goto('/books/library')}>
+								<span>Library</span>
+								<span class="count tnum">{all.filter((b) => b.source === 'library').length}<span class="chev">›</span></span>
+							</button>
+						</li>
+						{#if data.shelves}
+							{#await data.shelves then shelves}
 								<li>
-									<button onclick={() => (openBook = b)}>
-										<Poster src={coverThumb(b.coverUrl, 92)} width={92} height={138} />
-										<span class="cap">{b.title}</span>
+									<button onclick={() => (shelvesOpen = true)}>
+										<span>Shelves</span>
+										<span class="count tnum">{shelves.length}<span class="chev">›</span></span>
 									</button>
 								</li>
-							{/each}
-						</ul>
-					</section>
-				{/if}
+							{/await}
+						{/if}
+						<li>
+							<button onclick={() => goto('/books?status=abandoned')}>
+								<span>Did not finish</span>
+								<span class="count tnum">{all.filter((b) => b.status === 'abandoned').length}<span class="chev">›</span></span>
+							</button>
+						</li>
+					</ul>
+				</section>
+
+				{#each [{ title: 'Finished', list: rs.recent }, { title: 'Your highest rated', list: highestRated(all) }, { title: 'Recently added to the library', list: recentlyAdded(all) }] as rail (rail.title)}
+					{#if rail.list.length}
+						<section class="recent">
+							<h2>{rail.title}</h2>
+							<ul class="rail">
+								{#each rail.list as b (b.key)}
+									<li>
+										<button onclick={() => (openBook = b)}>
+											<Poster src={coverThumb(b.coverUrl, 92)} width={92} height={138} />
+											<span class="cap">{b.title}</span>
+										</button>
+									</li>
+								{/each}
+							</ul>
+						</section>
+					{/if}
+				{/each}
+
 				{#if rs.topGenres.length}
 					<section>
 						<h2>Your genres</h2>
@@ -133,17 +234,20 @@
 						</ul>
 					</section>
 				{/if}
+				{#if authors.length}
+					<section>
+						<h2>Top authors</h2>
+						<ul class="list">
+							{#each authors as a (a.name)}
+								<li><span>{a.name}</span><span class="dim tnum">{a.count}</span></li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
 				{#if !rs.finished && !rs.reading}
 					<div class="empty"><h2>No books here yet</h2><p>Mark a book Read (from Watchlist → Books) and it shows up here.</p></div>
 				{/if}
 			{/await}
-			{#if data.reading}
-				{#await data.reading then goals}
-					<ReadingCard {goals} />
-				{:catch}
-					<!-- Hardcover unreachable: the numbers above still stand. -->
-				{/await}
-			{/if}
 		{:else}
 		{#await data.stats}
 			<!-- The shell is already on screen; only the numbers are pending. -->
@@ -323,6 +427,9 @@
 		{/if}
 	</main>
 
+	{#if shelvesOpen}
+		<ShelvesSheet onclose={() => (shelvesOpen = false)} />
+	{/if}
 	{#if openBook}
 		<BookSheet book={openBook} onclose={() => (openBook = null)} />
 	{/if}
@@ -423,6 +530,12 @@
 	.sub { margin: 0 0 12px; font-size: 13px; color: var(--text); }
 
 	.bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; height: 110px; }
+	.bars.twelve { grid-template-columns: repeat(12, 1fr); gap: 4px; height: 96px; }
+	.week { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 14px; background: var(--surface); }
+	.day { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+	.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--surface-raised); }
+	.dot.on { background: var(--signal); }
+	.dl { font-size: 11px; color: var(--text-dim); }
 	.bar { display: flex; flex-direction: column; gap: 6px; }
 	.col { flex: 1; display: flex; align-items: flex-end; border-radius: 6px; background: var(--surface); overflow: hidden; }
 	.fill { width: 100%; border-radius: 6px; background: var(--signal); }

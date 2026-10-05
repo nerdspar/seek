@@ -9,9 +9,9 @@ import {
 import { getRecentlyAdded } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
-import { listGoals, shelfLinked } from '$lib/server/books/shelf';
+import { listGoals, readingDays, shelfLinked } from '$lib/server/books/shelf';
 import { myBookList } from '$lib/server/books/discovery';
-import { bookorbitConfigured } from '$lib/server/books/bookorbit';
+import { bookorbitConfigured, bookorbitLinked, listShelves } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
@@ -58,6 +58,10 @@ export const load: PageServerLoad = async ({ url }) => {
 		media,
 		view,
 		// Your books for the Reading view's numbers (computed client-side per range).
-		books: media.book ? myBookList().catch(() => []) : null
+		books: media.book ? myBookList().catch(() => []) : null,
+		// The days you read (Hardcover's journal), for the week and streaks.
+		readingDays: media.book && shelfLinked() ? readingDays().catch(() => [] as string[]) : null,
+		// Your BookOrbit shelves, for Collection → Shelves.
+		shelves: media.book && bookorbitLinked() ? listShelves().catch(() => []) : null
 	};
 };

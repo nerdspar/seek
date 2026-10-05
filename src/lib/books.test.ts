@@ -28,6 +28,12 @@ import {
 	recommendationSeeds,
 	librarySeeds,
 	mapShelfRow,
+	weekActivity,
+	readingStreaks,
+	finishedByMonth,
+	topAuthors,
+	highestRated,
+	recentlyAdded,
 	mapGoal,
 	currentGoals,
 	goalProgressText,
@@ -146,7 +152,6 @@ describe('sorting and filtering', () => {
 
 	it('filters by status, kind, shelf and genre (case-insensitive)', () => {
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, status: 'reading' }))).toEqual(['The Way of Kings', 'Paper copy']);
-		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, status: 'unstarted' }))).toEqual(['A Wizard of Earthsea']);
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, kind: 'audiobook' }))).toEqual(['Dune']);
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, kind: 'mine' }))).toEqual(['Paper copy']);
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, shelf: 4 }, new Set([2, 3])))).toEqual(['Dune', 'A Wizard of Earthsea']);
@@ -155,8 +160,10 @@ describe('sorting and filtering', () => {
 		expect(bookFiltersActive({ ...NO_BOOK_FILTERS, genre: 'x' })).toBe(true);
 	});
 
-	it('offers the most common genres first', () => {
+	it('offers the most common genres first, leaving out codes and placeholders', () => {
 		expect(topGenres(books)).toEqual(['Fantasy', 'Science Fiction']);
+		const junk = myBooks([mapReadingBook({ id: 9, title: 'X', genres: ['FIC000000', 'None', 'General', 'Horror'] })], []);
+		expect(topGenres(junk)).toEqual(['Horror']);
 	});
 
 	it('knows an audiobook file from an ebook one', () => {
@@ -708,5 +715,48 @@ describe('reading goals', () => {
 		expect(goalProgressText({ metric: 'book', target: 12, done: 3 })).toBe('3 of 12 books');
 		expect(goalProgressText({ metric: 'page', target: 5000, done: 1240 })).toBe('1,240 of 5,000 pages');
 		expect(goalProgressText({ metric: 'hour', target: 1, done: 0.5 })).toBe('0.5 of 1 hour');
+	});
+});
+
+describe('Profile → Reading', () => {
+	const today = '2026-10-05';
+
+	it('lays out the last seven days, oldest first, marking the days you read', () => {
+		expect(weekActivity(['2026-10-05', '2026-10-03', '2026-09-28'], today)).toEqual([
+			{ day: '2026-09-29', read: false },
+			{ day: '2026-09-30', read: false },
+			{ day: '2026-10-01', read: false },
+			{ day: '2026-10-02', read: false },
+			{ day: '2026-10-03', read: true },
+			{ day: '2026-10-04', read: false },
+			{ day: '2026-10-05', read: true }
+		]);
+	});
+
+	it('counts streaks: the current one lives through today if you read yesterday', () => {
+		const days = ['2026-10-04', '2026-10-03', '2026-10-02', '2026-09-20', '2026-09-19', '2026-09-18', '2026-09-17'];
+		expect(readingStreaks(days, today)).toEqual({ current: 3, longest: 4 });
+		expect(readingStreaks(['2026-10-01'], today)).toEqual({ current: 0, longest: 1 });
+		expect(readingStreaks([], today)).toEqual({ current: 0, longest: 0 });
+	});
+
+	const books = myBooks(
+		[mapReadingBook({ id: 1, title: 'Lib new', authors: ['Z'], addedAt: '2026-09-01T00:00:00Z' }), mapReadingBook({ id: 2, title: 'Lib old', authors: ['Y'], addedAt: '2025-01-01T00:00:00Z' })],
+		[
+			sb(1, 'A', { authors: ['Andy Weir'], status: 'read', rating: 5, finishedAt: '2026-03-10T12:00:00.000Z' }),
+			sb(2, 'B', { authors: ['Andy Weir'], status: 'read', rating: 3, finishedAt: '2026-03-20T12:00:00.000Z' }),
+			sb(3, 'C', { authors: ['N. K. Jemisin'], status: 'read', finishedAt: '2025-12-01T12:00:00.000Z' }),
+			sb(4, 'D', { authors: ['Q'], status: 'reading', rating: 4 })
+		]
+	);
+
+	it('counts finished books per month, top authors, best-rated and newest arrivals', () => {
+		expect(finishedByMonth(books, 2026)).toEqual([0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+		expect(topAuthors(books)).toEqual([
+			{ name: 'Andy Weir', count: 2 },
+			{ name: 'N. K. Jemisin', count: 1 }
+		]);
+		expect(highestRated(books).map((b) => b.title)).toEqual(['A', 'D', 'B']);
+		expect(recentlyAdded(books).map((b) => b.title)).toEqual(['Lib new', 'Lib old']);
 	});
 });

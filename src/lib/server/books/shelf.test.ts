@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 let myToken: string | null = 'hc_mine';
 vi.mock('../userctx', async (orig) => ({ ...(await orig<object>()), hardcoverUserToken: () => myToken }));
 
-import { deleteGoal, listGoals, myShelf, saveGoal, setPages, setRating, setStatus } from './shelf';
+import { deleteGoal, listGoals, readingDays, myShelf, saveGoal, setPages, setRating, setStatus } from './shelf';
 import { invalidateEveryone } from '../memo';
 
 /* A fake Hardcover: a shelf of user_book rows, goals, and every mutation recorded. */
@@ -13,6 +13,8 @@ let goals: Row[] = [];
 let calls: { op: string; vars: Record<string, unknown> }[] = [];
 let failNext: string | null = null;
 let recount = 0;
+let journal: (string | null)[] = [];
+let journalQueries: Record<string, unknown>[] = [];
 
 const ub = (id: number, bookId: number, status_id: number, read: Row | null = null, over: Row = {}): Row => ({
 	id,
@@ -41,6 +43,11 @@ function fakeFetch(_url: string, init: { body: string; headers: Record<string, s
 		return reply({ [op]: { id: 4242, error: null } });
 	}
 	if (query.includes('goals')) return reply({ me: [{ goals }] });
+	if (query.includes('me { id }')) return reply({ me: [{ id: 178538 }] });
+	if (query.includes('reading_journals')) {
+		journalQueries.push(variables);
+		return reply({ reading_journals: journal.map((d) => ({ journal_date: d })) });
+	}
 	const offset = Number(variables.offset ?? 0);
 	return reply({ me: [{ user_books: shelf.slice(offset, offset + 500) }] });
 }
@@ -55,6 +62,8 @@ beforeEach(() => {
 	calls = [];
 	failNext = null;
 	recount = 0;
+	journal = [];
+	journalQueries = [];
 	invalidateEveryone('books:');
 	vi.stubGlobal('fetch', vi.fn(fakeFetch));
 });
@@ -188,5 +197,13 @@ describe('reading goals', () => {
 	it('deletes (Hardcover answers without an id; only an error fails)', async () => {
 		await expect(deleteGoal(5)).resolves.toBeUndefined();
 		expect(calls).toEqual([{ op: 'delete_goal', vars: { id: 5 } }]);
+	});
+});
+
+describe('readingDays', () => {
+	it("asks Hardcover's journal for the days you read — as you, reading events only", async () => {
+		journal = ['2026-10-04', null, '2026-10-02'];
+		expect(await readingDays()).toEqual(['2026-10-04', '2026-10-02']);
+		expect(journalQueries[0]).toEqual({ id: 178538, events: ['progress_updated', 'user_book_read_finished', 'status_read'] });
 	});
 });

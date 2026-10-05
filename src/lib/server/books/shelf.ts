@@ -199,6 +199,35 @@ export function setPages(hardcoverId: number, pages: number, now = new Date()): 
 	});
 }
 
+/* ── Days you read (the week tracker and streaks) ───────────────────────── */
+
+/* Journal events that mean you actually read that day: pages moved (from any
+   device — BookOrbit's sync, the Xteink, Seek), or a book finished. Adding,
+   wanting or starting a book doesn't count. */
+const READING_EVENTS = ['progress_updated', 'user_book_read_finished', 'status_read'];
+
+/** The calendar days (newest first, about the last year and a bit) on which
+ *  Hardcover's journal shows you reading. */
+export function readingDays(): Promise<string[]> {
+	return memo('books:days', 10 * 60 * 1000, async () => {
+		const t = token();
+		const me = await hcAs<{ me: { id: number }[] }>(t, 'query { me { id } }');
+		const id = me.me?.[0]?.id;
+		if (!id) return [];
+		const data = await hcAs<{ reading_journals: { journal_date: string | null }[] }>(
+			t,
+			`query Days($id: Int!, $events: [String!]) {
+			  reading_journals(
+			    where: {user_id: {_eq: $id}, event: {_in: $events}, journal_date: {_is_null: false}},
+			    distinct_on: journal_date, order_by: {journal_date: desc}, limit: 450
+			  ) { journal_date }
+			}`,
+			{ id, events: READING_EVENTS }
+		);
+		return data.reading_journals.map((r) => r.journal_date).filter((d): d is string => Boolean(d));
+	});
+}
+
 /* ── Reading goals ──────────────────────────────────────────────────────── */
 
 /* Hardcover's privacy_settings: 3 is Private. */
