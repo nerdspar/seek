@@ -127,7 +127,7 @@
 				{@const authors = act ? act.authors.map((a) => ({ name: a.name, value: a.pages ? `${fmt(a.pages)} pages` : `${a.books} ${a.books === 1 ? 'book' : 'books'}` })) : topAuthors(all).map((a) => ({ name: a.name, value: `${a.count} ${a.count === 1 ? 'book' : 'books'}` }))}
 				<section class="headline">
 					<span class="big tnum">{fmt(rs.finished)}</span>
-					<span class="unit">{rs.finished === 1 ? 'book' : 'books'} finished · {RANGES.find((r) => r.id === data.range)?.label.toLowerCase()}</span>
+					<span class="unit">{rs.finished === 1 ? 'book' : 'books'} finished · {RANGES.find((r) => r.id === data.range)?.label}</span>
 					{#if act}
 						<span class="breakdown tnum">{fmt(act.pagesRead)} {act.pagesRead === 1 ? 'page' : 'pages'} read</span>
 					{:else if rs.pages}
