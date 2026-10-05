@@ -108,9 +108,11 @@
 		}
 		// A filter saved by an older Seek ("Not started") no longer exists.
 		if (!STATUSES.includes(start.status)) start = { ...start, status: 'all' };
-		// Profile → Reading links here for one status (e.g. ?status=abandoned).
+		// Profile → Reading links here for one status (?status=abandoned) or for
+		// the books you have outside the library (?kind=mine).
 		const asked = page.url.searchParams.get('status') as BookFilters['status'] | null;
 		if (asked && STATUSES.includes(asked)) start = { ...NO_BOOK_FILTERS, status: asked };
+		if (page.url.searchParams.get('kind') === 'mine') start = { ...NO_BOOK_FILTERS, kind: 'mine' };
 		filters = start;
 	}
 	function remember() {

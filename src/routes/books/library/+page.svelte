@@ -7,11 +7,25 @@
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import ShelvesSheet from '$lib/components/ShelvesSheet.svelte';
-	import { coverThumb, sortBooks, statusLabel, topGenres, type BookSort, type MyBook } from '$lib/books';
+	import SortSheet from '$lib/components/SortSheet.svelte';
+	import BookFilterSheet from '$lib/components/BookFilterSheet.svelte';
+	import {
+		NO_BOOK_FILTERS,
+		bookFiltersActive,
+		coverThumb,
+		filterBooks,
+		sortBooks,
+		statusLabel,
+		topGenres,
+		type BookFilters,
+		type BookSort,
+		type MyBook
+	} from '$lib/books';
 	import type { PageData } from './$types';
 
-	/** The whole library as a cover grid: sort it, narrow it to a genre or one
-	 *  of your shelves, and manage your shelves. Tap a book for its sheet. */
+	/** The whole library as a cover grid. Sort and Filter (your status, kind,
+	 *  shelf, genre — and managing shelves) sit in one row, like the shows
+	 *  library. Tap a book for its sheet. */
 	let { data }: { data: PageData } = $props();
 	/* Upload your own files into the library (BookOrbit). */
 	let uploading = $state(false);
@@ -19,19 +33,21 @@
 	const SORTS: { key: BookSort; label: string }[] = [
 		{ key: 'added', label: 'Recently added' },
 		{ key: 'title', label: 'Title' },
-		{ key: 'author', label: 'Author' }
+		{ key: 'author', label: 'Author' },
+		{ key: 'rating', label: 'Your rating' }
 	];
 	let sort = $state<BookSort>('added');
-	let genre = $state<string | null>(null);
-	let shelf = $state<number | null>(Number(page.url.searchParams.get('shelf')) || null);
+	let filters = $state<BookFilters>({ ...NO_BOOK_FILTERS, shelf: Number(page.url.searchParams.get('shelf')) || null });
 	let shelfIds = $state<Set<number> | null>(null);
 	let openBook = $state<MyBook | null>(null);
 	let shelvesOpen = $state(false);
+	let sortOpen = $state(false);
+	let filterOpen = $state(false);
 	let shown = $state(60);
 
 	/* A shelf's books come from BookOrbit (asked for when you pick one). */
 	$effect(() => {
-		const id = shelf;
+		const id = filters.shelf;
 		shelfIds = null;
 		if (id === null) return;
 		let live = true;
@@ -44,15 +60,7 @@
 		};
 	});
 
-	const view = (books: MyBook[]) =>
-		sortBooks(
-			books.filter(
-				(b) =>
-					(genre === null || b.genres.some((g) => g.toLowerCase() === genre!.toLowerCase())) &&
-					(shelf === null || (shelfIds !== null && b.libraryId !== null && shelfIds.has(b.libraryId)))
-			),
-			sort
-		);
+	const view = (books: MyBook[]) => sortBooks(filterBooks(books, filters, shelfIds), sort);
 </script>
 
 {#snippet uploadAction()}
@@ -71,36 +79,36 @@
 		{:then [books, shelves]}
 			{@const genres = topGenres(books, 10)}
 			{@const list = view(books)}
-			<div class="bar">
+			<div class="controls">
 				<span class="count tnum">{list.length} {list.length === 1 ? 'book' : 'books'}</span>
-				<button class="link" onclick={() => (shelvesOpen = true)}>Shelves</button>
+				<button class="ctl" onclick={() => (sortOpen = true)}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M6.5 12h11M10 17h4" /></svg>
+					{SORTS.find((x) => x.key === sort)?.label}
+				</button>
+				<button class="ctl" class:on={bookFiltersActive(filters)} onclick={() => (filterOpen = true)}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+					Filter
+				</button>
 			</div>
-			<div class="chips" role="tablist" aria-label="Sort">
-				{#each SORTS as s (s.key)}
-					<button class:on={sort === s.key} onclick={() => (sort = s.key)}>{s.label}</button>
-				{/each}
-			</div>
-			{#if shelves.length}
-				<div class="chips" aria-label="Shelf">
-					<button class:on={shelf === null} onclick={() => (shelf = null)}>All shelves</button>
-					{#each shelves as sh (sh.id)}
-						<button class:on={shelf === sh.id} onclick={() => (shelf = sh.id)}>{sh.name}</button>
-					{/each}
-				</div>
+			{#if sortOpen}
+				<SortSheet current={sort} options={SORTS} onchange={(k) => { sort = k as BookSort; sortOpen = false; }} onclose={() => (sortOpen = false)} />
 			{/if}
-			{#if genres.length}
-				<div class="chips" aria-label="Genre">
-					<button class:on={genre === null} onclick={() => (genre = null)}>All genres</button>
-					{#each genres as g (g)}
-						<button class:on={genre === g} onclick={() => (genre = g)}>{g}</button>
-					{/each}
-				</div>
+			{#if filterOpen}
+				<BookFilterSheet
+					scope="library"
+					{filters}
+					{genres}
+					resultCount={list.length}
+					onchange={(f) => (filters = f)}
+					onmanage={() => { filterOpen = false; shelvesOpen = true; }}
+					onclose={() => (filterOpen = false)}
+				/>
 			{/if}
 
-			{#if shelf !== null && shelfIds === null}
+			{#if filters.shelf !== null && shelfIds === null}
 				<p class="msg">Loading the shelf…</p>
 			{:else if !list.length}
-				<p class="msg">Nothing here{genre || shelf !== null ? ' with these choices' : ' yet'}.</p>
+				<p class="msg">Nothing here{bookFiltersActive(filters) ? ' with these filters' : ' yet'}.</p>
 			{:else}
 				<ul class="grid">
 					{#each list.slice(0, shown) as b (b.key)}
@@ -137,15 +145,13 @@
 
 <style>
 	main { padding: 4px var(--gutter) calc(var(--safe-b) + 32px); }
-	.bar { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; }
-	.count { font-size: 13px; color: var(--text-dim); }
-	.link { font-size: 14px; font-weight: 600; color: var(--signal-solid); }
-	.chips { display: flex; gap: 6px; margin: 0 0 8px; overflow-x: auto; scrollbar-width: none; }
-	.chips button {
-		flex: none; min-height: 32px; padding: 0 12px; border-radius: 9px; background: var(--surface);
-		font-size: 13px; font-weight: 600; color: var(--text-dim); white-space: nowrap;
+	.controls { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+	.count { flex: 1; font-size: 13px; color: var(--text-dim); }
+	.ctl {
+		display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 12px; border-radius: 9px;
+		background: var(--surface-raised); font-size: 13px; font-weight: 600; color: var(--text);
 	}
-	.chips button.on { background: var(--surface-raised); color: var(--text); }
+	.ctl.on { background: var(--signal); color: #fff; }
 	.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 16px 12px; margin: 12px 0 0; padding: 0; list-style: none; }
 	.grid li > button { position: relative; width: 100%; text-align: left; }
 	.badge {

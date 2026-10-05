@@ -363,7 +363,8 @@ export function sortBooks(books: MyBook[], sort: BookSort): MyBook[] {
 /** Which books: by status, by where it lives / what kind of file, by one of
  *  your shelves, by genre. */
 export type BookFilters = {
-	status: 'all' | 'reading' | 'want_to_read' | 'on_hold' | 'read' | 'abandoned';
+	/** `unstarted`: in the library with nothing on your shelf (Library only). */
+	status: 'all' | 'reading' | 'want_to_read' | 'on_hold' | 'read' | 'abandoned' | 'unstarted';
 	/** ebook / audiobook: files in BookOrbit; `mine` ("Elsewhere"): books on your
 	 *  shelf that BookOrbit doesn't have — paper, loans, reading history. */
 	kind: 'all' | 'ebook' | 'audiobook' | 'mine';
@@ -381,7 +382,8 @@ const STATUS_FILTER: Record<Exclude<BookFilters['status'], 'all'>, BookReadStatu
 	want_to_read: ['want_to_read'],
 	on_hold: ['on_hold'],
 	read: ['read', 'skimmed'],
-	abandoned: ['abandoned']
+	abandoned: ['abandoned'],
+	unstarted: ['unread']
 };
 
 /** `shelfIds`: the library ids on the chosen shelf (fetched separately). */

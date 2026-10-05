@@ -13,8 +13,10 @@
 		onchange: (f: BookFilters) => void;
 		onmanage: () => void;
 		onclose: () => void;
+		/** 'library': the whole library — adds "Not started", drops "Elsewhere". */
+		scope?: 'list' | 'library';
 	};
-	let { filters, genres, resultCount, onchange, onmanage, onclose }: Props = $props();
+	let { filters, genres, resultCount, onchange, onmanage, onclose, scope = 'list' }: Props = $props();
 
 	const STATUS: { id: BookFilters['status']; label: string }[] = [
 		{ id: 'all', label: 'All' },
@@ -28,7 +30,7 @@
 		{ id: 'all', label: 'All' },
 		{ id: 'ebook', label: 'Ebook' },
 		{ id: 'audiobook', label: 'Audiobook' },
-		{ id: 'mine', label: 'Elsewhere' }
+		{ id: 'mine', label: 'Not in library' }
 	];
 
 	type Shelf = { id: number; name: string; count: number };
@@ -52,14 +54,14 @@
 
 		<h3>Status</h3>
 		<div class="chips">
-			{#each STATUS as s (s.id)}
+			{#each scope === 'library' ? [...STATUS, { id: 'unstarted' as const, label: 'Not started' }] : STATUS as s (s.id)}
 				<button class:on={filters.status === s.id} aria-pressed={filters.status === s.id} onclick={() => set({ status: s.id })}>{s.label}</button>
 			{/each}
 		</div>
 
 		<h3>Kind</h3>
 		<div class="chips">
-			{#each KIND as k (k.id)}
+			{#each scope === 'library' ? KIND.filter((k) => k.id !== 'mine') : KIND as k (k.id)}
 				<button class:on={filters.kind === k.id} aria-pressed={filters.kind === k.id} onclick={() => set({ kind: k.id })}>{k.label}</button>
 			{/each}
 		</div>

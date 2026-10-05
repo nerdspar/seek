@@ -197,6 +197,14 @@
 								</li>
 							{/await}
 						{/if}
+						{#if all.some((b) => b.source === 'entry')}
+							<li>
+								<button onclick={() => goto('/books?kind=mine')}>
+									<span>Not in the library</span>
+									<span class="count tnum">{all.filter((b) => b.source === 'entry').length}<span class="chev">›</span></span>
+								</button>
+							</li>
+						{/if}
 						<li>
 							<button onclick={() => goto('/books?status=abandoned')}>
 								<span>Did not finish</span>
