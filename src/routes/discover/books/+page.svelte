@@ -8,7 +8,6 @@
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import UploadSheet from '$lib/components/UploadSheet.svelte';
-	import ServerEntry from '$lib/components/ServerEntry.svelte';
 	import DownloadSheet from '$lib/components/DownloadSheet.svelte';
 	import BookTileButtons from '$lib/components/BookTileButtons.svelte';
 	import { tabReselect } from '$lib/tabReselect';
@@ -117,6 +116,9 @@
 			<h1>Discover</h1>
 			{#if data.canUpload}
 				<div class="actions">
+					<button class="icon" onclick={() => goto('/discover/books/library')} aria-label="In my library" title="In my library">
+						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+					</button>
 					<button class="icon" onclick={() => (uploading = true)} aria-label="Upload books">
 						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
 					</button>
@@ -205,17 +207,6 @@
 				{/each}
 			{/if}
 		{:else}
-			{#if data.library}
-				{#await data.library then lib}
-					{#if lib?.total}
-						<ServerEntry
-							title="In my library"
-							sub={`${lib.total} ${lib.total === 1 ? 'book' : 'books'} · ${lib.unstarted} not started`}
-							href="/discover/books/library"
-						/>
-					{/if}
-				{/await}
-			{/if}
 			<!-- Yours first: "Because you read…/like…", when there's anything to grow from. -->
 			{#await data.personal then personal}
 				{#each personal as r (r.key)}

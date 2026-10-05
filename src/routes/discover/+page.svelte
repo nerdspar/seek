@@ -9,7 +9,6 @@
 	import TabBar from '$lib/components/TabBar.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import AddButton from '$lib/components/AddButton.svelte';
-	import ServerEntry from '$lib/components/ServerEntry.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
 	import { loadArrStatus } from '$lib/arr.svelte';
@@ -280,7 +279,16 @@
 
 <div class="app">
 	<header>
-		<h1>Discover</h1>
+		<div class="titlerow">
+			<h1>Discover</h1>
+			{#if data.onServer}
+				<div class="actions">
+					<button class="icon" onclick={() => goto(`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`)} aria-label="On the server" title="On the server">
+						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+					</button>
+				</div>
+			{/if}
+		</div>
 		<div class="segments" role="tablist">
 			{#each [{ id: 'tv' as const, label: 'TV' }, { id: 'movie' as const, label: 'Movies' }].filter((seg) => data.media[seg.id]) as seg (seg.id)}
 				<button
@@ -434,17 +442,6 @@
 				</ul>
 			{/if}
 		{:else}
-			{#if data.onServer}
-				{#await data.onServer then onServer}
-					{#if onServer.length}
-						<ServerEntry
-							title="On the server"
-							sub={`${onServer.length} ${data.mediaType === 'movie' ? (onServer.length === 1 ? 'movie' : 'movies') : onServer.length === 1 ? 'show' : 'shows'} not on your list`}
-							href={`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`}
-						/>
-					{/if}
-				{/await}
-			{/if}
 			{#await data.rows}
 				{@render skeletonShelves(3)}
 			{:then rows}
@@ -495,6 +492,16 @@
 <style>
 	/* Frame from the global `.app` shell (app.css). */
 	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+	/* Discover → Books' header: the title with its icons on the right. */
+	.titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+	.titlerow h1 { margin: 0; }
+	/* Negative margins: the 44px target must not make the header taller. */
+	.actions { display: flex; align-items: center; gap: 2px; margin: -10px -10px -10px 0; }
+	.icon {
+		flex: none; display: grid; place-items: center;
+		width: var(--tap); height: var(--tap);
+		border-radius: 50%; color: var(--text-dim);
+	}
 
 	.segments { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
 	.segments button {

@@ -19,6 +19,7 @@ import {
 	shelfView,
 	topGenres,
 	bookFiltersActive,
+	BACKLOG_FILTERS,
 	NO_BOOK_FILTERS,
 	formatOf,
 	cardBadge,
@@ -161,6 +162,11 @@ describe('sorting and filtering', () => {
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, status: 'unstarted' }))).toEqual(['A Wizard of Earthsea']);
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, shelf: 4 }, new Set([2, 3])))).toEqual(['Dune', 'A Wizard of Earthsea']);
 		expect(titles(filterBooks(books, { ...NO_BOOK_FILTERS, genre: 'FANTASY' }))).toHaveLength(3);
+		// Up next, the Watchlist's default: reading, want to read and paused — not read or given up.
+		const backlog = myBooks(lib, [sb(101, 'R', { status: 'reading' }), sb(102, 'W', { status: 'want_to_read' }), sb(9, 'P', { status: 'on_hold' }), sb(10, 'D', { status: 'read' }), sb(11, 'X', { status: 'abandoned' })]);
+		expect(titles(filterBooks(backlog, BACKLOG_FILTERS))).toEqual(['The Way of Kings', 'Dune', 'P']);
+		expect(bookFiltersActive(BACKLOG_FILTERS, BACKLOG_FILTERS)).toBe(false);
+		expect(bookFiltersActive(NO_BOOK_FILTERS, BACKLOG_FILTERS)).toBe(true);
 		expect(bookFiltersActive(NO_BOOK_FILTERS)).toBe(false);
 		expect(bookFiltersActive({ ...NO_BOOK_FILTERS, genre: 'x' })).toBe(true);
 	});

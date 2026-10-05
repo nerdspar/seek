@@ -220,14 +220,6 @@
 								</li>
 							{/await}
 						{/if}
-						{#if all.some((b) => b.source === 'entry')}
-							<li>
-								<button onclick={() => goto('/books/library?kind=mine')}>
-									<span>Not in library</span>
-									<span class="count tnum">{all.filter((b) => b.source === 'entry').length}<span class="chev">›</span></span>
-								</button>
-							</li>
-						{/if}
 						<li>
 							<button onclick={() => goto('/books/library?view=archive')}>
 								<span>Archive</span>

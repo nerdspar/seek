@@ -13,6 +13,7 @@
 	import { tabReselect } from '$lib/tabReselect';
 	import {
 		BOOK_SORTS,
+		BACKLOG_FILTERS,
 		NO_BOOK_FILTERS,
 		bookFiltersActive,
 		filterBooks,
@@ -93,21 +94,23 @@
 	});
 
 	/* ── Sort and filter (kept on this device) ─────────────────────────────── */
-	const VIEW_KEY = 'seek:books:view';
+	/* v2: the list now opens on your backlog (Up next); a filter saved before
+	   that would have pinned everyone to All. */
+	const VIEW_KEY = 'seek:books:view:v2';
 	let sort = $state<BookSort>('active');
-	let filters = $state<BookFilters>({ ...NO_BOOK_FILTERS });
-	const STATUSES: BookFilters['status'][] = ['all', 'reading', 'want_to_read', 'on_hold', 'read', 'abandoned'];
+	let filters = $state<BookFilters>({ ...BACKLOG_FILTERS });
+	const STATUSES: BookFilters['status'][] = ['all', 'up_next', 'reading', 'want_to_read', 'on_hold', 'read', 'abandoned'];
 	{
-		let start: BookFilters = { ...NO_BOOK_FILTERS };
+		let start: BookFilters = { ...BACKLOG_FILTERS };
 		try {
 			const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
 			if (saved?.sort) sort = saved.sort;
-			if (saved?.filters) start = { ...NO_BOOK_FILTERS, ...saved.filters };
+			if (saved?.filters) start = { ...BACKLOG_FILTERS, ...saved.filters };
 		} catch {
 			/* private mode, or nothing saved */
 		}
 		// A filter saved by an older Seek ("Not started") no longer exists.
-		if (!STATUSES.includes(start.status)) start = { ...start, status: 'all' };
+		if (!STATUSES.includes(start.status)) start = { ...start, status: 'up_next' };
 		// A link straight to one status (e.g. ?status=abandoned).
 		const asked = page.url.searchParams.get('status') as BookFilters['status'] | null;
 		if (asked && STATUSES.includes(asked)) start = { ...NO_BOOK_FILTERS, status: asked };
@@ -155,7 +158,7 @@
 		<button class="hbtn" onclick={() => (sortOpen = true)} aria-label="Sort">
 			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M6.5 12h11M10 17h4" /></svg>
 		</button>
-		<button class="hbtn last" class:on={bookFiltersActive(filters)} onclick={() => (filterOpen = true)} aria-label="Filter">
+		<button class="hbtn last" class:on={bookFiltersActive(filters, BACKLOG_FILTERS)} onclick={() => (filterOpen = true)} aria-label="Filter">
 			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
 		</button>
 	</header>
@@ -198,11 +201,11 @@
 			</ul>
 		{:then [library, shelf]}
 			{@const everything = myBooks(library, shelf)}
-			<!-- Your list is your shelf. The shared library (whatever anyone
-			     downloaded) is browsed from Profile → Reading → Library. -->
+			<!-- Your list is your shelf, opening on your backlog. The shared
+			     library is Discover → Books → In my library. -->
 			{@const all = everything.filter((b) => b.status !== 'unread')}
 			{@const shown = sortBooks(filterBooks(all, filters, shelfIds), sort)}
-			{@const filtering = bookFiltersActive(filters)}
+			{@const filtering = bookFiltersActive(filters, BACKLOG_FILTERS)}
 			{@const groups = readingSections(shown, filtering ? [] : requests)}
 			{@const genres = topGenres(all)}
 			{#each groups as g (g.title)}
@@ -240,10 +243,13 @@
 				<div class="empty">
 					{#if filtering}
 						<h2>No books match</h2>
-						<p><button class="linkbtn" onclick={() => { filters = { ...NO_BOOK_FILTERS }; remember(); }}>Clear the filters</button></p>
+						<p><button class="linkbtn" onclick={() => { filters = { ...BACKLOG_FILTERS }; remember(); }}>Clear the filters</button></p>
+					{:else if all.length}
+						<h2>Nothing up next</h2>
+						<p><button class="linkbtn" onclick={() => { filters = { ...NO_BOOK_FILTERS }; remember(); }}>Show all your books</button></p>
 					{:else}
 						<h2>Nothing on your reading list yet</h2>
-						<p>Tap + to add a book — one you're reading, have read, or want to. Browse the whole library from Profile → Reading → Library, or find something new in Discover → Books.</p>
+						<p>Tap + to add a book — one you're reading, have read, or want to. Browse the library in Discover → Books → In my library, or find something new there.</p>
 					{/if}
 				</div>
 			{/if}
@@ -252,6 +258,7 @@
 			{#if filterOpen}
 				<BookFilterSheet
 					{filters}
+					defaults={BACKLOG_FILTERS}
 					{genres}
 					resultCount={shown.length}
 					onchange={(f) => {

@@ -16,8 +16,10 @@
 		/** 'library' (In my library): adds "Not started", drops "Not in library".
 		 *  'shelf' (Your books): no Status — that page's views choose it. */
 		scope?: 'list' | 'library' | 'shelf';
+		/** What Reset goes back to (the Watchlist's is your backlog). */
+		defaults?: BookFilters;
 	};
-	let { filters, genres, resultCount, onchange, onmanage, onclose, scope = 'list' }: Props = $props();
+	let { filters, genres, resultCount, onchange, onmanage, onclose, scope = 'list', defaults = NO_BOOK_FILTERS }: Props = $props();
 
 	const STATUS: { id: BookFilters['status']; label: string }[] = [
 		{ id: 'all', label: 'All' },
@@ -50,13 +52,13 @@
 	<div class="pad">
 		<div class="head">
 			<h2>Filter</h2>
-			<button class="reset" onclick={() => onchange(NO_BOOK_FILTERS)}>Reset</button>
+			<button class="reset" onclick={() => onchange(defaults)}>Reset</button>
 		</div>
 
 		{#if scope !== 'shelf'}
 			<h3>Status</h3>
 			<div class="chips">
-				{#each scope === 'library' ? [...STATUS, { id: 'unstarted' as const, label: 'Not started' }] : STATUS as s (s.id)}
+				{#each scope === 'library' ? [...STATUS, { id: 'unstarted' as const, label: 'Not started' }] : [{ id: 'up_next' as const, label: 'Up next' }, ...STATUS] as s (s.id)}
 					<button class:on={filters.status === s.id} aria-pressed={filters.status === s.id} onclick={() => set({ status: s.id })}>{s.label}</button>
 				{/each}
 			</div>

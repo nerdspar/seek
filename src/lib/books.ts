@@ -363,8 +363,10 @@ export function sortBooks(books: MyBook[], sort: BookSort): MyBook[] {
 /** Which books: by status, by where it lives / what kind of file, by one of
  *  your shelves, by genre. */
 export type BookFilters = {
-	/** `unstarted`: in the library with nothing on your shelf (Library only). */
-	status: 'all' | 'reading' | 'want_to_read' | 'on_hold' | 'read' | 'abandoned' | 'unstarted';
+	/** `up_next`: your backlog — reading, want to read, paused (the Watchlist's
+	 *  default, like the shows watchlist's in-progress). `unstarted`: in the
+	 *  library with nothing on your shelf (In my library only). */
+	status: 'all' | 'up_next' | 'reading' | 'want_to_read' | 'on_hold' | 'read' | 'abandoned' | 'unstarted';
 	/** ebook / audiobook: files in BookOrbit; `mine` ("Elsewhere"): books on your
 	 *  shelf that BookOrbit doesn't have — paper, loans, reading history. */
 	kind: 'all' | 'ebook' | 'audiobook' | 'mine';
@@ -373,11 +375,15 @@ export type BookFilters = {
 	genre: string | null;
 };
 export const NO_BOOK_FILTERS: BookFilters = { status: 'all', kind: 'all', shelf: null, genre: null };
+/** Watchlist → Books opens on your backlog; Read, Paused… are a filter away. */
+export const BACKLOG_FILTERS: BookFilters = { ...NO_BOOK_FILTERS, status: 'up_next' };
 
-export const bookFiltersActive = (f: BookFilters) =>
-	f.status !== 'all' || f.kind !== 'all' || f.shelf !== null || f.genre !== null;
+/** Whether anything is narrowed beyond the page's starting point (`base`). */
+export const bookFiltersActive = (f: BookFilters, base: BookFilters = NO_BOOK_FILTERS) =>
+	f.status !== base.status || f.kind !== base.kind || f.shelf !== base.shelf || f.genre !== base.genre;
 
 const STATUS_FILTER: Record<Exclude<BookFilters['status'], 'all'>, BookReadStatus[]> = {
+	up_next: ['reading', 'rereading', 'want_to_read', 'on_hold'],
 	reading: ['reading', 'rereading'],
 	want_to_read: ['want_to_read'],
 	on_hold: ['on_hold'],
