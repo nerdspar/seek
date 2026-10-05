@@ -7,7 +7,10 @@
 	import { loadArrStatus, arrManageOn } from '$lib/arr.svelte';
 	import { queuePercent, formatSize, historyEvent, timeAgo } from '$lib/arrClient';
 	import type { ArrQueueItem, ArrHistoryItem, ArrWantedItem, ArrHealth } from '$lib/server/arr';
+	import DownloadSheet from '$lib/components/DownloadSheet.svelte';
+	import { requestLabel, requestTone, splitRequests, type BookRequest, type WantedBook } from '$lib/books';
 	import { onMount } from 'svelte';
+	import type { PageData } from './$types';
 
 	/**
 	 * The cross-title Activity area (Phase 2): Queue, History, Wanted across both
@@ -15,10 +18,64 @@
 	 * merges the two services and sorts by what matters for that view. Mutations
 	 * (remove/blocklist, retry, search-all) are confirmed and optimistic-light —
 	 * they re-fetch rather than guess.
+	 *
+	 * Books (BookOrbit) sit in the same three tabs, after the shows and films:
+	 * downloads under way or waiting on you, what settled, and your Want to read
+	 * that isn't in the library. Their actions open the same download sheet as
+	 * everywhere else; there's no "search all" — each one is a real download.
 	 */
+	let { data }: { data: PageData } = $props();
 	type Tab = 'queue' | 'history' | 'wanted';
 	let tab = $state<Tab>('queue');
+	/** Sonarr/Radarr management is on. */
 	let on = $state(true);
+	const books = $derived(data.books);
+
+	let bookQueue = $state<BookRequest[]>([]);
+	let bookHistory = $state<BookRequest[]>([]);
+	let bookWanted = $state<WantedBook[]>([]);
+	let booksLoading = $state(true);
+	/** The download sheet: watching/resolving a request, or starting one. */
+	let sheet = $state<{ book: WantedBook; existing: BookRequest | null; kind: 'ebook' | 'audiobook' } | null>(null);
+
+	async function loadBookRequests() {
+		try {
+			const r = await fetch('/api/books/requests');
+			if (r.ok) ({ queue: bookQueue, history: bookHistory } = splitRequests(((await r.json()) as { requests: BookRequest[] }).requests));
+		} catch {
+			/* the next poll or visit retries */
+		}
+	}
+	async function loadBooks() {
+		booksLoading = true;
+		try {
+			const [, w] = await Promise.all([loadBookRequests(), fetch('/api/books/wanted').catch(() => null)]);
+			if (w?.ok) bookWanted = ((await w.json()) as { wanted: WantedBook[] }).wanted;
+		} finally {
+			booksLoading = false;
+		}
+	}
+	const asBook = (r: BookRequest): WantedBook => ({ hardcoverId: r.hardcoverId ?? 0, title: r.title, author: r.author, coverUrl: r.coverUrl, year: null });
+	const bookKind = (r: BookRequest) => (r.mediaKind === 'audiobook' ? 'audiobook' : 'ebook');
+
+	async function cancelBook(r: BookRequest) {
+		const key = `b${r.id}`;
+		if (acting === key) return;
+		const verb = r.status === 'grabbed' || r.status === 'downloading' ? 'Stop this download' : 'Cancel this request';
+		if (!confirm(`${verb}?\n\n${r.title}`)) return;
+		acting = key;
+		try {
+			const res = await fetch(`/api/books/requests/${r.id}/cancel`, { method: 'POST' });
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			haptic();
+			void notify(r.status === 'grabbed' || r.status === 'downloading' ? 'Download stopped' : 'Request cancelled');
+			await loadBookRequests();
+		} catch (err) {
+			void notify(`Couldn't cancel — ${err instanceof Error ? err.message : err}`);
+		} finally {
+			acting = null;
+		}
+	}
 
 	let queue = $state<ArrQueueItem[]>([]);
 	let history = $state<ArrHistoryItem[]>([]);
@@ -115,9 +172,13 @@
 	}
 
 	onMount(async () => {
+		if (books) void loadBooks();
 		await loadArrStatus();
 		on = arrManageOn();
-		if (!on) return;
+		if (!on) {
+			loading = { queue: false, history: false, wanted: false };
+			return;
+		}
 		void loadQueue();
 		void loadHistory();
 		void loadWanted();
@@ -128,9 +189,11 @@
 	   5s so download progress ticks without reopening. Stops on tab switch / leaving
 	   so it never polls in the background. */
 	$effect(() => {
-		if (!on || tab !== 'queue') return;
+		if ((!on && !books) || tab !== 'queue') return;
 		const id = setInterval(() => {
-			if (typeof document === 'undefined' || !document.hidden) void pollQueue();
+			if (typeof document !== 'undefined' && document.hidden) return;
+			if (on) void pollQueue();
+			if (books) void loadBookRequests();
 		}, 5000);
 		return () => clearInterval(id);
 	});
@@ -243,23 +306,25 @@
 <PageHeader title="Activity" action={bell} onback={() => window.history.back()} />
 
 <main>
-	{#if !on}
+	{#if !on && !books}
 		<p class="empty">Download management is off. Turn it on in Settings.</p>
 	{:else}
+		{@const queueCount = visibleQueue.length + bookQueue.length}
+		{@const wantedCount = wanted.length + bookWanted.length}
 		<div class="tabs" role="tablist">
 			<button role="tab" aria-selected={tab === 'queue'} class:on={tab === 'queue'} onclick={() => (tab = 'queue')}>
-				Queue{#if visibleQueue.length}<span class="count">{visibleQueue.length}</span>{/if}
+				Queue{#if queueCount}<span class="count">{queueCount}</span>{/if}
 			</button>
 			<button role="tab" aria-selected={tab === 'history'} class:on={tab === 'history'} onclick={() => (tab = 'history')}>History</button>
 			<button role="tab" aria-selected={tab === 'wanted'} class:on={tab === 'wanted'} onclick={() => (tab = 'wanted')}>
-				Wanted{#if wanted.length}<span class="count">{wanted.length}</span>{/if}
+				Wanted{#if wantedCount}<span class="count">{wantedCount}</span>{/if}
 			</button>
 		</div>
 
 		{#if tab === 'queue'}
-			{#if loading.queue}
+			{#if loading.queue || (books && booksLoading && !bookQueue.length)}
 				<p class="empty">Loading…</p>
-			{:else if !visibleQueue.length}
+			{:else if !queueCount}
 				<p class="empty">Nothing downloading.</p>
 			{:else}
 				<ul class="rows">
@@ -287,12 +352,37 @@
 							</div>
 						</li>
 					{/each}
+					{#each bookQueue as r (r.id)}
+						<li>
+							<div class="line1">
+								<button class="name link" onclick={() => (sheet = { book: asBook(r), existing: r, kind: bookKind(r) })}>{r.title}</button>
+								<span class="svc">BookOrbit</span>
+							</div>
+							{#if r.progress !== null}
+								<div class="qbar"><div class="qfill" style:width={`${Math.round(r.progress * 100)}%`}></div></div>
+							{/if}
+							<div class="line2">
+								<span class="meta tnum" class:warn-t={r.status === 'needs_review'}>
+									{requestLabel(r.status)}{#if r.progress !== null} · {Math.round(r.progress * 100)}%{/if}{#if r.mediaKind === 'audiobook'} · Audiobook{/if}
+								</span>
+								<div class="qactions">
+									{#if r.status === 'needs_review'}
+										<button class="mini go" onclick={() => (sheet = { book: asBook(r), existing: r, kind: bookKind(r) })}>Resolve</button>
+									{:else}
+										<button class="mini danger" disabled={acting === `b${r.id}`} onclick={() => cancelBook(r)}>
+											{r.status === 'grabbed' || r.status === 'downloading' ? 'Stop' : 'Cancel'}
+										</button>
+									{/if}
+								</div>
+							</div>
+						</li>
+					{/each}
 				</ul>
 			{/if}
 		{:else if tab === 'history'}
-			{#if loading.history}
+			{#if loading.history || (books && booksLoading && !bookHistory.length)}
 				<p class="empty">Loading…</p>
-			{:else if !history.length}
+			{:else if !history.length && !bookHistory.length}
 				<p class="empty">No history yet.</p>
 			{:else}
 				<ul class="rows">
@@ -309,14 +399,28 @@
 							{/if}
 						</li>
 					{/each}
+					{#each bookHistory as r (r.id)}
+						{@const tone = requestTone(r.status)}
+						<li class="hist">
+							<span class="dot {tone}" aria-hidden="true"></span>
+							<div class="hbody">
+								<span class="name">{r.title}</span>
+								<span class="meta tnum">BookOrbit · {requestLabel(r.status)}{#if tone === 'bad' && r.reason} · {r.reason}{/if} · {timeAgo(r.updatedAt)}</span>
+							</div>
+							{#if tone === 'bad' && r.hardcoverId}
+								<button class="mini" onclick={() => (sheet = { book: asBook(r), existing: null, kind: bookKind(r) })}>Retry</button>
+							{/if}
+						</li>
+					{/each}
 				</ul>
 			{/if}
 		{:else}
-			{#if loading.wanted}
+			{#if loading.wanted || (books && booksLoading && !bookWanted.length)}
 				<p class="empty">Loading…</p>
-			{:else if !wanted.length}
+			{:else if !wanted.length && !bookWanted.length}
 				<p class="empty">Nothing missing. You're caught up.</p>
 			{:else}
+				{#if wanted.length}
 				<div class="whead">
 					<span class="tnum">{wanted.length} missing</span>
 					<button class="searchall" disabled={searchingAll} onclick={searchAll}>{searchingAll ? 'Searching…' : 'Search all'}</button>
@@ -334,10 +438,33 @@
 						</li>
 					{/each}
 				</ul>
+				{/if}
+				{#if bookWanted.length}
+					<div class="whead books"><span class="tnum">{bookWanted.length} {bookWanted.length === 1 ? 'book' : 'books'} to read that aren't in the library</span></div>
+					<ul class="rows">
+						{#each bookWanted as w (w.hardcoverId)}
+							<li class="hist">
+								<div class="hbody">
+									<span class="name">{w.title}</span>
+									<span class="meta">BookOrbit · Want to read{#if w.author} · {w.author}{/if}</span>
+								</div>
+								<button class="icon" aria-label={`Download ${w.title}`} onclick={() => (sheet = { book: w, existing: null, kind: 'ebook' })}>
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 19h14" /></svg>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 			{/if}
 		{/if}
 	{/if}
 </main>
+
+{#if sheet}
+	{#key (sheet.existing?.id ?? 0) + ':' + sheet.book.hardcoverId}
+		<DownloadSheet book={sheet.book} kind={sheet.kind} existing={sheet.existing} onclose={() => (sheet = null)} onchange={() => void loadBooks()} />
+	{/key}
+{/if}
 
 {#if resolve}
 	<ManualImportSheet
@@ -442,4 +569,7 @@
 
 	.icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-raised); color: var(--text-dim); }
 	.icon:disabled { opacity: 0.5; }
+	/* A book's title opens its download sheet. */
+	.name.link { padding: 0; text-align: left; color: var(--text); }
+	.whead.books { margin-top: 18px; }
 </style>

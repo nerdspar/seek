@@ -63,6 +63,8 @@ export const load: PageServerLoad = async ({ url }) => {
 		// Your reading journal (Hardcover): pages by day, for the week chart,
 		// streaks, pages read, and the genres/authors you've been reading.
 		readingLog: media.book && shelfLinked() ? readingLog().catch(() => [] as ReadingLogEntry[]) : null,
+		// Your book downloads show in Activity (the header's download icon).
+		booksActivity: media.book && bookorbitLinked(),
 		// Your BookOrbit shelves, for Collection → Shelves.
 		shelves: media.book && bookorbitLinked() ? listShelves().catch(() => []) : null
 	};

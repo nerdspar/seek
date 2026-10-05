@@ -14,6 +14,9 @@ import {
 	readingSections,
 	myBooks,
 	linkRequested,
+	requestTone,
+	splitRequests,
+	wantedBooks,
 	progressText,
 	sortBooks,
 	filterBooks,
@@ -252,6 +255,37 @@ describe('mapBookRequest', () => {
 		// Only a fulfilled request counts, and BookOrbit's own link is never overridden.
 		expect(linkRequested([filed], [req('needs_review', 324)])[0].hardcoverId).toBeNull();
 		expect(linkRequested([other], [mapBookRequest({ id: 2, status: 'available', providerKey: 'hardcover', providerId: '7', matchedBookId: 5 })])[0].hardcoverId).toBe(99);
+	});
+
+	it('Activity: the queue is what is moving or waiting on you, history what settled, newest first', () => {
+		const r = (id: number, status: string, createdAt: string, updatedAt = createdAt) => mapBookRequest({ id, status, createdAt, updatedAt });
+		const { queue, history } = splitRequests([
+			r(1, 'available', '2026-10-01', '2026-10-02'),
+			r(2, 'downloading', '2026-10-03'),
+			r(3, 'needs_review', '2026-10-04'),
+			r(4, 'failed', '2026-09-01', '2026-10-04'),
+			r(5, 'cancelled', '2026-10-05', '2026-10-05')
+		]);
+		expect(queue.map((x) => x.id)).toEqual([3, 2]);
+		expect(history.map((x) => x.id)).toEqual([5, 4, 1]);
+		expect([requestTone('available'), requestTone('failed'), requestTone('rejected'), requestTone('cancelled')]).toEqual(['ok', 'bad', 'bad', 'neutral']);
+		expect(mapBookRequest({ id: 6, status: 'pending', createdAt: 'c' }).updatedAt).toBe('c');
+	});
+
+	it("Activity's Wanted: want-to-read with no library copy and nothing downloading, newest first", () => {
+		const books = myBooks(
+			[mapReadingBook({ id: 1, title: 'Owned', hardcoverId: 10 })],
+			[
+				sb(10, 'Owned', { status: 'want_to_read' }),
+				sb(20, 'Old want', { status: 'want_to_read', addedAt: '2026-01-01T00:00:00Z' }),
+				sb(30, 'New want', { status: 'want_to_read', addedAt: '2026-09-01T00:00:00Z' }),
+				sb(40, 'Downloading', { status: 'want_to_read' }),
+				sb(50, 'Reading', { status: 'reading' })
+			]
+		);
+		const downloading = mapBookRequest({ id: 1, status: 'downloading', providerKey: 'hardcover', providerId: '40' });
+		expect(wantedBooks(books, [downloading]).map((w) => w.title)).toEqual(['New want', 'Old want']);
+		expect(wantedBooks(books, [downloading])[0]).toEqual({ hardcoverId: 30, title: 'New want', author: 'A', coverUrl: null, year: null });
 	});
 
 	it('treats an unknown status as pending', () => {

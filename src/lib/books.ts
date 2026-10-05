@@ -505,6 +505,8 @@ export type BookRequest = {
 	/** The library book once it's arrived. */
 	bookId: number | null;
 	createdAt: string;
+	/** When it last moved (arrived, failed, was cancelled…). */
+	updatedAt: string;
 };
 
 const REQUEST_LABELS: Record<BookRequestStatus, string> = {
@@ -522,6 +524,35 @@ const REQUEST_LABELS: Record<BookRequestStatus, string> = {
 };
 
 export const requestLabel = (s: BookRequestStatus) => REQUEST_LABELS[s];
+
+/* ── Activity (Profile → Activity): books beside Sonarr and Radarr ─────────── */
+
+/** Your downloads, the way Activity lists Sonarr's: the Queue is what's still
+ *  moving or waiting on you (newest first); History is what settled — arrived,
+ *  failed, declined, cancelled — most recently settled first. */
+export function splitRequests(requests: BookRequest[]): { queue: BookRequest[]; history: BookRequest[] } {
+	const newest = (by: 'createdAt' | 'updatedAt') => (a: BookRequest, b: BookRequest) => b[by].localeCompare(a[by]);
+	return {
+		queue: requests.filter((r) => requestActive(r.status)).sort(newest('createdAt')),
+		history: requests.filter((r) => !requestActive(r.status)).sort(newest('updatedAt'))
+	};
+}
+
+/** A settled download's dot, like a Sonarr history event's. */
+export const requestTone = (s: BookRequestStatus): 'ok' | 'bad' | 'neutral' =>
+	s === 'available' ? 'ok' : s === 'failed' || s === 'rejected' ? 'bad' : 'neutral';
+
+export type WantedBook = Pick<BookCard, 'hardcoverId' | 'title' | 'author' | 'coverUrl' | 'year'>;
+
+/** Books's "Wanted" (Sonarr's missing episodes): on your Want to read with no
+ *  copy in the library and no download under way — newest wants first. */
+export function wantedBooks(books: MyBook[], requests: BookRequest[]): WantedBook[] {
+	const underway = new Set(requests.filter((r) => requestActive(r.status) && r.hardcoverId).map((r) => r.hardcoverId));
+	return books
+		.filter((b) => b.source === 'entry' && b.status === 'want_to_read' && b.hardcoverId && !underway.has(b.hardcoverId))
+		.sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''))
+		.map((b) => ({ hardcoverId: b.hardcoverId!, title: b.title, author: b.authors[0] ?? null, coverUrl: b.coverUrl, year: b.year }));
+}
 
 /** Still on its way (BookOrbit's ACTIVE statuses) — not settled either way. */
 export const requestActive = (s: BookRequestStatus) =>
@@ -563,7 +594,8 @@ export function mapBookRequest(raw: unknown): BookRequest {
 		progress: running ? normalizeProgress(num(download.progressPercent)! / 100) : null,
 		reason: str(r.decisionNote) ?? str(r.statusReason) ?? str(download.errorMessage),
 		bookId: num(r.matchedBookId),
-		createdAt: str(r.createdAt) ?? ''
+		createdAt: str(r.createdAt) ?? '',
+		updatedAt: str(r.updatedAt) ?? str(r.createdAt) ?? ''
 	};
 }
 
