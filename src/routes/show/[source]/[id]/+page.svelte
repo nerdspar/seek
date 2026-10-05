@@ -27,6 +27,16 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	/* The title's name once it loads — handed to queued writes so a change that
+	   fails to save later can say which title it was. */
+	let titleName = $state<string | undefined>();
+	$effect(() => {
+		let live = true;
+		data.show.then((t) => live && (titleName = t.title)).catch(() => {});
+		return () => {
+			live = false;
+		};
+	});
 
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
 
@@ -214,7 +224,7 @@
 					episodes: target,
 					watched: season.progress ?? 0
 				})
-			});
+			}, titleName);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			touchWatchlist();
 			/* Filling a season can be dozens of writes and shows only as a bar
@@ -294,7 +304,7 @@
 					mediaId: data.mediaId,
 					...change
 				})
-			});
+			}, titleName);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			touchWatchlist();
 		} catch (err) {

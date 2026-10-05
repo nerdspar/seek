@@ -15,8 +15,18 @@
  * describe the net result, so a flush cannot double-apply. An idempotency key
  * rides along too, for the server paths that honour it.
  *
+ * If the server later turns a replayed action down for good (a 4xx), it
+ * leaves the queue — but not silently: a notice says what didn't save and
+ * why, the screen drops its optimistic guess, and it reloads from Floppy, so
+ * what you see never quietly disagrees with what Floppy has.
+ *
  * Client-only: every entry point no-ops during SSR.
  */
+import { invalidateAll } from '$app/navigation';
+import { touchWatchlist } from './dirty';
+import { alertNotice } from './notices.svelte';
+import { describeWrite, rejectionNotice, replay, type Rejection } from './queueReplay';
+import { forgetTitle } from './status.svelte';
 
 type Op = 'set' | 'add' | 'remove';
 
@@ -28,6 +38,8 @@ type Queued = {
 	body: string | null;
 	key: string; // idempotency key
 	at: number;
+	/** The title's name, when the body doesn't carry it (for the notice). */
+	about?: string;
 };
 
 const DB = 'seek-queue';
@@ -70,7 +82,10 @@ export async function queuedWrite(
 	target: string,
 	op: Op,
 	url: string,
-	init: RequestInit
+	init: RequestInit,
+	/** The title's name, if the body doesn't include it — for saying what
+	 *  didn't save, should the server reject this on replay. */
+	about?: string
 ): Promise<Response> {
 	const method = (init.method ?? 'GET').toUpperCase();
 	const key = crypto.randomUUID();
@@ -85,7 +100,8 @@ export async function queuedWrite(
 			method,
 			body: typeof init.body === 'string' ? init.body : null,
 			key,
-			at: Date.now()
+			at: Date.now(),
+			...(about ? { about } : {})
 		});
 
 	try {
@@ -128,34 +144,38 @@ async function park(entry: Queued) {
 	pending = [...pending.filter((p) => p.target !== entry.target), entry];
 }
 
-/** Replay parked actions in order. Stops on the first network failure (still
- *  offline) so order is preserved; drops actions the server rejects for good. */
+/** Replay parked actions in order (see queueReplay.ts); stops on the first
+ *  network failure so order is preserved. */
 export async function flush(): Promise<void> {
 	if (!browser || flushing || !pending.length || !navigator.onLine) return;
 	flushing = true;
+	let rejected: Rejection<Queued>[] = [];
 	try {
-		for (const entry of [...pending].sort((a, b) => a.at - b.at)) {
-			try {
-				const res = await fetch(entry.url, {
+		rejected = await replay(
+			pending,
+			(entry) =>
+				fetch(entry.url, {
 					method: entry.method,
 					headers: { 'Content-Type': 'application/json', 'Idempotency-Key': entry.key },
 					body: entry.body ?? undefined
-				});
-				if (res.ok || (res.status >= 400 && res.status < 500)) {
-					// Done, or permanently rejected (a 4xx will never succeed on
-					// retry) — either way it leaves the queue. A 404/409 here is a
-					// stale action against state that already moved on.
-					await dropIfCurrent(entry.target, entry.key);
-				} else {
-					break; // 5xx: server is up but unhappy; try again later.
-				}
-			} catch {
-				break; // still offline — keep the rest for next time.
-			}
-		}
+				}),
+			(entry) => dropIfCurrent(entry.target, entry.key)
+		);
 	} finally {
 		flushing = false;
 	}
+	if (rejected.length) settleRejected(rejected);
+}
+
+/** Say what didn't save, drop the screen's guess, and show Floppy's truth. */
+function settleRejected(rejected: Rejection<Queued>[]) {
+	for (const { entry } of rejected) {
+		const { source, mediaId } = describeWrite(entry);
+		if (source && mediaId) forgetTitle(source, mediaId);
+	}
+	alertNotice(rejectionNotice(rejected));
+	touchWatchlist();
+	void invalidateAll();
 }
 
 /**

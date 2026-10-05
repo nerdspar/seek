@@ -48,6 +48,13 @@ export function revertTitle(source: string, id: string, fields: (keyof Fields)[]
 	e.opt = opt;
 }
 
+/** Forget everything this session thought about a title (a parked change the
+ *  server turned down), so it falls back to what the page loads. */
+export function forgetTitle(source: string, id: string): void {
+	if (!browser) return;
+	delete store[keyOf(source, id)];
+}
+
 function read<K extends keyof Fields>(source: string, id: string, field: K, fallback: Fields[K]): Fields[K] {
 	const e = store[keyOf(source, id)];
 	if (e) {

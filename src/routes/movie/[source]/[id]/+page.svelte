@@ -25,6 +25,16 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	/* The title's name once it loads — handed to queued writes so a change that
+	   fails to save later can say which title it was. */
+	let titleName = $state<string | undefined>();
+	$effect(() => {
+		let live = true;
+		data.movie.then((t) => live && (titleName = t.title)).catch(() => {});
+		return () => {
+			live = false;
+		};
+	});
 
 	let note = $state<string | null>(null);
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
@@ -153,7 +163,7 @@
 					mediaId: data.mediaId,
 					...change
 				})
-			});
+			}, titleName);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			touchWatchlist();
 		} catch (err) {
@@ -177,7 +187,7 @@
 				method: next ? 'POST' : 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ mediaType: 'movie', source: data.source, mediaId: data.mediaId })
-			});
+			}, titleName);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			confirmTitle(data.source, data.mediaId, { tracked: next });
 			touchWatchlist();
@@ -216,7 +226,7 @@
 					mediaId: data.mediaId,
 					title: ''
 				})
-			});
+			}, titleName);
 			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 			touchWatchlist();
 			void notify('Cleared');

@@ -66,6 +66,14 @@ export async function notify(message: string, action?: NoticeAction): Promise<vo
 	timer = setTimeout(() => (notice.current = null), action ? 6000 : 2600);
 }
 
+/** Something you need to know (a change that didn't save): shown even with
+ *  confirmations off, and for longer. */
+export function alertNotice(message: string): void {
+	notice.current = { id: nextId++, message };
+	if (timer) clearTimeout(timer);
+	timer = setTimeout(() => (notice.current = null), 8000);
+}
+
 /** Run a notice's action, then let the notice go. */
 export function runNoticeAction(): void {
 	const a = notice.current?.action;
