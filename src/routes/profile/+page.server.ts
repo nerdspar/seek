@@ -9,11 +9,12 @@ import {
 import { getRecentlyAdded } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
-import { listGoals, readingDays, shelfLinked } from '$lib/server/books/shelf';
+import { listGoals, readingLog, shelfLinked } from '$lib/server/books/shelf';
 import { myBookList } from '$lib/server/books/discovery';
 import { bookorbitConfigured, bookorbitLinked, listShelves } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import { mediaOn } from '$lib/media';
+import type { ReadingLogEntry } from '$lib/books';
 import type { PageServerLoad } from './$types';
 
 const RANGES: RangeKey[] = ['this_month', 'this_year', 'last_year', 'all_time'];
@@ -59,8 +60,9 @@ export const load: PageServerLoad = async ({ url }) => {
 		view,
 		// Your books for the Reading view's numbers (computed client-side per range).
 		books: media.book ? myBookList().catch(() => []) : null,
-		// The days you read (Hardcover's journal), for the week and streaks.
-		readingDays: media.book && shelfLinked() ? readingDays().catch(() => [] as string[]) : null,
+		// Your reading journal (Hardcover): pages by day, for the week chart,
+		// streaks, pages read, and the genres/authors you've been reading.
+		readingLog: media.book && shelfLinked() ? readingLog().catch(() => [] as ReadingLogEntry[]) : null,
 		// Your BookOrbit shelves, for Collection → Shelves.
 		shelves: media.book && bookorbitLinked() ? listShelves().catch(() => []) : null
 	};

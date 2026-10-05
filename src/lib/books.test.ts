@@ -29,7 +29,9 @@ import {
 	recommendationSeeds,
 	librarySeeds,
 	mapShelfRow,
-	weekActivity,
+	pagesByDay,
+	readingActivity,
+	readingDaysOf,
 	readingStreaks,
 	finishedByMonth,
 	topAuthors,
@@ -737,16 +739,48 @@ describe('reading goals', () => {
 describe('Profile → Reading', () => {
 	const today = '2026-10-05';
 
-	it('lays out the last seven days, oldest first, marking the days you read', () => {
-		expect(weekActivity(['2026-10-05', '2026-10-03', '2026-09-28'], today)).toEqual([
-			{ day: '2026-09-29', read: false },
-			{ day: '2026-09-30', read: false },
-			{ day: '2026-10-01', read: false },
-			{ day: '2026-10-02', read: false },
-			{ day: '2026-10-03', read: true },
-			{ day: '2026-10-04', read: false },
-			{ day: '2026-10-05', read: true }
+	it('lays out the last seven days, oldest first: pages read each day, and whether you read', () => {
+		const log = [
+			{ day: '2026-10-05', bookId: 1, pages: 30 },
+			{ day: '2026-10-05', bookId: 2, pages: 12 },
+			{ day: '2026-10-03', bookId: 1, pages: 0 }, // finished, no page update
+			{ day: '2026-09-28', bookId: 1, pages: 50 } // eight days ago
+		];
+		expect(pagesByDay(log, today)).toEqual([
+			{ day: '2026-09-29', pages: 0, read: false },
+			{ day: '2026-09-30', pages: 0, read: false },
+			{ day: '2026-10-01', pages: 0, read: false },
+			{ day: '2026-10-02', pages: 0, read: false },
+			{ day: '2026-10-03', pages: 0, read: true },
+			{ day: '2026-10-04', pages: 0, read: false },
+			{ day: '2026-10-05', pages: 42, read: true }
 		]);
+		expect(readingDaysOf(log)).toEqual(['2026-10-05', '2026-10-03', '2026-09-28']);
+	});
+
+	it('pages read in a range: journal updates, plus finished books the journal never saw; genres and authors by pages', () => {
+		const now = new Date('2026-10-05T12:00:00');
+		const shelf = myBooks([], [
+			sb(1, 'Halfway', { status: 'reading', authors: ['Le Guin'], genres: ['Fantasy', 'General'], pages: 400 }),
+			sb(2, 'Imported', { status: 'read', authors: ['Herbert'], genres: ['Science Fiction'], pages: 600, finishedAt: '2026-03-01T12:00:00Z' }),
+			sb(3, 'Synced', { status: 'read', authors: ['Le Guin'], genres: ['Fantasy'], pages: 300, finishedAt: '2026-10-02T12:00:00Z' }),
+			sb(4, 'Last year', { status: 'read', authors: ['Old'], genres: ['History'], pages: 900, finishedAt: '2025-05-01T12:00:00Z' })
+		]);
+		const log = [
+			{ day: '2026-10-05', bookId: 1, pages: 120 },
+			{ day: '2026-10-02', bookId: 3, pages: 80 }, // the journal saw this one: its 80, not its 300
+			{ day: '2026-10-02', bookId: 3, pages: 0 },
+			{ day: '2025-12-30', bookId: 1, pages: 40 } // last year
+		];
+		const year = readingActivity(shelf, log, 'this_year', now);
+		expect(year.pagesRead).toBe(120 + 80 + 600);
+		expect(year.genres).toEqual([
+			{ name: 'Science Fiction', pages: 600, books: 1 },
+			{ name: 'Fantasy', pages: 200, books: 2 }
+		]);
+		expect(year.authors.map((a) => [a.name, a.pages])).toEqual([['Herbert', 600], ['Le Guin', 200]]);
+		expect(readingActivity(shelf, log, 'this_month', now).pagesRead).toBe(200);
+		expect(readingActivity(shelf, log, 'all_time', now).pagesRead).toBe(160 + 80 + 600 + 900);
 	});
 
 	it('counts streaks: the current one lives through today if you read yesterday', () => {

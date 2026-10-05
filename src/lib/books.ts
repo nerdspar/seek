@@ -1150,14 +1150,78 @@ const addDays = (day: string, n: number) => {
 	return d.toISOString().slice(0, 10);
 };
 
-/** The last seven days ending today, oldest first: did you read that day?
- *  `days` are the calendar days (yyyy-mm-dd) with reading on them. */
-export function weekActivity(days: string[], today: string): { day: string; read: boolean }[] {
-	const set = new Set(days);
+/** One entry in your Hardcover reading journal: a day you read, the book
+ *  (Hardcover id), and how many pages you moved forward (0 for a finish). */
+export type ReadingLogEntry = { day: string; bookId: number | null; pages: number };
+
+/** The distinct days you read, for the streaks. */
+export const readingDaysOf = (log: ReadingLogEntry[]): string[] => [...new Set(log.map((e) => e.day))];
+
+/** The last seven days, oldest first: pages read each day, and whether you
+ *  read at all (a finish with no page update still counts as reading). */
+export function pagesByDay(log: ReadingLogEntry[], today: string): { day: string; pages: number; read: boolean }[] {
 	return Array.from({ length: 7 }, (_, i) => {
 		const day = addDays(today, i - 6);
-		return { day, read: set.has(day) };
+		const that = log.filter((e) => e.day === day);
+		return { day, pages: that.reduce((n, e) => n + e.pages, 0), read: that.length > 0 };
 	});
+}
+
+export type ReadingActivity = {
+	/** Pages read in the range. */
+	pagesRead: number;
+	genres: { name: string; pages: number; books: number }[];
+	authors: { name: string; pages: number; books: number }[];
+};
+
+/** What you read in a range, by pages: the journal's page updates, plus the
+ *  page count of books finished in the range that the journal never saw (a
+ *  Goodreads import, a book marked Read in one go). Genres and authors are
+ *  ranked by those pages, so a book you're halfway through counts too. */
+export function readingActivity(books: MyBook[], log: ReadingLogEntry[], range: ReadingRange, now = new Date()): ReadingActivity {
+	const { from, to } = rangeBounds(range, now);
+	const fromDay = from ? localDay(from) : '';
+	const toDay = to ? localDay(to) : '';
+	const dayIn = (d: string) => (!fromDay || d >= fromDay) && (!toDay || d < toDay);
+	const isoIn = (iso: string) => (!from || iso >= from) && (!to || iso < to);
+
+	const journaled = new Set(log.filter((e) => e.pages > 0 && e.bookId).map((e) => e.bookId));
+	const byBook = new Map<number, number>();
+	let pagesRead = 0;
+	for (const e of log) {
+		if (!e.pages || !dayIn(e.day)) continue;
+		pagesRead += e.pages;
+		if (e.bookId) byBook.set(e.bookId, (byBook.get(e.bookId) ?? 0) + e.pages);
+	}
+
+	const genres = new Map<string, { name: string; pages: number; books: number }>();
+	const authors = new Map<string, { name: string; pages: number; books: number }>();
+	const add = (m: typeof genres, name: string, pages: number) => {
+		const k = name.toLowerCase();
+		const c = m.get(k) ?? { name, pages: 0, books: 0 };
+		c.pages += pages;
+		c.books++;
+		m.set(k, c);
+	};
+	for (const b of books) {
+		const finishedHere = isFinished(b) && isoIn(b.finishedAt!);
+		let pages = b.hardcoverId ? (byBook.get(b.hardcoverId) ?? 0) : 0;
+		if (finishedHere && !(b.hardcoverId && journaled.has(b.hardcoverId))) {
+			pages = b.pages ?? 0;
+			pagesRead += pages;
+		}
+		if (!pages && !finishedHere) continue;
+		for (const g of b.genres) if (!NOT_A_GENRE.test(g.trim())) add(genres, g, pages);
+		if (b.authors[0]) add(authors, b.authors[0], pages);
+	}
+	const top = (m: typeof genres) => [...m.values()].sort((a, b) => b.pages - a.pages || b.books - a.books || a.name.localeCompare(b.name)).slice(0, 5);
+	return { pagesRead, genres: top(genres), authors: top(authors) };
+}
+
+/** A local calendar day ("2026-10-05") for an ISO instant. */
+function localDay(iso: string): string {
+	const d = new Date(iso);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** Your reading streaks: the current run (alive if you read today or

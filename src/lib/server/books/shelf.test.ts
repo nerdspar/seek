@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 let myToken: string | null = 'hc_mine';
 vi.mock('../userctx', async (orig) => ({ ...(await orig<object>()), hardcoverUserToken: () => myToken }));
 
-import { deleteGoal, listGoals, readingDays, myShelf, saveGoal, setPages, setRating, setStatus } from './shelf';
+import { deleteGoal, journalPages, listGoals, readingLog, myShelf, saveGoal, setPages, setRating, setStatus } from './shelf';
 import { invalidateEveryone } from '../memo';
 
 /* A fake Hardcover: a shelf of user_book rows, goals, and every mutation recorded. */
@@ -13,7 +13,7 @@ let goals: Row[] = [];
 let calls: { op: string; vars: Record<string, unknown> }[] = [];
 let failNext: string | null = null;
 let recount = 0;
-let journal: (string | null)[] = [];
+let journal: Record<string, unknown>[] = [];
 let journalQueries: Record<string, unknown>[] = [];
 
 const ub = (id: number, bookId: number, status_id: number, read: Row | null = null, over: Row = {}): Row => ({
@@ -46,7 +46,7 @@ function fakeFetch(_url: string, init: { body: string; headers: Record<string, s
 	if (query.includes('me { id }')) return reply({ me: [{ id: 178538 }] });
 	if (query.includes('reading_journals')) {
 		journalQueries.push(variables);
-		return reply({ reading_journals: journal.map((d) => ({ journal_date: d })) });
+		return reply({ reading_journals: journal.slice(Number(variables.offset ?? 0), Number(variables.offset ?? 0) + 500) });
 	}
 	const offset = Number(variables.offset ?? 0);
 	return reply({ me: [{ user_books: shelf.slice(offset, offset + 500) }] });
@@ -200,10 +200,33 @@ describe('reading goals', () => {
 	});
 });
 
-describe('readingDays', () => {
-	it("asks Hardcover's journal for the days you read — as you, reading events only", async () => {
-		journal = ['2026-10-04', null, '2026-10-02'];
-		expect(await readingDays()).toEqual(['2026-10-04', '2026-10-02']);
-		expect(journalQueries[0]).toEqual({ id: 178538, events: ['progress_updated', 'user_book_read_finished', 'status_read'] });
+describe('readingLog', () => {
+	const row = (day: string | null, bookId: number, event: string, at?: number, was?: number | null) => ({
+		journal_date: day,
+		book_id: bookId,
+		event,
+		metadata: event === 'progress_updated' ? { progress_pages: at, progress_pages_was: was, pages_delta: 98 } : {}
+	});
+
+	it("reads Hardcover's journal as you — reading events only — with the pages each update moved you", async () => {
+		journal = [row('2026-10-04', 7, 'progress_updated', 49, 48), row('2026-10-03', 7, 'user_book_read_finished'), row('2026-10-02', 8, 'progress_updated', 32, null)];
+		expect(await readingLog()).toEqual([
+			{ day: '2026-10-04', bookId: 7, pages: 1 },
+			{ day: '2026-10-03', bookId: 7, pages: 0 },
+			{ day: '2026-10-02', bookId: 8, pages: 32 }
+		]);
+		expect(journalQueries[0]).toEqual({ id: 178538, events: ['progress_updated', 'user_book_read_finished', 'status_read'], offset: 0 });
+	});
+
+	it('pages through a long journal', async () => {
+		journal = Array.from({ length: 501 }, (_, i) => row('2026-10-01', i, 'progress_updated', 10, 0));
+		expect(await readingLog()).toHaveLength(501);
+		expect(journalQueries.map((q) => q.offset)).toEqual([0, 500]);
+	});
+
+	it("going back a page (or a fresh read's start) never counts as negative", () => {
+		expect(journalPages({ event: 'progress_updated', metadata: { progress_pages: 10, progress_pages_was: 40 } })).toBe(0);
+		expect(journalPages({ event: 'progress_updated', metadata: { progress_pages: null } })).toBe(0);
+		expect(journalPages({ event: 'status_read', metadata: null })).toBe(0);
 	});
 });

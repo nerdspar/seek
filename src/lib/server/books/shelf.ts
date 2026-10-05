@@ -25,6 +25,7 @@ import {
 	mapShelfRow,
 	type EntryStatus,
 	type ReadingGoalItem,
+	type ReadingLogEntry,
 	type ShelfBook
 } from '$lib/books';
 
@@ -206,25 +207,47 @@ export function setPages(hardcoverId: number, pages: number, now = new Date()): 
    wanting or starting a book doesn't count. */
 const READING_EVENTS = ['progress_updated', 'user_book_read_finished', 'status_read'];
 
-/** The calendar days (newest first, about the last year and a bit) on which
- *  Hardcover's journal shows you reading. */
-export function readingDays(): Promise<string[]> {
-	return memo('books:days', 10 * 60 * 1000, async () => {
+type JournalRow = { journal_date: string | null; book_id: number | null; event: string; metadata: Record<string, unknown> | null };
+const JOURNAL_PAGE = 500;
+
+/** Pages a journal entry moved you forward: where you got to, less where you
+ *  were (nothing, at the start of a read). Hardcover's own `pages_delta`
+ *  doesn't add up (48 → 49 reads as 98), so it's worked out here. */
+export function journalPages(row: Pick<JournalRow, 'event' | 'metadata'>): number {
+	if (row.event !== 'progress_updated') return 0;
+	const m = row.metadata ?? {};
+	const at = typeof m.progress_pages === 'number' ? m.progress_pages : null;
+	const was = typeof m.progress_pages_was === 'number' ? m.progress_pages_was : 0;
+	return at === null ? 0 : Math.max(0, at - was);
+}
+
+/** Your reading journal (Hardcover): one entry per page update or finish,
+ *  newest first — the days you read, and how many pages, from any device
+ *  (BookOrbit's sync, the Xteink, Seek). Feeds the week chart, streaks, pages
+ *  read and the genres/authors you've been reading. */
+export function readingLog(): Promise<ReadingLogEntry[]> {
+	return memo('books:log', 10 * 60 * 1000, async () => {
 		const t = token();
 		const me = await hcAs<{ me: { id: number }[] }>(t, 'query { me { id } }');
 		const id = me.me?.[0]?.id;
 		if (!id) return [];
-		const data = await hcAs<{ reading_journals: { journal_date: string | null }[] }>(
-			t,
-			`query Days($id: Int!, $events: [String!]) {
-			  reading_journals(
-			    where: {user_id: {_eq: $id}, event: {_in: $events}, journal_date: {_is_null: false}},
-			    distinct_on: journal_date, order_by: {journal_date: desc}, limit: 450
-			  ) { journal_date }
-			}`,
-			{ id, events: READING_EVENTS }
-		);
-		return data.reading_journals.map((r) => r.journal_date).filter((d): d is string => Boolean(d));
+		const out: ReadingLogEntry[] = [];
+		for (let offset = 0; offset < JOURNAL_PAGE * 6; offset += JOURNAL_PAGE) {
+			const data = await hcAs<{ reading_journals: JournalRow[] }>(
+				t,
+				`query Log($id: Int!, $events: [String!], $offset: Int!) {
+				  reading_journals(
+				    where: {user_id: {_eq: $id}, event: {_in: $events}, journal_date: {_is_null: false}},
+				    order_by: {id: desc}, limit: ${JOURNAL_PAGE}, offset: $offset
+				  ) { journal_date book_id event metadata }
+				}`,
+				{ id, events: READING_EVENTS, offset }
+			);
+			for (const r of data.reading_journals)
+				if (r.journal_date) out.push({ day: r.journal_date, bookId: r.book_id, pages: journalPages(r) });
+			if (data.reading_journals.length < JOURNAL_PAGE) break;
+		}
+		return out;
 	});
 }
 

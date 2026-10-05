@@ -16,10 +16,12 @@
 		highestRated,
 		shelfView,
 		readingStats,
+		pagesByDay,
+		readingActivity,
+		readingDaysOf,
 		readingStreaks,
 		recentlyAdded,
 		topAuthors,
-		weekActivity,
 		type MyBook,
 		type ReadingRange
 	} from '$lib/books';
@@ -49,8 +51,8 @@
 	let openBook = $state<MyBook | null>(null);
 	let shelvesOpen = $state(false);
 	const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-	/** "M", "T"… for a calendar day. */
-	const weekday = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'narrow', timeZone: 'UTC' });
+	/** "Mon", "Tue"… for a calendar day. */
+	const weekday = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
 	const peakOf = (weekday: { hours: number }[]) => Math.max(1, ...weekday.map((d) => d.hours));
 
 	/** Total minutes as "361 days, 20 hours, 20 minutes". Days are dropped when
@@ -113,15 +115,24 @@
 		{#if data.view === 'reading'}
 			<!-- Reading, laid out like Watching: the chosen range, month by month,
 			     the week and streaks, goals, the collection, then rails. -->
-			{#await data.books then books}
+			{#await Promise.all([data.books, data.readingLog ?? Promise.resolve(null)]) then [books, log]}
 				{@const all = books ?? []}
 				{@const rs = readingStats(all, data.range as ReadingRange)}
 				{@const year = data.range === 'last_year' ? new Date().getFullYear() - 1 : new Date().getFullYear()}
-				{@const authors = topAuthors(all)}
+				<!-- With Hardcover's journal: pages actually read in the range, and
+				     genres/authors weighted by them (books in progress count too).
+				     Without it, finished books only. -->
+				{@const act = log ? readingActivity(all, log, data.range as ReadingRange) : null}
+				{@const genres = act ? act.genres.map((g) => ({ name: g.name, value: g.pages ? `${fmt(g.pages)} pages` : `${g.books} ${g.books === 1 ? 'book' : 'books'}` })) : rs.topGenres.map((g) => ({ name: g.name, value: `${g.count} ${g.count === 1 ? 'book' : 'books'}` }))}
+				{@const authors = act ? act.authors.map((a) => ({ name: a.name, value: a.pages ? `${fmt(a.pages)} pages` : `${a.books} ${a.books === 1 ? 'book' : 'books'}` })) : topAuthors(all).map((a) => ({ name: a.name, value: `${a.count} ${a.count === 1 ? 'book' : 'books'}` }))}
 				<section class="headline">
 					<span class="big tnum">{fmt(rs.finished)}</span>
 					<span class="unit">{rs.finished === 1 ? 'book' : 'books'} finished · {RANGES.find((r) => r.id === data.range)?.label.toLowerCase()}</span>
-					{#if rs.pages}<span class="breakdown tnum">{fmt(rs.pages)} pages</span>{/if}
+					{#if act}
+						<span class="breakdown tnum">{fmt(act.pagesRead)} {act.pagesRead === 1 ? 'page' : 'pages'} read</span>
+					{:else if rs.pages}
+						<span class="breakdown tnum">{fmt(rs.pages)} pages</span>
+					{/if}
 				</section>
 
 				{#if data.range === 'this_year' || data.range === 'last_year'}
@@ -148,27 +159,38 @@
 					<li><span class="n tnum">{fmt(all.filter((b) => b.status === 'want_to_read').length)}</span><span class="l">Want to read</span></li>
 				</ul>
 
-				{#if data.readingDays}
-					{#await data.readingDays then days}
-						{@const today = new Date().toLocaleDateString('en-CA')}
-						{@const week = weekActivity(days, today)}
-						{@const streak = readingStreaks(days, today)}
-						<section>
-							<h2>This week</h2>
-							<div class="week" aria-label="Days you read in the last week">
-								{#each week as d (d.day)}
-									<span class="day">
-										<span class="dot" class:on={d.read}></span>
-										<span class="dl">{weekday(d.day)}</span>
-									</span>
-								{/each}
-							</div>
-						</section>
-						<section class="streaks">
-							<div><span class="n tnum">{streak.current}</span><span class="l">Day streak</span></div>
-							<div><span class="n tnum">{streak.longest}</span><span class="l">Longest streak</span></div>
-						</section>
-					{/await}
+				{#if log}
+					{@const today = new Date().toLocaleDateString('en-CA')}
+					{@const week = pagesByDay(log, today)}
+					{@const weekPages = week.reduce((n, d) => n + d.pages, 0)}
+					{@const daysRead = week.filter((d) => d.read).length}
+					{@const peak = Math.max(1, ...week.map((d) => d.pages))}
+					{@const streak = readingStreaks(readingDaysOf(log), today)}
+					<!-- The Watching tab's Binge rhythm, for the last seven days: each
+					     bar is the pages read that day; an empty bar, nothing read. -->
+					<section>
+						<h2>Reading rhythm</h2>
+						<p class="sub">
+							{#if daysRead}
+								{fmt(weekPages)} {weekPages === 1 ? 'page' : 'pages'} in the last 7 days, on {daysRead} {daysRead === 1 ? 'day' : 'days'}.
+							{:else}
+								Nothing read in the last 7 days.
+							{/if}
+						</p>
+						<div class="bars">
+							{#each week as d (d.day)}
+								<div class="bar" title={d.read ? `${d.pages} pages` : 'Nothing read'}>
+									<div class="col"><div class="fill" style:height={`${d.pages ? Math.max(6, (d.pages / peak) * 100) : d.read ? 4 : 0}%`}></div></div>
+									<span class="lab">{weekday(d.day)}</span>
+									<span class="pg tnum">{d.pages ? fmt(d.pages) : ''}</span>
+								</div>
+							{/each}
+						</div>
+					</section>
+					<section class="streaks">
+						<div><span class="n tnum">{streak.current}</span><span class="l">Day streak</span></div>
+						<div><span class="n tnum">{streak.longest}</span><span class="l">Longest streak</span></div>
+					</section>
 				{/if}
 
 				{#if data.reading}
@@ -233,12 +255,12 @@
 					{/if}
 				{/each}
 
-				{#if rs.topGenres.length}
+				{#if genres.length}
 					<section>
-						<h2>Your genres</h2>
+						<h2>Favourite genres</h2>
 						<ul class="list">
-							{#each rs.topGenres as g (g.name)}
-								<li><span>{g.name}</span><span class="dim tnum">{g.count}</span></li>
+							{#each genres as g (g.name)}
+								<li><span>{g.name}</span><span class="dim tnum">{g.value}</span></li>
 							{/each}
 						</ul>
 					</section>
@@ -248,7 +270,7 @@
 						<h2>Top authors</h2>
 						<ul class="list">
 							{#each authors as a (a.name)}
-								<li><span>{a.name}</span><span class="dim tnum">{a.count}</span></li>
+								<li><span>{a.name}</span><span class="dim tnum">{a.value}</span></li>
 							{/each}
 						</ul>
 					</section>
@@ -540,11 +562,8 @@
 
 	.bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; height: 110px; }
 	.bars.twelve { grid-template-columns: repeat(12, 1fr); gap: 4px; height: 96px; }
-	.week { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 14px; background: var(--surface); }
-	.day { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-	.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--surface-raised); }
-	.dot.on { background: var(--signal); }
-	.dl { font-size: 11px; color: var(--text-dim); }
+	/* Pages under each day of Reading rhythm; the row keeps its height when empty. */
+	.pg { min-height: 13px; margin-top: -3px; font-size: 10px; text-align: center; color: var(--text-dim); }
 	.bar { display: flex; flex-direction: column; gap: 6px; }
 	.col { flex: 1; display: flex; align-items: flex-end; border-radius: 6px; background: var(--surface); overflow: hidden; }
 	.fill { width: 100%; border-radius: 6px; background: var(--signal); }
