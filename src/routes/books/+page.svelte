@@ -1,4 +1,5 @@
 <script lang="ts">
+	import GoalSheet from '$lib/components/GoalSheet.svelte';
 	import { setSegment } from '$lib/segment';
 	import { goto, invalidateAll } from '$app/navigation';
 	import TabBar from '$lib/components/TabBar.svelte';
@@ -23,7 +24,8 @@
 		type BookFilters,
 		type BookRequest,
 		type BookSort,
-		type MyBook
+		type MyBook,
+		type ReadingGoalItem
 	} from '$lib/books';
 	import type { PageData } from './$types';
 
@@ -41,41 +43,16 @@
 		openCard = null;
 	};
 
-	/* ── Your yearly goal: tap to change it (or set one) ─────────────────── */
-	type Goal = { goalBooks: number; completedBooks: number; year: number };
-	let goalSaved = $state<Goal | null>(null);
-	let editingGoal = $state(false);
-	let goalInput = $state('');
-	let goalError = $state<string | null>(null);
-	let goalBusy = $state(false);
-
-	function editGoal(current: Goal | null) {
-		goalInput = current?.goalBooks ? String(current.goalBooks) : '';
-		goalError = null;
-		editingGoal = true;
-	}
-	async function saveGoal() {
-		const books = Number(goalInput);
-		if (!Number.isInteger(books) || books < 1 || books > 1000) {
-			goalError = 'Pick a number of books between 1 and 1000.';
-			return;
-		}
-		goalBusy = true;
-		goalError = null;
-		try {
-			const res = await fetch('/api/books/goal', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ books })
-			});
-			if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { message?: string } | null)?.message ?? `HTTP ${res.status}`);
-			goalSaved = (await res.json()).goal;
-			editingGoal = false;
-		} catch (e) {
-			goalError = `Couldn't save — ${(e as Error).message}`;
-		} finally {
-			goalBusy = false;
-		}
+	/* ── Your goal: the books goal running today, edited in the goal sheet ── */
+	let goalsSaved = $state<ReadingGoalItem[] | null>(null);
+	let editingGoal = $state<ReadingGoalItem | null | 'new'>(null);
+	const today = new Date().toLocaleDateString('en-CA');
+	const yearGoal = (goals: ReadingGoalItem[]) =>
+		goals.find((g) => g.metric === 'book' && g.startDate <= today && today <= g.endDate) ?? null;
+	async function goalsChanged(saved: ReadingGoalItem[]) {
+		goalsSaved = saved.length
+			? saved
+			: await fetch('/api/books/goals').then((r) => (r.ok ? r.json() : { goals: [] })).then((d) => d.goals);
 	}
 
 	/* Your requests arrive on their own (they're a nicety — BookOrbit may be slow). */
@@ -178,33 +155,22 @@
 
 	<main use:tabReselect={{ tab: 'watchlist' }}>
 		{#if data.hardcoverLinked}
-		{#await data.goal then loaded}
-			{@const goal = goalSaved ?? loaded}
-			{#if editingGoal}
-				<form class="goal" onsubmit={(e) => { e.preventDefault(); void saveGoal(); }}>
-					<label class="goaltext" for="goal-books">
-						<span class="label">Books to read in {goal?.year ?? new Date().getFullYear()}</span>
-					</label>
-					<div class="goaledit">
-						<!-- svelte-ignore a11y_autofocus -->
-						<input id="goal-books" type="number" inputmode="numeric" min="1" max="1000" bind:value={goalInput} autofocus />
-						<button type="submit" class="save" disabled={goalBusy}>Save</button>
-						<button type="button" class="cancel" onclick={() => (editingGoal = false)}>Cancel</button>
-					</div>
-					{#if goalError}<p class="goalerr">{goalError}</p>{/if}
-				</form>
-			{:else if goal && goal.goalBooks > 0}
-				{@const done = Math.min(goal.completedBooks, goal.goalBooks)}
-				<button class="goal" onclick={() => editGoal(goal)} aria-label="Change your reading goal">
+		{#await data.goals then loaded}
+			{@const goal = yearGoal(goalsSaved ?? loaded)}
+			{#if goal}
+				{@const done = Math.min(goal.done, goal.target)}
+				<button class="goal" onclick={() => (editingGoal = goal)} aria-label="Change your reading goal">
 					<span class="goaltext">
-						<span class="label">{goal.year} reading goal</span>
-						<span class="hint tnum">{goal.completedBooks} of {goal.goalBooks} books</span>
+						<span class="label">{goal.title}</span>
+						<span class="hint tnum">{Math.round(goal.done)} of {goal.target} books</span>
 					</span>
-					<span class="track"><span class="fill" style:width={`${(done / goal.goalBooks) * 100}%`}></span></span>
+					<span class="track"><span class="fill" style:width={`${(done / goal.target) * 100}%`}></span></span>
 				</button>
 			{:else}
-				<button class="setgoal" onclick={() => editGoal(goal)}>+ Set a reading goal for {goal?.year ?? new Date().getFullYear()}</button>
+				<button class="setgoal" onclick={() => (editingGoal = 'new')}>+ Set a reading goal for {new Date().getFullYear()}</button>
 			{/if}
+		{:catch}
+			<!-- Hardcover unreachable: the list below says so. -->
 		{/await}
 		{/if}
 
@@ -315,6 +281,10 @@
 		{/await}
 	</main>
 
+	{#if editingGoal}
+		<GoalSheet goal={editingGoal === 'new' ? null : editingGoal} onclose={() => (editingGoal = null)} onsaved={goalsChanged} />
+	{/if}
+
 	<button class="fab" onclick={() => goto('/books/search')} aria-label="Add a book">
 		<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg>
 	</button>
@@ -391,16 +361,6 @@
 	.goal .track { height: 6px; border-radius: 3px; background: var(--surface-raised); overflow: hidden; }
 	.goal .fill { display: block; height: 100%; border-radius: 3px; background: var(--signal); }
 	button.goal { width: 100%; text-align: left; }
-	.goaledit { display: flex; gap: 8px; }
-	.goaledit input {
-		flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: none; border-radius: 10px;
-		background: var(--surface-raised); color: var(--text); font: inherit; font-size: 16px; outline: none;
-	}
-	.goaledit button { flex: none; height: 40px; padding: 0 14px; border-radius: 10px; font-size: 14px; font-weight: 650; }
-	.goaledit .save { background: var(--signal); color: #fff; }
-	.goaledit .save:disabled { opacity: 0.6; }
-	.goaledit .cancel { background: var(--surface-raised); color: var(--text-dim); }
-	.goalerr { margin: 0; font-size: 12.5px; color: #ff8a8a; }
 	.setgoal {
 		display: block; width: 100%; margin: 6px 0 18px; padding: 12px 14px; border-radius: 14px;
 		background: var(--surface); text-align: left; font-size: 14px; font-weight: 600; color: var(--signal-solid);

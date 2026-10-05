@@ -1057,3 +1057,61 @@ export function mapHardcoverHit(raw: unknown): BookCard {
 		rating: num(d.rating)
 	};
 }
+
+/* ── Reading goals (Hardcover) ───────────────────────────────────────────── */
+
+export type GoalMetric = 'book' | 'page' | 'hour';
+/** What counts toward it: any reading, only read (print/ebook), or only listened. */
+export type GoalFormat = 'any' | 'read' | 'listen';
+
+/** A goal as Seek shows and edits it. Hardcover computes `done`. */
+export type ReadingGoalItem = {
+	id: number;
+	title: string;
+	metric: GoalMetric;
+	target: number;
+	done: number;
+	format: GoalFormat;
+	/** Calendar days, yyyy-mm-dd. */
+	startDate: string;
+	endDate: string;
+};
+
+/* Hardcover's reading_formats: 1 Read, 2 Listened, 3 Both, 4 Ebook. */
+const GOAL_FORMAT_ID: Record<GoalFormat, number | null> = { any: null, read: 1, listen: 2 };
+export const goalFormatId = (f: GoalFormat) => GOAL_FORMAT_ID[f];
+
+/** A `goals` row → ReadingGoalItem; null for an archived or broken one. */
+export function mapGoal(raw: unknown): ReadingGoalItem | null {
+	const g = rec(raw);
+	const id = num(g.id);
+	const metric = str(g.metric);
+	const target = num(g.goal);
+	const start = str(g.start_date);
+	const end = str(g.end_date);
+	if (!id || !target || !start || !end || g.archived === true) return null;
+	if (metric !== 'book' && metric !== 'page' && metric !== 'hour') return null;
+	const formatId = num(rec(g.conditions).readingFormatId);
+	return {
+		id,
+		title: str(g.description) ?? `${start.slice(0, 4)} Reading Goal`,
+		metric,
+		target,
+		done: Math.round((num(g.progress) ?? 0) * 10) / 10,
+		format: formatId === 1 || formatId === 4 ? 'read' : formatId === 2 ? 'listen' : 'any',
+		startDate: start,
+		endDate: end
+	};
+}
+
+/** Goals still running (or not started yet) on `today`, soonest-ending first. */
+export function currentGoals(goals: ReadingGoalItem[], today: string): ReadingGoalItem[] {
+	return goals.filter((g) => g.endDate >= today).sort((a, b) => a.endDate.localeCompare(b.endDate) || a.id - b.id);
+}
+
+const METRIC_WORDS: Record<GoalMetric, [string, string]> = { book: ['book', 'books'], page: ['page', 'pages'], hour: ['hour', 'hours'] };
+/** "3 of 12 books", "1,240 of 5,000 pages", "4.5 of 20 hours". */
+export function goalProgressText(g: Pick<ReadingGoalItem, 'metric' | 'target' | 'done'>): string {
+	const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+	return `${fmt(g.done)} of ${fmt(g.target)} ${METRIC_WORDS[g.metric][g.target === 1 ? 0 : 1]}`;
+}

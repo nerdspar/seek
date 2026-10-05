@@ -9,7 +9,7 @@ import {
 import { getRecentlyAdded } from '$lib/server/watchlist';
 import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
-import { readingGoal, shelfLinked } from '$lib/server/books/shelf';
+import { listGoals, shelfLinked } from '$lib/server/books/shelf';
 import { myBookList } from '$lib/server/books/discovery';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
@@ -37,11 +37,11 @@ export const load: PageServerLoad = async ({ url }) => {
 	   a fresh addition appears at once. Independent of `range`. */
 	const recentlyAdded = memo('recent:added', 60 * 1000, () => getRecentlyAdded(12));
 
-	/* This year's reading goal (Hardcover), when Books is on and you've linked
-	   your own Hardcover account. Streamed; the shelf module caches it. */
+	/* Your reading goals (Hardcover), when Books is on and you've linked your
+	   own Hardcover account. Streamed; the shelf module caches them. */
 	const prefs = await getPrefs();
 	const media = mediaOn(prefs, bookorbitConfigured() || hardcoverConfigured());
-	const reading = media.book && shelfLinked() ? readingGoal() : null;
+	const reading = media.book && shelfLinked() ? listGoals() : null;
 
 	/* Watching (shows + films) and Reading are separate views of the page;
 	   whichever kinds are switched off simply aren't offered. */

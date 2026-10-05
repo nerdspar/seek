@@ -138,8 +138,8 @@
 				{/if}
 			{/await}
 			{#if data.reading}
-				{#await data.reading then goal}
-					<ReadingCard {goal} />
+				{#await data.reading then goals}
+					<ReadingCard {goals} />
 				{:catch}
 					<!-- Hardcover unreachable: the numbers above still stand. -->
 				{/await}

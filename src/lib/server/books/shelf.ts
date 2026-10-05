@@ -17,7 +17,16 @@
 import { hcAs, HardcoverError } from './hardcover';
 import { hardcoverUserToken, NotLinkedError } from '../userctx';
 import { invalidate, memo } from '../memo';
-import { HC_STATUS_ID, mapShelfRow, type EntryStatus, type ShelfBook } from '$lib/books';
+import {
+	HC_STATUS_ID,
+	currentGoals,
+	goalFormatId,
+	mapGoal,
+	mapShelfRow,
+	type EntryStatus,
+	type ReadingGoalItem,
+	type ShelfBook
+} from '$lib/books';
 
 const PAGE = 500;
 
@@ -128,7 +137,7 @@ async function write<T>(job: (t: string) => Promise<T>): Promise<T> {
 		return await job(t);
 	} finally {
 		invalidate('books:shelf');
-		invalidate('books:goal');
+		invalidate('books:goals');
 	}
 }
 
@@ -190,56 +199,89 @@ export function setPages(hardcoverId: number, pages: number, now = new Date()): 
 	});
 }
 
-/* ── The reading goal ───────────────────────────────────────────────────── */
+/* ── Reading goals ──────────────────────────────────────────────────────── */
 
-export type Goal = { year: number; target: number; done: number };
+/* Hardcover's privacy_settings: 3 is Private. */
+const PRIVATE = 3;
 
-type GoalRow = { id: number; goal: number; progress: number | null; start_date: string; end_date: string };
 const GOALS_QUERY = `query {
-  me { goals(where: {archived: {_eq: false}, metric: {_eq: "book"}}, order_by: {start_date: desc}) {
-    id goal progress start_date end_date
+  me { goals(where: {archived: {_eq: false}}, order_by: {end_date: asc}) {
+    id description metric goal progress start_date end_date archived conditions
   } }
 }`;
 
-async function currentGoalRow(t: string, now: Date): Promise<GoalRow | null> {
-	const data = await hcAs<{ me: { goals?: GoalRow[] }[] }>(t, GOALS_QUERY);
-	const d = today(now);
-	return (data.me?.[0]?.goals ?? []).find((g) => g.start_date <= d && d <= g.end_date) ?? null;
-}
-
-/** This year's book goal on Hardcover (Hardcover counts the progress), or null. */
-export function getGoal(now = new Date()): Promise<Goal | null> {
-	return memo('books:goal', 5 * 60 * 1000, async () => {
-		const g = await currentGoalRow(token(), now);
-		return g ? { year: Number(g.start_date.slice(0, 4)), target: g.goal, done: Math.round(g.progress ?? 0) } : null;
+/** Your goals that are still running, with Hardcover's progress brought up to
+ *  date first (Hardcover recounts a goal only when asked). */
+export function listGoals(now = new Date()): Promise<ReadingGoalItem[]> {
+	return memo('books:goals', 5 * 60 * 1000, async () => {
+		const t = token();
+		const data = await hcAs<{ me: { goals?: unknown[] }[] }>(t, GOALS_QUERY);
+		const goals = currentGoals((data.me?.[0]?.goals ?? []).map(mapGoal).filter((g): g is ReadingGoalItem => g !== null), today(now));
+		// Recount each in parallel; a recount that fails keeps the last number.
+		return Promise.all(
+			goals.map(async (g) => {
+				const r = await hcAs<{ update_goal_progress: { goal?: { progress?: number | null } | null } | null }>(
+					t,
+					'mutation($id: Int!) { update_goal_progress(id: $id) { goal { progress } } }',
+					{ id: g.id }
+				).catch(() => null);
+				const p = r?.update_goal_progress?.goal?.progress;
+				return typeof p === 'number' ? { ...g, done: Math.round(p * 10) / 10 } : g;
+			})
+		);
 	});
 }
 
-/** Set this year's book goal, creating it on Hardcover if there isn't one. */
-export function setGoal(target: number, now = new Date()): Promise<void> {
+export type GoalDraft = Omit<ReadingGoalItem, 'id' | 'done'> & { id?: number | null };
+
+type GoalResult = { id?: number | null; errors?: string | null } | null;
+
+/**
+ * Create or change a goal. Always private: Hardcover ignores privacy when a goal
+ * is created, so a new one is created and then set Private straight away.
+ */
+export function saveGoal(draft: GoalDraft): Promise<number> {
 	return write(async (t) => {
-		const year = now.getFullYear();
-		const existing = await currentGoalRow(t, now);
-		const goal = {
-			metric: 'book',
-			goal: target,
-			start_date: existing?.start_date ?? `${year}-01-01`,
-			end_date: existing?.end_date ?? `${year}-12-31`,
-			description: `${year} Reading Goal`
+		const formatId = goalFormatId(draft.format);
+		const object = {
+			description: draft.title.trim() || `${draft.startDate.slice(0, 4)} Reading Goal`,
+			metric: draft.metric,
+			goal: draft.target,
+			start_date: draft.startDate,
+			end_date: draft.endDate,
+			privacy_setting_id: PRIVATE,
+			conditions: formatId === null ? {} : { readingFormatId: formatId }
 		};
-		type GoalResult = { id?: number | null; errors?: string | null } | null;
-		const d = existing
-			? await hcAs<{ update_goal: GoalResult }>(
-					t,
-					'mutation($id: Int!, $o: GoalInput!) { update_goal(id: $id, object: $o) { id errors } }',
-					{ id: existing.id, o: goal }
-				).then((r) => r.update_goal)
-			: await hcAs<{ insert_goal: GoalResult }>(
-					t,
-					'mutation($o: GoalInput!) { insert_goal(object: $o) { id errors } }',
-					{ o: goal }
-				).then((r) => r.insert_goal);
-		if (!d || d.errors || !d.id) throw new HardcoverError(d?.errors || 'Saving the goal failed');
+		const update = async (id: number) => {
+			const d = await hcAs<{ update_goal: GoalResult }>(
+				t,
+				'mutation($id: Int!, $o: GoalInput!) { update_goal(id: $id, object: $o) { id errors } }',
+				{ id, o: object }
+			);
+			if (!d.update_goal || d.update_goal.errors) throw new HardcoverError(d.update_goal?.errors || 'Saving the goal failed');
+		};
+		if (draft.id) {
+			await update(draft.id);
+			return draft.id;
+		}
+		const d = await hcAs<{ insert_goal: GoalResult }>(
+			t,
+			'mutation($o: GoalInput!) { insert_goal(object: $o) { id errors } }',
+			{ o: object }
+		);
+		const id = d.insert_goal?.id;
+		if (!id || d.insert_goal?.errors) throw new HardcoverError(d.insert_goal?.errors || 'Creating the goal failed');
+		await update(id); // make it private
+		return id;
+	});
+}
+
+/** Delete a goal. Hardcover finishes deleting a moment later and answers
+ *  without an id, so only an error counts as failure. */
+export function deleteGoal(id: number): Promise<void> {
+	return write(async (t) => {
+		const d = await hcAs<{ delete_goal: GoalResult }>(t, 'mutation($id: Int!) { delete_goal(id: $id) { id errors } }', { id });
+		if (d.delete_goal?.errors) throw new HardcoverError(d.delete_goal.errors);
 	});
 }
 
@@ -285,16 +327,4 @@ export function wantIfNew(hardcoverId: number): Promise<void> {
 /** Your shelf entry for one book (for the book sheet), or null. */
 export async function shelfEntry(hardcoverId: number): Promise<ShelfBook | null> {
 	return (await entryFor(hardcoverId)) ?? null;
-}
-
-/** The yearly goal as the reading list and Profile show it. With no goal set,
- *  the count is the books you've finished this year. */
-export type ReadingGoal = { goalBooks: number; completedBooks: number; year: number };
-
-export async function readingGoal(now = new Date()): Promise<ReadingGoal> {
-	const g = await getGoal(now);
-	if (g) return { goalBooks: g.target, completedBooks: g.done, year: g.year };
-	const year = String(now.getFullYear());
-	const done = (await myShelf()).filter((b) => b.status === 'read' && b.finishedAt?.startsWith(year)).length;
-	return { goalBooks: 0, completedBooks: done, year: Number(year) };
 }

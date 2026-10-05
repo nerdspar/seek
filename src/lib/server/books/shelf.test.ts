@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 let myToken: string | null = 'hc_mine';
 vi.mock('../userctx', async (orig) => ({ ...(await orig<object>()), hardcoverUserToken: () => myToken }));
 
-import { getGoal, myShelf, setGoal, setPages, setRating, setStatus } from './shelf';
+import { deleteGoal, listGoals, myShelf, saveGoal, setPages, setRating, setStatus } from './shelf';
 import { invalidateEveryone } from '../memo';
 
 /* A fake Hardcover: a shelf of user_book rows, goals, and every mutation recorded. */
@@ -12,6 +12,7 @@ let shelf: Row[] = [];
 let goals: Row[] = [];
 let calls: { op: string; vars: Record<string, unknown> }[] = [];
 let failNext: string | null = null;
+let recount = 0;
 
 const ub = (id: number, bookId: number, status_id: number, read: Row | null = null, over: Row = {}): Row => ({
 	id,
@@ -26,7 +27,7 @@ const ub = (id: number, bookId: number, status_id: number, read: Row | null = nu
 
 function fakeFetch(_url: string, init: { body: string; headers: Record<string, string> }) {
 	const { query, variables = {} } = JSON.parse(init.body) as { query: string; variables?: Record<string, unknown> };
-	const op = query.match(/\b(insert_user_book_read|update_user_book_read|insert_user_book|update_user_book|delete_user_book|insert_goal|update_goal)\b/)?.[1];
+	const op = query.match(/\b(insert_user_book_read|update_user_book_read|insert_user_book|update_user_book|delete_user_book|insert_goal|update_goal_progress|update_goal|delete_goal)\b/)?.[1];
 	const reply = (data: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => ({ data }) } as Response);
 	if (op) {
 		calls.push({ op, vars: variables });
@@ -35,6 +36,8 @@ function fakeFetch(_url: string, init: { body: string; headers: Record<string, s
 			return reply({ [op]: { id: null, error: 'Book not found' } });
 		}
 		if (op === 'insert_goal' || op === 'update_goal') return reply({ [op]: { id: 9, errors: null } });
+		if (op === 'delete_goal') return reply({ [op]: { id: null, errors: null } });
+		if (op === 'update_goal_progress') return reply({ [op]: { goal: { progress: recount } } });
 		return reply({ [op]: { id: 4242, error: null } });
 	}
 	if (query.includes('goals')) return reply({ me: [{ goals }] });
@@ -51,6 +54,7 @@ beforeEach(() => {
 	goals = [];
 	calls = [];
 	failNext = null;
+	recount = 0;
 	invalidateEveryone('books:');
 	vi.stubGlobal('fetch', vi.fn(fakeFetch));
 });
@@ -140,26 +144,49 @@ describe('setRating and setPages', () => {
 	});
 });
 
-describe('the reading goal', () => {
-	it("reads this year's book goal and Hardcover's count", async () => {
-		goals = [
-			{ id: 3, goal: 30, progress: 12, start_date: '2026-01-01', end_date: '2026-12-31' },
-			{ id: 2, goal: 20, progress: 25, start_date: '2025-01-01', end_date: '2025-12-31' }
-		];
-		expect(await getGoal(NOW)).toEqual({ year: 2026, target: 30, done: 12 });
+describe('reading goals', () => {
+	const g = (id: number, over: Record<string, unknown> = {}) => ({
+		id,
+		description: `Goal ${id}`,
+		metric: 'book',
+		goal: 12,
+		progress: 1,
+		start_date: '2026-01-01',
+		end_date: '2026-12-31',
+		archived: false,
+		conditions: {},
+		...over
+	});
+	const draft = { title: 'Pages this year', metric: 'page' as const, format: 'read' as const, target: 5000, startDate: '2026-01-01', endDate: '2026-12-31' };
+
+	it('lists the goals still running, with progress recounted by Hardcover', async () => {
+		goals = [g(1), g(2, { end_date: '2025-12-31' }), g(3, { metric: 'hour', goal: 20, end_date: '2026-11-30' })];
+		recount = 4;
+		const list = await listGoals(NOW);
+		expect(list.map((x) => [x.id, x.done])).toEqual([
+			[3, 4],
+			[1, 4]
+		]);
+		expect(calls.filter((c) => c.op === 'update_goal_progress').map((c) => c.vars.id)).toEqual([3, 1]);
 	});
 
-	it('updates the goal you have, or creates one for the year', async () => {
-		goals = [{ id: 3, goal: 30, progress: 12, start_date: '2026-01-01', end_date: '2026-12-31' }];
-		await setGoal(40, NOW);
-		expect(calls[0]).toEqual({
-			op: 'update_goal',
-			vars: { id: 3, o: { metric: 'book', goal: 40, start_date: '2026-01-01', end_date: '2026-12-31', description: '2026 Reading Goal' } }
-		});
-		goals = [];
-		calls = [];
-		await setGoal(25, NOW);
-		expect(calls[0]).toMatchObject({ op: 'insert_goal', vars: { o: { goal: 25, start_date: '2026-01-01', end_date: '2026-12-31' } } });
-		expect(await getGoal(NOW)).toBeNull();
+	it('a new goal is created, then made private (Hardcover ignores privacy on create)', async () => {
+		expect(await saveGoal(draft)).toBe(9);
+		expect(ops()).toEqual(['insert_goal', 'update_goal']);
+		const object = { description: 'Pages this year', metric: 'page', goal: 5000, start_date: '2026-01-01', end_date: '2026-12-31', privacy_setting_id: 3, conditions: { readingFormatId: 1 } };
+		expect(calls[0].vars).toEqual({ o: object });
+		expect(calls[1].vars).toEqual({ id: 9, o: object });
+	});
+
+	it('changing a goal is one update, still private; "read or listen" has no format filter', async () => {
+		await saveGoal({ ...draft, id: 5, format: 'any' });
+		expect(calls).toEqual([
+			{ op: 'update_goal', vars: { id: 5, o: expect.objectContaining({ privacy_setting_id: 3, conditions: {} }) } }
+		]);
+	});
+
+	it('deletes (Hardcover answers without an id; only an error fails)', async () => {
+		await expect(deleteGoal(5)).resolves.toBeUndefined();
+		expect(calls).toEqual([{ op: 'delete_goal', vars: { id: 5 } }]);
 	});
 });

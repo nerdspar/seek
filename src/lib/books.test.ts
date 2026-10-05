@@ -28,6 +28,10 @@ import {
 	recommendationSeeds,
 	librarySeeds,
 	mapShelfRow,
+	mapGoal,
+	currentGoals,
+	goalProgressText,
+	goalFormatId,
 	contributorAuthors,
 	favoriteGenres,
 	readingStats,
@@ -659,5 +663,50 @@ describe('download request details', () => {
 		]);
 		expect(r.files[0]).toEqual({ name: '1984 (v5.0).epub', format: 'epub', sizeBytes: 297000 });
 		expect(mapReview({ bookDockFileId: null, verification: null, files: [] }).gone).toBe(true);
+	});
+});
+
+describe('reading goals', () => {
+	const raw = (over: Record<string, unknown> = {}) => ({
+		id: 7,
+		description: '2026 Reading Goal',
+		metric: 'book',
+		goal: 12,
+		progress: 3,
+		start_date: '2026-01-01',
+		end_date: '2026-12-31',
+		archived: false,
+		conditions: {},
+		...over
+	});
+
+	it("maps Hardcover's goal: metric, target, Hardcover's count, what counts, the dates", () => {
+		expect(mapGoal(raw())).toEqual({
+			id: 7,
+			title: '2026 Reading Goal',
+			metric: 'book',
+			target: 12,
+			done: 3,
+			format: 'any',
+			startDate: '2026-01-01',
+			endDate: '2026-12-31'
+		});
+		expect(mapGoal(raw({ metric: 'hour', progress: 4.567, conditions: { readingFormatId: 2 } }))).toMatchObject({ metric: 'hour', done: 4.6, format: 'listen' });
+		expect(mapGoal(raw({ conditions: { readingFormatId: 1 } }))?.format).toBe('read');
+		expect(mapGoal(raw({ archived: true }))).toBeNull();
+		expect(mapGoal(raw({ metric: 'chapter' }))).toBeNull();
+		expect(goalFormatId('any')).toBeNull();
+		expect(goalFormatId('listen')).toBe(2);
+	});
+
+	it('keeps the goals still running, soonest-ending first', () => {
+		const goals = [raw({ id: 1, end_date: '2026-12-31' }), raw({ id: 2, end_date: '2026-10-31' }), raw({ id: 3, end_date: '2025-12-31' })].map((g) => mapGoal(g)!);
+		expect(currentGoals(goals, '2026-10-04').map((g) => g.id)).toEqual([2, 1]);
+	});
+
+	it('says the progress in its own units', () => {
+		expect(goalProgressText({ metric: 'book', target: 12, done: 3 })).toBe('3 of 12 books');
+		expect(goalProgressText({ metric: 'page', target: 5000, done: 1240 })).toBe('1,240 of 5,000 pages');
+		expect(goalProgressText({ metric: 'hour', target: 1, done: 0.5 })).toBe('0.5 of 1 hour');
 	});
 });

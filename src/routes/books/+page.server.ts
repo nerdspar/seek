@@ -2,8 +2,8 @@ import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
 import { bookorbitConfigured, bookorbitLinked, getAllBooks, listMyRequests } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured } from '$lib/server/books/hardcover';
-import { myShelf, readingGoal, shelfLinked } from '$lib/server/books/shelf';
-import type { ReadingBook, ShelfBook } from '$lib/books';
+import { listGoals, myShelf, shelfLinked } from '$lib/server/books/shelf';
+import type { ReadingBook, ReadingGoalItem, ShelfBook } from '$lib/books';
 import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
 
@@ -30,7 +30,8 @@ export const load: PageServerLoad = async () => {
 		shelf: onShelf ? myShelf() : Promise.resolve([] as ShelfBook[]),
 		// What you've asked BookOrbit to fetch; a nicety, never fails the page.
 		requests: linked ? listMyRequests().catch(() => []) : Promise.resolve([]),
-		// The goal is a nicety: never let it fail the page.
-		goal: onShelf ? readingGoal().catch(() => null) : Promise.resolve(null)
+		// Your goals (the bar shows the books goal running today). A nicety:
+		// never let it fail the page.
+		goals: onShelf ? listGoals().catch(() => [] as ReadingGoalItem[]) : Promise.resolve([] as ReadingGoalItem[])
 	};
 };
