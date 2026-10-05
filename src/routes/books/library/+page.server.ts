@@ -16,6 +16,7 @@ export const load: PageServerLoad = async () => {
 	const linked = bookorbitLinked();
 	return {
 		linked,
+		canUpload: linked,
 		books: linked ? myBookList().then((all) => all.filter((b) => b.source === 'library')) : Promise.resolve([]),
 		shelves: linked ? listShelves().catch(() => []) : Promise.resolve([])
 	};

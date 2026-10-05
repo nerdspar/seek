@@ -7,7 +7,6 @@
 	import Poster from '$lib/components/Poster.svelte';
 	import BookShelf from '$lib/components/BookShelf.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
-	import UploadSheet from '$lib/components/UploadSheet.svelte';
 	import DownloadSheet from '$lib/components/DownloadSheet.svelte';
 	import BookTileButtons from '$lib/components/BookTileButtons.svelte';
 	import { tabReselect } from '$lib/tabReselect';
@@ -21,7 +20,6 @@
 	type Card = DiscoveryCard;
 
 	let open = $state<Card | null>(null);
-	let uploading = $state(false);
 	let downloading = $state<Card | null>(null);
 	let tileNote = $state<string | null>(null);
 
@@ -114,13 +112,6 @@
 	<header>
 		<div class="titlerow">
 			<h1>Discover</h1>
-			{#if data.canUpload}
-				<div class="actions">
-					<button class="icon" onclick={() => (uploading = true)} aria-label="Upload books">
-						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
-					</button>
-				</div>
-			{/if}
 		</div>
 		<div class="segments" role="tablist">
 			{#if data.media.tv}<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=tv', { noScroll: true })}>TV</button>{/if}
@@ -270,9 +261,7 @@
 
 {#if tileNote}<p class="toast" role="status">{tileNote}</p>{/if}
 
-{#if uploading}
-	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
-{/if}
+
 
 
 <style>
@@ -282,12 +271,6 @@
 	.titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 	.titlerow h1 { margin: 0; }
 	/* Negative margins: the 44px target must not make this header taller than TV/Movies'. */
-	.actions { display: flex; align-items: center; gap: 2px; margin: -10px -10px -10px 0; }
-	.icon {
-		flex: none; display: grid; place-items: center;
-		width: var(--tap); height: var(--tap);
-		border-radius: 50%; color: var(--text-dim);
-	}
 	.segments { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
 	.segments button {
 		min-height: 32px; padding: 0 18px; border-radius: 9px;

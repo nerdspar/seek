@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import UploadSheet from '$lib/components/UploadSheet.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
 	import DownloadSheet from '$lib/components/DownloadSheet.svelte';
@@ -20,6 +21,8 @@
 	 *  movies search: one box, results with + and download, suggestions when the
 	 *  box is empty. Tapping a book opens its sheet (status, rating, pages…). */
 	let { data }: { data: PageData } = $props();
+	/* Upload your own files into the library (BookOrbit). */
+	let uploading = $state(false);
 
 	type Scope = 'all' | 'yours';
 	let query = $state('');
@@ -104,7 +107,12 @@
 	};
 </script>
 
-<PageHeader title="Add a book" onback={() => history.back()} />
+{#snippet uploadAction()}
+	<button class="upload" onclick={() => (uploading = true)} aria-label="Upload books">
+		<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
+	</button>
+{/snippet}
+<PageHeader title="Add a book" onback={() => history.back()} action={data.canUpload ? uploadAction : undefined} />
 
 <main>
 	<div class="field">
@@ -223,6 +231,10 @@
 {/if}
 {#if note}<p class="toast" role="status">{note}</p>{/if}
 
+{#if uploading}
+	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
+{/if}
+
 <style>
 	main { padding: 4px var(--gutter) calc(var(--safe-b) + 32px); }
 	.field {
@@ -278,4 +290,5 @@
 		position: fixed; left: var(--gutter); right: var(--gutter); bottom: calc(var(--safe-b) + 16px); z-index: 60;
 		margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); box-shadow: var(--shadow-sm); font-size: 14px;
 	}
+	.upload { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text); }
 </style>

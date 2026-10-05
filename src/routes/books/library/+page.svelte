@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import UploadSheet from '$lib/components/UploadSheet.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import BookSheet from '$lib/components/BookSheet.svelte';
@@ -12,6 +13,8 @@
 	/** The whole library as a cover grid: sort it, narrow it to a genre or one
 	 *  of your shelves, and manage your shelves. Tap a book for its sheet. */
 	let { data }: { data: PageData } = $props();
+	/* Upload your own files into the library (BookOrbit). */
+	let uploading = $state(false);
 
 	const SORTS: { key: BookSort; label: string }[] = [
 		{ key: 'added', label: 'Recently added' },
@@ -52,7 +55,12 @@
 		);
 </script>
 
-<PageHeader title="Library" onback={() => history.back()} />
+{#snippet uploadAction()}
+	<button class="upload" onclick={() => (uploading = true)} aria-label="Upload books">
+		<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
+	</button>
+{/snippet}
+<PageHeader title="Library" onback={() => history.back()} action={data.canUpload ? uploadAction : undefined} />
 
 <main>
 	{#if !data.linked}
@@ -123,6 +131,10 @@
 	<ShelvesSheet onclose={() => { shelvesOpen = false; void invalidateAll(); }} />
 {/if}
 
+{#if uploading}
+	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
+{/if}
+
 <style>
 	main { padding: 4px var(--gutter) calc(var(--safe-b) + 32px); }
 	.bar { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; }
@@ -148,4 +160,5 @@
 	.sub { display: block; font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.msg { margin: 40px 0; text-align: center; font-size: 14px; color: var(--text-dim); }
 	.more { display: block; margin: 16px auto 0; font-size: 14px; font-weight: 600; color: var(--signal-solid); }
+	.upload { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text); }
 </style>

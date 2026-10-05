@@ -18,6 +18,7 @@ export const load: PageServerLoad = async () => {
 			.then(([mine, popular]) => railsWithOwned([...mine, ...popular.slice(0, 1)]))
 			.catch(() => []),
 		books: myBookList().catch(() => []),
-		canDownload: bookorbitLinked()
+		canDownload: bookorbitLinked(),
+		canUpload: bookorbitLinked()
 	};
 };
