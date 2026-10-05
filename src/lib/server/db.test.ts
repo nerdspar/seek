@@ -7,7 +7,7 @@ describe('migration v9 (films can be shared)', () => {
 		const db = new Database(':memory:');
 		db.pragma('foreign_keys = ON');
 		// A household as it stood before v9, with shows already shared.
-		for (let v = 0; v < 8; v++) db.exec(MIGRATIONS[v]);
+		for (let v = 0; v < 8; v++) db.exec(MIGRATIONS[v] as string);
 		db.pragma('user_version = 8');
 		db.prepare("INSERT INTO households (id, name, created_at) VALUES (1, 'Home', 'now')").run();
 		db.prepare(

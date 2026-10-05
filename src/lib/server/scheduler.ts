@@ -10,7 +10,6 @@ import { getPrefs } from './prefs';
 import { subscriptionCount } from './push';
 import { sendDailyDigest, sendAtTimeNotifications } from './digest';
 import { syncAnimeTags } from './anime-sync';
-import { moveToHardcover } from './books/moveToHardcover';
 import { listUsers, type User } from './users';
 import { runAs, NotLinkedError } from './userctx';
 import { startMirroring } from './household/run';
@@ -57,7 +56,6 @@ export function startScheduler(): void {
 	/* Always scheduled: the anime tags follow Floppy's genres, and push is
 	   always available (Seek generates its own keys). */
 	startAnimeSync();
-	startBookMove();
 
 	/* A tick's work (a cold calendar build plus a push fan-out) can in principle
 	   outrun the interval; without this, two overlapping ticks could both pass the
@@ -111,26 +109,3 @@ function startAnimeSync(): void {
 	setTimeout(() => void sync(), 60 * 1000);
 }
 
-/**
- * The one-time move of each person's reading state into Hardcover
- * (books/moveToHardcover.ts): a few minutes after boot, then hourly, so someone
- * who links Hardcover later is moved too. A person already moved costs one
- * database read.
- */
-function startBookMove(): void {
-	let running = false;
-	const move = async () => {
-		if (running) return;
-		running = true;
-		try {
-			await forEachUser(async (user) => {
-				const r = await moveToHardcover();
-				if ('added' in r) console.log(`[books] user ${user.id} moved to Hardcover: +${r.added}, ${r.already} already there, ${r.failed} failed`);
-			});
-		} finally {
-			running = false;
-		}
-	};
-	setInterval(() => void move(), 60 * 60 * 1000);
-	setTimeout(() => void move(), 3 * 60 * 1000);
-}

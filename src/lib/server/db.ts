@@ -5,19 +5,22 @@
  * accounts, sessions that can be invalidated, invites, and per-user credentials.
  * SQLite via better-sqlite3 (synchronous, transactional) in /data next to the
  * legacy JSON it migrates from. Watch state never lives here — it stays in each
- * person's Floppy; reading state stays in BookOrbit.
+ * person's Floppy; reading state lives on each person's Hardcover shelf.
  *
  * Migrations are append-only SQL run at open, tracked by PRAGMA user_version.
  * Never edit a shipped migration — add a new one.
  */
 import Database from 'better-sqlite3';
 import { env } from '$env/dynamic/private';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 export type DB = Database.Database;
 
-export const MIGRATIONS: string[] = [
+/** SQL, or — rarely — a step that needs code (still run in the transaction). */
+type Migration = string | ((db: DB) => void);
+
+export const MIGRATIONS: Migration[] = [
 	// v1 — households, accounts, invites/resets, per-user credentials + prefs,
 	// push subscriptions. Covers household phases A–C and books.
 	`
@@ -223,7 +226,18 @@ export const MIGRATIONS: string[] = [
 		user_id   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
 		moved_at  TEXT NOT NULL
 	);
-	`
+	`,
+	// v11 — the move to Hardcover is done: Seek's old book records and the
+	// "moved" markers go. Anyone whose move never finished keeps their rows in
+	// book_entries-unmoved.json beside the database, so nothing is lost silently.
+	(db) => {
+		const unmoved = db.prepare('SELECT * FROM book_entries WHERE user_id NOT IN (SELECT user_id FROM books_moved)').all();
+		if (unmoved.length) {
+			console.warn(`[db] ${unmoved.length} book record(s) never moved to Hardcover — kept in book_entries-unmoved.json`);
+			if (db.name !== ':memory:') writeFileSync(join(dirname(db.name), 'book_entries-unmoved.json'), JSON.stringify(unmoved, null, 2));
+		}
+		db.exec('DROP TABLE book_entries; DROP TABLE books_moved;');
+	}
 ];
 
 /** Open (creating if needed) and migrate a database. ':memory:' for tests. */
@@ -240,7 +254,9 @@ export function migrate(db: DB): void {
 	const current = db.pragma('user_version', { simple: true }) as number;
 	for (let v = current; v < MIGRATIONS.length; v++) {
 		db.transaction(() => {
-			db.exec(MIGRATIONS[v]);
+			const m = MIGRATIONS[v];
+			if (typeof m === 'string') db.exec(m);
+			else m(db);
 			db.pragma(`user_version = ${v + 1}`);
 		})();
 	}

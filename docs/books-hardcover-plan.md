@@ -97,6 +97,10 @@ This is what carries e-reader progress and "finished" into Hardcover.
 4. Deploy once (reads and writes have to switch together). Check both your Reading pages, then
    drop the old table in the following release.
 
+**Done (2026-10-05):** migration v11 drops `book_entries` and `books_moved`, and the move code is
+gone. Anyone whose move hadn't finished keeps their rows in `book_entries-unmoved.json` beside
+the database.
+
 **Risks:** Hardcover's API is officially beta. Seek only uses its stable, documented parts (shelves,
 reads, goals) and caches reads. A book missing from Hardcover's catalog can't be tracked until
 someone adds it on hardcover.app; that's rare, and Seek says so instead of failing silently.

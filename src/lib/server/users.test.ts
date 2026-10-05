@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDatabase, useDatabase, MIGRATIONS, db, migrate } from './db';
 import * as users from './users';
 import { AccountError } from './users';
@@ -27,7 +30,7 @@ describe('migrations', () => {
 		// A database as the first release left it: only v1 applied, one owner.
 		const old = new Database(':memory:');
 		old.pragma('foreign_keys = ON');
-		old.exec(MIGRATIONS[0]);
+		old.exec(MIGRATIONS[0] as string);
 		old.pragma('user_version = 1');
 		useDatabase(old);
 		await owner();
@@ -35,7 +38,27 @@ describe('migrations', () => {
 		migrate(old);
 		expect(old.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
 		expect(users.userCount()).toBe(1);
-		expect(old.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='book_entries'`).get()).toBeTruthy();
+		// Retired in v11, once reading state had moved to Hardcover.
+		expect(old.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='book_entries'`).get()).toBeFalsy();
+	});
+
+	it('v11 keeps a copy of any book records that never moved to Hardcover before dropping them', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'seek-v11-'));
+		const file = new Database(join(dir, 'seek.db'));
+		file.pragma('foreign_keys = ON');
+		for (let v = 0; v < 10; v++) file.exec(MIGRATIONS[v] as string);
+		file.pragma('user_version = 10');
+		file.exec(`INSERT INTO households (id, name, created_at) VALUES (1, 'Home', 'x')`);
+		file.exec(`INSERT INTO users (id, household_id, email, name, role, password_hash, created_at) VALUES (1, 1, 'a@x', 'A', 'owner', 'h', 'x'), (2, 1, 'b@x', 'B', 'member', 'h', 'x')`);
+		file.exec(`INSERT INTO books_moved (user_id, moved_at) VALUES (1, 'x')`);
+		file.exec(`INSERT INTO book_entries (user_id, hardcover_id, title, status, added_at, updated_at) VALUES (1, 10, 'Moved', 'read', 'x', 'x'), (2, 20, 'Not moved', 'reading', 'x', 'x')`);
+
+		migrate(file);
+		const kept = JSON.parse(readFileSync(join(dir, 'book_entries-unmoved.json'), 'utf8'));
+		expect(kept.map((r: { title: string }) => r.title)).toEqual(['Not moved']);
+		expect(file.prepare(`SELECT name FROM sqlite_master WHERE name IN ('book_entries', 'books_moved')`).all()).toEqual([]);
+		file.close();
+		rmSync(dir, { recursive: true, force: true });
 	});
 });
 
