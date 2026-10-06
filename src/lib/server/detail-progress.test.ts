@@ -57,6 +57,25 @@ describe('getShow progress when episodes were skipped', () => {
 		// Season 1 was never requested (the mock throws on unknown paths).
 	});
 
+	it('shows an airing season at its live length, not a stale cheaper count (Below Deck Med 17/18, not 17/17)', async () => {
+		// TMDB (the caller's count) still says S11 has 17 episodes; E18 aired, so
+		// Floppy's season detail says 18 with 17 watched. The show page must agree
+		// with the season page (17/18) rather than render the season complete.
+		responses.set('/api/v1/media/tv/tmdb/66902/', {
+			title: 'Below Deck Mediterranean',
+			max_progress: 192,
+			consumptions: [{ progress: 17, status: 1 }],
+			related: { seasons: [{ id: 11399, status: 1, progress: 17, item: { season_number: 11, title: 'Season 11', number_of_pages: null } }] }
+		});
+		responses.set('/api/v1/media/tv/tmdb/66902/11/', {
+			max_progress: 18,
+			related: { episodes: Array.from({ length: 18 }, (_, i) => ({ progress: i < 17 ? 1 : 0, item: { season_number: 11, episode_number: i + 1 } })) }
+		});
+		// lastAired still lags at E17 (same stale TMDB source) — the season number is enough.
+		const show = await getShow('tmdb', '66902', { 11: 17 }, { season: 11, episode: 17 });
+		expect(show.seasons[0]).toMatchObject({ seasonNumber: 11, progress: 17, maxProgress: 18 });
+	});
+
 	it("leaves a grouped show's total alone (Re:ZERO: seasons null, total already counts them)", async () => {
 		responses.set('/api/v1/media/tv/tmdb/65942/', {
 			title: 'Re:ZERO',

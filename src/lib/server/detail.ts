@@ -256,13 +256,20 @@ export async function getShow(
 			const known = knownSeasonEpisodes[s.seasonNumber];
 			const needMax = s.maxProgress === null && typeof known !== 'number';
 			const needProg = (deriveProgress && s.progress === null) || inProgress.has(s.seasonNumber);
-			if (!needMax && !needProg) {
+			/* The currently-airing season gains episodes, so the caller's cheaper
+			   count (TMDB, cached up to a day) lags the moment a new one airs — and
+			   a season with every *known* episode watched then renders complete when
+			   one more has actually aired (Below Deck Med: 17/17 on the show page,
+			   17/18 on the season page). Read it live, as the season page does. */
+			const airing = lastAired !== null && s.seasonNumber === lastAired.season;
+			if (!needMax && !needProg && !airing) {
 				return { ...s, maxProgress: s.maxProgress ?? (typeof known === 'number' ? known : null) };
 			}
 			const stats = await seasonStats(source, mediaId, s.seasonNumber);
 			return {
 				...s,
-				maxProgress: s.maxProgress ?? (typeof known === 'number' ? known : stats.max),
+				// A live fetch beats a possibly-stale caller count.
+				maxProgress: s.maxProgress ?? stats.max ?? (typeof known === 'number' ? known : null),
 				progress: needProg ? (stats.watched ?? s.progress) : s.progress
 			};
 		})
