@@ -4,7 +4,7 @@
 and movie information straight from TMDB, and receives Jellyfin's "watched" webhook itself. Same
 shape as books: one home per fact, Seek is the only app you use.
 
-**Status:** agreed 2026-10-09 (decisions below). Steps 1–2 done; step 3 in progress.
+**Status:** agreed 2026-10-09 (decisions below). Steps 1–4 built; step 5 (reads) next.
 
 ## Why
 
@@ -136,12 +136,18 @@ always the freshest copy.
 2. **The copy + comparison** *(done)*: everything tracked and every play copied out of Floppy for
    both of you, re-run nightly, totals checked. First live run: 13,939/13,939 episode plays,
    62/62 film plays, nothing to review.
-3. **Writes recorded in Seek** *(in progress)*: every change made in Seek (marks, undo, season
+3. **Writes recorded in Seek** *(done)*: every change made in Seek (marks, undo, season
    fill/clear, add/remove, status, rating) is recorded in Seek's tables as well as Floppy, for
    everyone it counts for (shared shows). The nightly copy links these to Floppy's copies of the
    same viewings and corrects any drift, so Floppy stays the record until the switch.
-4. **Jellyfin to Seek:** Seek's own webhook records the play and passes it on to Floppy, so Floppy
+4. **Jellyfin to Seek** *(done; you swap the URL)*: Seek's own webhook records the play and passes it on to Floppy, so Floppy
    stays complete for going back. You swap the webhook URL in Jellyfin.
+   Live next-up check before reads: 138/159 shows agree with today's watchlist. The rest are
+   Seek's rule (a skipped episode isn't a bookmark: Grey's Anatomy's watchlist says S10E21 while
+   you're on S18), TMDB having aired episodes Floppy's copy misses (Slime S4E24, Kaiju No. 8,
+   MASHLE…), and one genuine question (Demon Slayer: are your July 2024 plays Swordsmith Village or
+   Hashira Training?). Six plays sit on two-part episodes TMDB lists as one (House, Grey's) and are
+   on the review list.
 5. **Read from Seek:** watchlist, show/season/movie pages, library, Upcoming, Profile stats, one at
    a time, each checked against Floppy first. The long-press rewatch menu lands here.
 6. **Remove Floppy:** stop passing changes on, delete the Floppy client, the mirroring job, the
