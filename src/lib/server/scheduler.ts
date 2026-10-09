@@ -13,6 +13,8 @@ import { syncAnimeTags } from './anime-sync';
 import { listUsers, type User } from './users';
 import { runAs, NotLinkedError } from './userctx';
 import { startMirroring } from './household/run';
+import { refreshDue, seedTrackedTitles } from './catalog/refresh';
+import { tmdbConfigured } from './tmdb';
 
 /* Every job here is per person: it runs once for each account, *as* that
    account, so it reads their prefs, their calendar and their devices. */
@@ -56,6 +58,7 @@ export function startScheduler(): void {
 	/* Always scheduled: the anime tags follow Floppy's genres, and push is
 	   always available (Seek generates its own keys). */
 	startAnimeSync();
+	startCatalog();
 
 	/* A tick's work (a cold calendar build plus a push fan-out) can in principle
 	   outrun the interval; without this, two overlapping ticks could both pass the
@@ -109,3 +112,33 @@ function startAnimeSync(): void {
 	setTimeout(() => void sync(), 60 * 1000);
 }
 
+
+/**
+ * Seek's own copy of show and movie info (docs/own-tracking-plan.md, step 1).
+ * Every 6 hours, add any title someone tracks; every 10 minutes, refresh what's
+ * due (airing shows hourly, the rest daily or weekly — see catalog/map.ts).
+ */
+function startCatalog(): void {
+	if (!tmdbConfigured()) return;
+	let running = false;
+	const refresh = async () => {
+		if (running) return;
+		running = true;
+		try {
+			const r = await refreshDue();
+			if (r.refreshed || r.failed) console.log(`[catalog] refreshed ${r.refreshed}, failed ${r.failed}`);
+		} finally {
+			running = false;
+		}
+	};
+	const seed = async () => {
+		await forEachUser(async (user) => {
+			const added = await seedTrackedTitles();
+			if (added) console.log(`[catalog] user ${user.id}: ${added} new titles`);
+		});
+		void refresh();
+	};
+	setTimeout(() => void seed(), 2 * 60 * 1000);
+	setInterval(() => void seed(), 6 * 60 * 60 * 1000);
+	setInterval(() => void refresh(), 10 * 60 * 1000);
+}

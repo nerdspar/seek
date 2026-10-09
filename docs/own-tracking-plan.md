@@ -4,7 +4,7 @@
 and movie information straight from TMDB, and receives Jellyfin's "watched" webhook itself. Same
 shape as books: one home per fact, Seek is the only app you use.
 
-**Status:** proposed 2026-10-09, for review. Nothing is built yet.
+**Status:** agreed 2026-10-09 (decisions below). Step 1 in progress.
 
 ## Why
 
@@ -35,9 +35,12 @@ import is already done), and Floppy's daily fixes. Seek owns the bugs from here 
 | Files, downloads | Sonarr / Radarr | Unchanged |
 | Books | Hardcover / BookOrbit | Unchanged |
 
-No TVDB key and no AniBridge: shows are stored in TMDB's own seasons (Re:Zero is four seasons, not
-one long one), so Jellyfin's `S04E17` maps across directly. A library that sends TVDB ids instead is
-resolved through TMDB's `/find`, which accepts TVDB episode ids.
+No TVDB key and no AniBridge: shows are stored in TMDB's standard numbering. *Correction after
+checking live:* TMDB's standard order has Re:Zero as one 85-episode season, exactly as Floppy stores
+it. Jellyfin numbers it in seasons (`S04E17`) because its library uses one of TMDB's alternate
+episode orders. So the history copy needs no conversion for it, and the **webhook** does the
+translation: it looks the episode up by its own IMDb/TVDB id through TMDB's `/find` (Re:Zero's
+payload carries the episode's IMDb id), which answers in TMDB's standard numbering (`S01E83`).
 
 ## What Seek stores
 
@@ -93,10 +96,11 @@ writes, they just land in Seek).
   existing template and you only swap the URL.
 - **Marks a play** on `MarkPlayed`, or on playback stop past ~90% of the runtime. **Removes** the
   newest play on `MarkUnplayed`. Duplicate events within a few minutes are ignored.
-- **Matching:** TMDB id from the payload (`ProviderIds` or the TMDB link in `ExternalUrls`, which
-  Re:Zero's payload had); otherwise TVDB/IMDb through TMDB `/find`. Episodes by TMDB season and
-  number; if the library's numbering doesn't line up (absolute order), by the episode's own TVDB id
-  through `/find`.
+- **Matching:** the show by TMDB id from the payload (`ProviderIds` or the TMDB link in
+  `ExternalUrls`), otherwise by TVDB/IMDb through TMDB `/find`. The episode by its **own** IMDb/TVDB
+  id through `/find` first, which gives TMDB's standard numbering whatever order the Jellyfin library
+  displays (Re:Zero: Jellyfin's `S04E17` → `S01E83`); by season and number only when the episode has
+  no id, and only if that episode exists.
 - **Never drops silently:** anything it can't match goes to a small "Couldn't match" list in Settings
   with the raw title, so a missed episode is visible instead of vanishing.
 - A shared show marked by one person marks both, as Seek does today.
@@ -110,12 +114,11 @@ already copied, so it can run as often as needed until the numbers match.
    with status, rating, added date, and the `joint` tag (→ shared).
 2. **Plays with dates:** every play, including rewatches. Floppy's history holds 13,908 episode
    plays for you and 11,258 for your wife; those exact totals are the check.
-3. **Episode numbering:** most shows use the same seasons in Floppy and TMDB and copy across
-   directly. Where Floppy's season layout differs from TMDB's (Re:Zero: one 85-episode season vs
-   TMDB's four), convert absolute → TMDB season by counting through TMDB's season lengths, and
-   **only when the totals match exactly**. Anything that doesn't add up goes to a review list
-   (show, Floppy numbering, proposed mapping) rather than being guessed; AniBridge's mapping file
-   is the fallback for those if any turn up.
+3. **Episode numbering:** Floppy stores plays in TMDB's standard numbering (Re:Zero included: one
+   85-episode season in both), so plays copy across as they are. As a check, every copied play must
+   land on an episode that exists in Seek's TMDB copy; any that don't (a show whose seasons TMDB
+   has since renumbered) go to a review list — show, Floppy's numbering, the proposed match —
+   rather than being guessed. AniBridge's mapping file stays the fallback if such cases turn up.
 4. **Re:Zero's stray anime-bucket play** (E83) is read via `library_media_type=anime` and merged
    in, so nothing stranded in Floppy is lost.
 
@@ -131,22 +134,24 @@ total, and the watchlist next-up matches Floppy's corrected next-up for every in
 3. **Read from Seek:** Watchlist, Show/Season/Movie pages, Library, Upcoming, Profile stats, one at a
    time behind a setting, each checked against Floppy. Writes still go to Floppy *and* Seek, so both
    stay current and switching back is always possible.
-4. **Write to Seek, webhook to Seek:** marking, statuses, ratings, shared marks; point Jellyfin's
-   webhook at Seek. Floppy goes read-only (kept running, untouched) for a few weeks as a safety net.
+4. **Write to Seek, webhook to Seek:** marking, statuses, ratings, shared marks, the long-press
+   rewatch menu; point Jellyfin's webhook at Seek. Floppy goes read-only (kept running, untouched) for a few weeks as a safety net.
 5. **Remove Floppy:** delete the Floppy client, the mirroring job, the next-up corrections, the
    anime-bucket handling, the Floppy settings; drop Floppy from compose once you're happy.
 
 Each step is its own release with tests; you can stop after any of them and lose nothing.
 
-## Open questions for you
+## Decisions (2026-10-09)
 
-1. **Air times.** TMDB gives air *dates*. TVmaze (free, no key) has real air times for most US/UK
-   shows; it's also what tells "8 PM tonight" apart from "aired at midnight" for next-up. Add it,
-   or accept dates only (an episode counts as aired from the start of its air date)?
-2. **Rewatches.** Keep every play (Floppy does), so rewatches count in stats and the diary? (Assumed
-   yes.)
-3. **Your wife's Floppy account:** copy it in the same pass (assumed yes; needs her Floppy token,
-   which Seek already holds).
+1. **Air times: yes, TVmaze.** Real air times for scheduled broadcast shows (Saturday Night Live:
+   11:29 PM, NBC). Streaming drops have no time on TVmaze — it fills in a noon-UTC placeholder, which
+   Seek ignores — so they count as aired from 00:00 UTC on their date: the evening before in US
+   time, which is when US streaming drops land and how Floppy behaved (Avatar: Seven Havens).
+2. **Rewatches: yes, every play is kept.** Rewatching gets UI without cluttering what's there: a
+   **long-press** on an episode row or a season row opens a small menu — *Watched again* (a play
+   now), *Watched on…* (pick a date), *Remove last play*, and the play history with dates. A tap
+   still does exactly what it does today. Ships with step 4, when plays are Seek's.
+3. **Your wife's history: yes**, copied in the same pass, with her own token.
 
 ## Rough size
 

@@ -237,7 +237,49 @@ export const MIGRATIONS: Migration[] = [
 			if (db.name !== ':memory:') writeFileSync(join(dirname(db.name), 'book_entries-unmoved.json'), JSON.stringify(unmoved, null, 2));
 		}
 		db.exec('DROP TABLE book_entries; DROP TABLE books_moved;');
-	}
+	},
+	// v12 — Seek's own copy of show and movie info (docs/own-tracking-plan.md,
+	// step 1): TMDB details, episodes with air dates, and air times from TVmaze.
+	// Refreshed on a schedule by catalog/refresh.ts; nothing reads it yet.
+	`
+	CREATE TABLE titles (
+		media_type         TEXT NOT NULL CHECK (media_type IN ('tv', 'movie')),
+		tmdb_id            INTEGER NOT NULL,
+		title              TEXT NOT NULL DEFAULT '',
+		poster             TEXT,
+		backdrop           TEXT,
+		status             TEXT,
+		genres             TEXT NOT NULL DEFAULT '[]',
+		networks           TEXT NOT NULL DEFAULT '[]',
+		runtime            INTEGER,
+		origin_country     TEXT NOT NULL DEFAULT '[]',
+		original_language  TEXT,
+		release_date       TEXT,
+		last_air_date      TEXT,
+		next_air_date      TEXT,
+		tvdb_id            INTEGER,
+		imdb_id            TEXT,
+		tvmaze_id          INTEGER,
+		refreshed_at       TEXT,
+		refresh_after      TEXT NOT NULL,
+		last_error         TEXT,
+		PRIMARY KEY (media_type, tmdb_id)
+	);
+	CREATE INDEX titles_due ON titles (refresh_after);
+	CREATE TABLE episodes (
+		tmdb_id   INTEGER NOT NULL,
+		season    INTEGER NOT NULL,
+		episode   INTEGER NOT NULL,
+		title     TEXT,
+		overview  TEXT,
+		still     TEXT,
+		air_date  TEXT,
+		air_at    TEXT,
+		runtime   INTEGER,
+		PRIMARY KEY (tmdb_id, season, episode)
+	);
+	CREATE INDEX episodes_air ON episodes (air_date);
+	`
 ];
 
 /** Open (creating if needed) and migrate a database. ':memory:' for tests. */

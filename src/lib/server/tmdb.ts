@@ -15,7 +15,7 @@ const discoverCache = new TTLCache<TmdbResult[]>(60 * 60 * 1000, 300);
 
 export const tmdbConfigured = () => Boolean(TMDB_API_KEY());
 
-async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+export async function tmdb<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
 	const key = TMDB_API_KEY();
 	if (!key) throw new Error('TMDB_API_KEY is not set — mood search is unavailable.');
 
