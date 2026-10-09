@@ -19,10 +19,12 @@ export function saveTitle(t: TitleRow, seasons: Map<number, EpisodeRow[]>, tvmaz
 		d.prepare(
 			`INSERT INTO titles (media_type, tmdb_id, title, poster, backdrop, status, genres, networks, runtime,
 				origin_country, original_language, release_date, last_air_date, next_air_date, tvdb_id, imdb_id,
-				tvmaze_id, refreshed_at, refresh_after, last_error, services, keywords)
+				tvmaze_id, refreshed_at, refresh_after, last_error, services, keywords, overview, vote, vote_count,
+				companies, cast_json, seasons_json, certification, collection_json)
 			VALUES (@mediaType, @tmdbId, @title, @poster, @backdrop, @status, @genres, @networks, @runtime,
 				@originCountry, @originalLanguage, @releaseDate, @lastAirDate, @nextAirDate, @tvdbId, @imdbId,
-				@tvmazeId, @refreshedAt, @refreshAfter, NULL, @services, @keywords)
+				@tvmazeId, @refreshedAt, @refreshAfter, NULL, @services, @keywords, @overview, @vote, @voteCount,
+				@companies, @cast, @seasonInfo, @certification, @collection)
 			ON CONFLICT (media_type, tmdb_id) DO UPDATE SET
 				title = excluded.title, poster = excluded.poster, backdrop = excluded.backdrop, status = excluded.status,
 				genres = excluded.genres, networks = excluded.networks, runtime = excluded.runtime,
@@ -31,7 +33,10 @@ export function saveTitle(t: TitleRow, seasons: Map<number, EpisodeRow[]>, tvmaz
 				next_air_date = excluded.next_air_date, tvdb_id = excluded.tvdb_id, imdb_id = excluded.imdb_id,
 				tvmaze_id = COALESCE(excluded.tvmaze_id, titles.tvmaze_id), refreshed_at = excluded.refreshed_at,
 				refresh_after = excluded.refresh_after, last_error = NULL, services = excluded.services,
-				keywords = excluded.keywords`
+				keywords = excluded.keywords, overview = excluded.overview, vote = excluded.vote,
+				vote_count = excluded.vote_count, companies = excluded.companies, cast_json = excluded.cast_json,
+				seasons_json = excluded.seasons_json, certification = excluded.certification,
+				collection_json = excluded.collection_json`
 		).run({
 			...t,
 			genres: JSON.stringify(t.genres),
@@ -39,6 +44,10 @@ export function saveTitle(t: TitleRow, seasons: Map<number, EpisodeRow[]>, tvmaz
 			originCountry: JSON.stringify(t.originCountry),
 			services: JSON.stringify(t.services),
 			keywords: JSON.stringify(t.keywords),
+			companies: JSON.stringify(t.companies),
+			cast: JSON.stringify(t.cast),
+			seasonInfo: JSON.stringify(t.seasonInfo),
+			collection: t.collection ? JSON.stringify(t.collection) : null,
 			tvmazeId,
 			refreshedAt: iso(refreshedAt),
 			refreshAfter: iso(dueAt)

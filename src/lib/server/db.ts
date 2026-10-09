@@ -346,6 +346,20 @@ export const MIGRATIONS: Migration[] = [
 	ALTER TABLE titles ADD COLUMN services TEXT NOT NULL DEFAULT '[]';
 	ALTER TABLE titles ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]';
 	UPDATE titles SET refresh_after = '1970-01-01T00:00:00.000Z';
+	`,
+	// v16 — the rest of a show or film's page from Seek's TMDB copy: synopsis,
+	// community rating, companies, cast, season names/posters, age rating, the
+	// film's collection. Refreshed once to fill.
+	`
+	ALTER TABLE titles ADD COLUMN overview TEXT;
+	ALTER TABLE titles ADD COLUMN vote REAL;
+	ALTER TABLE titles ADD COLUMN vote_count INTEGER;
+	ALTER TABLE titles ADD COLUMN companies TEXT NOT NULL DEFAULT '[]';
+	ALTER TABLE titles ADD COLUMN cast_json TEXT NOT NULL DEFAULT '[]';
+	ALTER TABLE titles ADD COLUMN seasons_json TEXT NOT NULL DEFAULT '[]';
+	ALTER TABLE titles ADD COLUMN certification TEXT;
+	ALTER TABLE titles ADD COLUMN collection_json TEXT;
+	UPDATE titles SET refresh_after = '1970-01-01T00:00:00.000Z';
 	`
 ];
 

@@ -4,11 +4,11 @@ import { tmdb } from '../tmdb';
 import type { TvmazeEpisode } from './map';
 
 export const tmdbShow = (id: number) =>
-	tmdb<Record<string, unknown>>(`/tv/${id}`, { append_to_response: 'external_ids,watch/providers,keywords' });
+	tmdb<Record<string, unknown>>(`/tv/${id}`, { append_to_response: 'external_ids,watch/providers,keywords,aggregate_credits,content_ratings' });
 export const tmdbSeason = (id: number, season: number) =>
 	tmdb<Record<string, unknown>>(`/tv/${id}/season/${season}`);
 export const tmdbMovie = (id: number) =>
-	tmdb<Record<string, unknown>>(`/movie/${id}`, { append_to_response: 'external_ids,watch/providers,keywords' });
+	tmdb<Record<string, unknown>>(`/movie/${id}`, { append_to_response: 'external_ids,watch/providers,keywords,credits,release_dates' });
 
 const MAZE = 'https://api.tvmaze.com';
 let lastMaze = 0;

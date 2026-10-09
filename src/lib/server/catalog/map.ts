@@ -21,6 +21,33 @@ function usServices(d: Record<string, unknown>): string[] {
 	return [...new Set(flat.map((p) => str((p as { provider_name?: unknown })?.provider_name)).filter((n): n is string => n !== null))];
 }
 
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** Top-billed cast: shows from aggregate_credits (roles[]), films from credits. */
+function castOf(d: Record<string, unknown>): CastMember[] {
+	const agg = (d.aggregate_credits ?? d.credits ?? {}) as Record<string, unknown>;
+	return (Array.isArray(agg.cast) ? agg.cast : []).slice(0, 20).map((c) => {
+		const r = c as Record<string, unknown>;
+		const roles = Array.isArray(r.roles) ? r.roles : [];
+		return {
+			name: str(r.name) ?? '',
+			role: str(r.character) ?? str((roles[0] as Record<string, unknown> | undefined)?.character),
+			image: img(r.profile_path, 'w185')
+		};
+	});
+}
+
+/** The US age rating: shows from content_ratings, films from release_dates. */
+function usCertification(d: Record<string, unknown>): string | null {
+	const ratings = ((d.content_ratings as Record<string, unknown> | undefined)?.results ?? []) as Record<string, unknown>[];
+	const tv = ratings.find((r) => r.iso_3166_1 === 'US');
+	if (tv) return str(tv.rating);
+	const releases = ((d.release_dates as Record<string, unknown> | undefined)?.results ?? []) as Record<string, unknown>[];
+	const us = releases.find((r) => r.iso_3166_1 === 'US');
+	const certs = (Array.isArray(us?.release_dates) ? us.release_dates : []).map((x) => str((x as Record<string, unknown>).certification));
+	return certs.find((c) => c !== null) ?? null;
+}
+
 /** Keyword names (shows: keywords.results; films: keywords.keywords). */
 function keywordNames(d: Record<string, unknown>): string[] {
 	const k = (d.keywords ?? {}) as Record<string, unknown>;
@@ -52,7 +79,20 @@ export type TitleRow = {
 	services: string[];
 	/** TMDB keywords (the anime rule reads "anime"). */
 	keywords: string[];
+	overview: string | null;
+	vote: number | null;
+	voteCount: number | null;
+	companies: string[];
+	cast: CastMember[];
+	/** Shows: each season's name and poster. */
+	seasonInfo: SeasonInfo[];
+	certification: string | null;
+	/** Films: the franchise it belongs to. */
+	collection: { id: number; name: string } | null;
 };
+
+export type CastMember = { name: string; role: string | null; image: string | null };
+export type SeasonInfo = { number: number; name: string | null; poster: string | null; count: number };
 
 export type EpisodeRow = {
 	tmdbId: number;
@@ -96,7 +136,18 @@ export function mapShow(tmdbId: number, d: Record<string, unknown>): { title: Ti
 			tvdbId: int(ext.tvdb_id),
 			imdbId: str(ext.imdb_id),
 			services: usServices(d),
-			keywords: keywordNames(d)
+			keywords: keywordNames(d),
+			overview: str(d.overview),
+			vote: num(d.vote_average),
+			voteCount: int(d.vote_count),
+			companies: names(d.production_companies),
+			cast: castOf(d),
+			seasonInfo: (Array.isArray(d.seasons) ? d.seasons : [])
+				.map((x) => x as Record<string, unknown>)
+				.filter((x) => typeof x.season_number === 'number')
+				.map((x) => ({ number: x.season_number as number, name: str(x.name), poster: img(x.poster_path, 'w342'), count: int(x.episode_count) ?? 0 })),
+			certification: usCertification(d),
+			collection: null
 		},
 		seasons: (Array.isArray(d.seasons) ? d.seasons : [])
 			.map((s) => s as Record<string, unknown>)
@@ -132,7 +183,18 @@ export function mapMovie(tmdbId: number, d: Record<string, unknown>): TitleRow {
 		tvdbId: null,
 		imdbId: str(d.imdb_id) ?? str(ext.imdb_id),
 		services: usServices(d),
-		keywords: keywordNames(d)
+		keywords: keywordNames(d),
+		overview: str(d.overview),
+		vote: num(d.vote_average),
+		voteCount: int(d.vote_count),
+		companies: names(d.production_companies),
+		cast: castOf(d),
+		seasonInfo: [],
+		certification: usCertification(d),
+		collection: (() => {
+			const c = (d.belongs_to_collection ?? null) as Record<string, unknown> | null;
+			return c && typeof c.id === 'number' ? { id: c.id, name: str(c.name) ?? '' } : null;
+		})()
 	};
 }
 
