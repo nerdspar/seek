@@ -63,13 +63,21 @@ export function untrack(userId: number, kind: Kind, tmdbId: number): void {
 }
 
 /** A play of an episode (or of a film: no season/episode). A planned show moves to Watching. */
-export function recordPlay(userId: number, kind: Kind, tmdbId: number, season: number | null, episode: number | null, at = nowIso()): void {
+export function recordPlay(
+	userId: number,
+	kind: Kind,
+	tmdbId: number,
+	season: number | null,
+	episode: number | null,
+	at = nowIso(),
+	source: 'seek' | 'jellyfin' = 'seek'
+): void {
 	const d = db();
 	d.transaction(() => {
 		d.prepare(
 			`INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, external_key, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, 'seek', NULL, ?)`
-		).run(userId, kind, tmdbId, season, episode, at, nowIso());
+			VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+		).run(userId, kind, tmdbId, season, episode, at, source, nowIso());
 		ensureTracked(userId, kind, tmdbId, kind === 'movie' ? Status.Completed : Status.Watching, at);
 		if (kind === 'tv') {
 			d.prepare('UPDATE tracked SET status = ?, updated_at = ? WHERE user_id = ? AND media_type = ? AND tmdb_id = ? AND status = ?').run(
@@ -129,4 +137,13 @@ export function watchers(me: User, source: string, mediaId: string, kind: Shared
 	if (!isShared(me.householdId, source, mediaId, kind)) return [me.id];
 	const members = mirrorMembers(me.householdId).map((u) => u.id);
 	return members.length >= 2 ? [...new Set([me.id, ...members])] : [me.id];
+}
+
+/** Has this person a play of this episode/film within `windowMs` of `at`? */
+export function playedNear(userId: number, kind: Kind, tmdbId: number, season: number | null, episode: number | null, at: string, windowMs: number): boolean {
+	const rows = db()
+		.prepare('SELECT watched_at FROM plays WHERE user_id = ? AND media_type = ? AND tmdb_id = ? AND season IS ? AND episode IS ?')
+		.all(userId, kind, tmdbId, season, episode) as { watched_at: string }[];
+	const t = Date.parse(at);
+	return rows.some((r) => Math.abs(Date.parse(r.watched_at) - t) <= windowMs);
 }

@@ -35,7 +35,12 @@ export function nextUp(episodes: Ep[], plays: Played[], now: number): NextUp {
 		return first ? { season: first.season, episode: first.episode } : null;
 	}
 
-	const latest = seasonPlays.reduce((a, b) => (Date.parse(b.watchedAt) > Date.parse(a.watchedAt) ? b : a));
+	/* The play you made last. Imported history often stamps a whole backlog with
+	   one moment (Trakt: every old play of The Flash at 2023-03-11), so ties go
+	   to the furthest episode — the season you were on, not an arbitrary one. */
+	const later = (x: Played, y: Played) =>
+		Date.parse(x.watchedAt) - Date.parse(y.watchedAt) || x.season - y.season || x.episode - y.episode;
+	const latest = seasonPlays.reduce((a, b) => (later(b, a) > 0 ? b : a));
 	const current = latest.season;
 	const highest = Math.max(...seasonPlays.filter((p) => p.season === current).map((p) => p.episode));
 	const inSeason = regular.find((e) => e.season === current && e.episode > highest && unwatched(e) && isAired(e));

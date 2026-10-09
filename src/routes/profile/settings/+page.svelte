@@ -105,6 +105,17 @@
 		notifications: 'Notifications'
 	};
 	/* Old links used #accounts / #services anchors on the one long page. */
+	let copied = $state(false);
+	async function copyWebhook(text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			copied = true;
+			setTimeout(() => (copied = false), 2000);
+		} catch {
+			/* the address is on screen to copy by hand */
+		}
+	}
+
 	const section = $derived.by<SectionId | null>(() => {
 		const s = page.url.searchParams.get('s') ?? page.url.hash.replace('#', '');
 		return s && s in TITLES ? (s as SectionId) : null;
@@ -436,6 +447,26 @@
 	</section>
 	{:else if section === 'accounts'}
 		<LinkedAccounts account={data.account} />
+	<section>
+		<h3>Jellyfin</h3>
+		<p class="hint jf">
+			Your plays from Jellyfin can come to Seek directly. In Jellyfin's Webhook plugin, replace the
+			Floppy address with this one — the template stays the same. Seek records each play and passes it
+			on to Floppy, so nothing is lost either way.
+		</p>
+		<div class="jfurl">
+			<code>{data.account.jellyfin.url}</code>
+			<button class="copy" onclick={() => copyWebhook(data.account.jellyfin.url)}>{copied ? 'Copied' : 'Copy'}</button>
+		</div>
+		{#if data.account.jellyfin.unmatched.length}
+			<p class="hint jf">Plays Seek couldn't match (they weren't recorded):</p>
+			<ul class="unmatched">
+				{#each data.account.jellyfin.unmatched as u (u.at + u.title)}
+					<li><span class="label">{u.title}</span><span class="hint">{new Date(u.at).toLocaleString()} · {u.detail}</span></li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
 	<section>
 		<h3>Floppy</h3>
 		{#if floppyUrl}
@@ -818,6 +849,12 @@
 	.rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 	.label { font-size: 15px; font-weight: 600; }
 	.hint { font-size: 12px; opacity: 0.7; }
+	.hint.jf { margin: 0 0 10px; line-height: 1.45; }
+	.jfurl { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); }
+	.jfurl code { flex: 1; min-width: 0; font-size: 12px; overflow-wrap: anywhere; color: var(--text); }
+	.copy { flex: none; min-height: 32px; padding: 0 12px; border-radius: 8px; background: var(--surface-raised); font-size: 13px; font-weight: 600; color: var(--text); }
+	.unmatched { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+	.unmatched li { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: var(--radius); background: var(--surface); }
 	.sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 	.sechead h3 { flex: 1; }
 	.disclose { flex: none; font-size: 13px; font-weight: 600; color: var(--signal-solid); }

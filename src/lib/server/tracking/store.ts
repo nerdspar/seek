@@ -30,8 +30,9 @@ export const SAME_VIEWING_MS = 12 * 60 * 60 * 1000;
  * - a play Seek recorded itself (a mark in Seek) is linked to Floppy's copy of
  *   the same viewing rather than copied twice;
  * - new Floppy plays are added; plays Floppy no longer has (unmarked) go;
- * - a play Seek recorded before this run that Floppy never got is dropped —
- *   Floppy is the record until the switch. Plays recorded during the run stay.
+ * - a mark made in Seek before this run that Floppy never got is dropped —
+ *   Floppy is the record until the switch. Plays recorded during the run stay,
+ *   and so do Jellyfin's: Seek receives those first, so Seek is their record.
  */
 export function syncImportedPlays(
 	userId: number,
@@ -80,7 +81,7 @@ export function syncImportedPlays(
 		removed += d
 			.prepare(
 				`DELETE FROM plays WHERE user_id = ? AND media_type = ? AND external_key IS NULL
-				AND source IN ('seek', 'jellyfin') AND created_at < ?`
+				AND source = 'seek' AND created_at < ?`
 			)
 			.run(userId, mediaType, runStart).changes;
 	})();

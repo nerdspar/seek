@@ -468,3 +468,22 @@ export function setNotifyState(userId: number, patch: { lastDigest?: string; las
 	if (patch.lastDigest !== undefined) db().prepare('UPDATE users SET last_digest = ? WHERE id = ?').run(patch.lastDigest, userId);
 	if (patch.lastAtTime !== undefined) db().prepare('UPDATE users SET last_at_time = ? WHERE id = ?').run(patch.lastAtTime, userId);
 }
+
+/* ── Seek's own Jellyfin webhook (own-tracking plan, step 4) ───────────────── */
+
+/** This person's private webhook token, created on first ask. The URL is the
+ *  credential (as with Floppy's), so it's long and random. */
+export function jellyfinToken(userId: number): string {
+	const have = db().prepare('SELECT jellyfin_token FROM users WHERE id = ?').get(userId) as { jellyfin_token: string | null } | undefined;
+	if (have?.jellyfin_token) return have.jellyfin_token;
+	const { token } = newOpaqueToken();
+	db().prepare('UPDATE users SET jellyfin_token = ? WHERE id = ?').run(token, userId);
+	return token;
+}
+
+/** Whose webhook this is, or null. */
+export function userByJellyfinToken(token: string): User | null {
+	if (!token || token.length < 20) return null;
+	const r = db().prepare('SELECT id FROM users WHERE jellyfin_token = ?').get(token) as { id: number } | undefined;
+	return r ? getUser(r.id) : null;
+}

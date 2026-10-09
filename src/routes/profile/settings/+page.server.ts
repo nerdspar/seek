@@ -3,7 +3,8 @@ import { error } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
 import { FLOPPY_PUBLIC_URL, floppyConfigured } from '$lib/server/env';
 import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
-import { householdName, linkedStatus, listMembers, listPendingInvites } from '$lib/server/users';
+import { householdName, jellyfinToken, linkedStatus, listMembers, listPendingInvites } from '$lib/server/users';
+import { recentUnmatched } from '$lib/server/tracking/jellyfin';
 import { mailConfigured } from '$lib/server/mail';
 import { settingsForDisplay } from '$lib/server/services';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
@@ -13,7 +14,7 @@ import type { PageServerLoad } from './$types';
 /* Awaited rather than streamed. Preferences are a single small read and the
    whole page is controls bound to them — a skeleton here would flash for a few
    milliseconds and then be replaced, which is worse than waiting for it. */
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const me = locals.user;
 	if (!me) error(401);
 	const publicUrl = FLOPPY_PUBLIC_URL();
@@ -38,7 +39,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 				invites: me.role === 'owner' ? listPendingInvites(me.householdId) : []
 			},
 			linked: linkedStatus(me.id),
-			bookorbit: bookorbitConfigured()
+			bookorbit: bookorbitConfigured(),
+			// Seek's own Jellyfin webhook (own-tracking plan, step 4): your private URL.
+			jellyfin: {
+				url: `${url.origin}/webhook/jellyfin/${jellyfinToken(me.id)}`,
+				unmatched: recentUnmatched(me.id)
+			}
 		},
 		// The household's service settings — owner only (keys never leave the server).
 		services: me.role === 'owner' ? settingsForDisplay() : null,

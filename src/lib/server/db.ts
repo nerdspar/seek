@@ -323,6 +323,21 @@ export const MIGRATIONS: Migration[] = [
 		ran_at         TEXT NOT NULL,
 		summary        TEXT NOT NULL
 	);
+	`,
+	// v14 — Seek's own Jellyfin webhook (own-tracking plan, step 4): a private URL
+	// per person, and what it couldn't match (shown in Settings, never dropped).
+	`
+	ALTER TABLE users ADD COLUMN jellyfin_token TEXT;
+	CREATE UNIQUE INDEX users_jellyfin_token ON users (jellyfin_token) WHERE jellyfin_token IS NOT NULL;
+	CREATE TABLE webhook_unmatched (
+		id        INTEGER PRIMARY KEY,
+		user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		at        TEXT NOT NULL,
+		event     TEXT NOT NULL,
+		title     TEXT NOT NULL,
+		detail    TEXT NOT NULL
+	);
+	CREATE INDEX webhook_unmatched_user ON webhook_unmatched (user_id, at);
 	`
 ];
 

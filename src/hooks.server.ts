@@ -29,7 +29,8 @@ void warmEveryone().catch((err) => console.warn('[seek] warmup failed:', err));
      unauthenticated caller with nothing but ok/not-ok.
    - the account pages: signing in, first-run setup, redeeming an emailed link. */
 const PUBLIC_EXACT = new Set(['/login', '/setup', '/forgot', '/api/health']);
-const PUBLIC_PREFIX = ['/invite/', '/reset/', '/verify/'];
+// /webhook/: Jellyfin posts without a session; the token in the URL is the credential.
+const PUBLIC_PREFIX = ['/invite/', '/reset/', '/verify/', '/webhook/'];
 const isPublic = (path: string) => PUBLIC_EXACT.has(path) || PUBLIC_PREFIX.some((p) => path.startsWith(p));
 
 /* Once anyone has an account it never goes back to zero (the owner can't be

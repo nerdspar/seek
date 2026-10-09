@@ -44,6 +44,13 @@ describe('nextUp', () => {
 		expect(nextUp(eps, plays, NOW)).toEqual({ season: 1, episode: 4 });
 	});
 
+	it('a backlog imported with one timestamp goes by the furthest episode (The Flash)', () => {
+		const eps = [...season(1, 3), ...season(9, 13)];
+		const same = '2023-03-11T00:00:00Z';
+		const plays = [play(9, 1, same), play(9, 5, same), play(1, 1, same), play(1, 3, same)];
+		expect(nextUp(eps, plays, NOW)).toEqual({ season: 9, episode: 6 });
+	});
+
 	it('ignores specials', () => {
 		expect(nextUp([...season(0, 3), ...season(1, 2)], [play(0, 1)], NOW)).toEqual({ season: 1, episode: 1 });
 	});
