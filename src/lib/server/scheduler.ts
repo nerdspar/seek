@@ -15,6 +15,8 @@ import { runAs, NotLinkedError } from './userctx';
 import { startMirroring } from './household/run';
 import { refreshDue, seedTrackedTitles } from './catalog/refresh';
 import { tmdbConfigured } from './tmdb';
+import { copyFromFloppy } from './tracking/importFloppy';
+import { lastRun } from './tracking/store';
 
 /* Every job here is per person: it runs once for each account, *as* that
    account, so it reads their prefs, their calendar and their devices. */
@@ -59,6 +61,7 @@ export function startScheduler(): void {
 	   always available (Seek generates its own keys). */
 	startAnimeSync();
 	startCatalog();
+	startFloppyCopy();
 
 	/* A tick's work (a cold calendar build plus a push fan-out) can in principle
 	   outrun the interval; without this, two overlapping ticks could both pass the
@@ -141,4 +144,36 @@ function startCatalog(): void {
 	setTimeout(() => void seed(), 2 * 60 * 1000);
 	setInterval(() => void seed(), 6 * 60 * 60 * 1000);
 	setInterval(() => void refresh(), 10 * 60 * 1000);
+}
+
+/**
+ * The copy out of Floppy (own-tracking plan, step 2): once ~10 minutes after
+ * boot for anyone not copied in the last 20 hours, then nightly at 4 AM. A full
+ * copy is ~11 minutes of Floppy's time per person (it rebuilds the history for
+ * every page), so it runs one person at a time and never on demand.
+ */
+function startFloppyCopy(): void {
+	let running = false;
+	const copyStale = async () => {
+		if (running) return;
+		running = true;
+		try {
+			await forEachUser(async (user) => {
+				const last = lastRun(user.id);
+				if (last && Date.now() - Date.parse(last.ranAt) < 20 * 60 * 60 * 1000) return;
+				const s = await copyFromFloppy();
+				console.log(
+					`[copy] user ${user.id}: ${s.plays.tv.seek}/${s.plays.tv.floppy} episode plays, ` +
+						`${s.plays.movie.seek}/${s.plays.movie.floppy} film plays, +${s.added} -${s.removed}, ` +
+						`${s.review} to review, ${s.pendingCatalog} awaiting show info — ${s.matches ? 'matches' : 'not yet'}`
+				);
+			});
+		} finally {
+			running = false;
+		}
+	};
+	setTimeout(() => void copyStale(), 10 * 60 * 1000);
+	setInterval(() => {
+		if (new Date().getHours() === 4) void copyStale();
+	}, 30 * 60 * 1000);
 }

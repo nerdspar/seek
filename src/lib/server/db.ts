@@ -279,6 +279,50 @@ export const MIGRATIONS: Migration[] = [
 		PRIMARY KEY (tmdb_id, season, episode)
 	);
 	CREATE INDEX episodes_air ON episodes (air_date);
+	`,
+	// v13 — what each person tracks and has watched, Seek's own (own-tracking
+	// plan, step 2). Filled by the copy from Floppy; nothing reads it until step 3.
+	`
+	CREATE TABLE tracked (
+		user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		media_type  TEXT NOT NULL CHECK (media_type IN ('tv', 'movie')),
+		tmdb_id     INTEGER NOT NULL,
+		status      INTEGER NOT NULL CHECK (status BETWEEN 0 AND 4),
+		score       REAL,
+		notes       TEXT NOT NULL DEFAULT '',
+		added_at    TEXT NOT NULL,
+		updated_at  TEXT NOT NULL,
+		PRIMARY KEY (user_id, media_type, tmdb_id)
+	);
+	CREATE TABLE plays (
+		id            INTEGER PRIMARY KEY,
+		user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		media_type    TEXT NOT NULL CHECK (media_type IN ('tv', 'movie')),
+		tmdb_id       INTEGER NOT NULL,
+		season        INTEGER,
+		episode       INTEGER,
+		watched_at    TEXT NOT NULL,
+		source        TEXT NOT NULL CHECK (source IN ('import', 'seek', 'jellyfin')),
+		external_key  TEXT,
+		created_at    TEXT NOT NULL
+	);
+	CREATE UNIQUE INDEX plays_external ON plays (user_id, external_key) WHERE external_key IS NOT NULL;
+	CREATE INDEX plays_title ON plays (user_id, media_type, tmdb_id, season, episode);
+	CREATE INDEX plays_when ON plays (user_id, watched_at);
+	CREATE TABLE import_review (
+		user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		media_type  TEXT NOT NULL,
+		ref         TEXT NOT NULL,
+		reason      TEXT NOT NULL,
+		detail      TEXT NOT NULL DEFAULT '',
+		seen_at     TEXT NOT NULL,
+		PRIMARY KEY (user_id, media_type, ref, reason)
+	);
+	CREATE TABLE import_runs (
+		user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		ran_at         TEXT NOT NULL,
+		summary        TEXT NOT NULL
+	);
 	`
 ];
 
