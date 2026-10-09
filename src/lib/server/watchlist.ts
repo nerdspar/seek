@@ -284,6 +284,50 @@ async function nextUpFor(source: string, mediaId: string): Promise<Correction | 
 	}
 }
 
+/* A show you have not started whose premiere just aired can still read "no
+ * next episode": Floppy's show-level metadata was cached before the premiere
+ * (Avatar: Seven Havens — E1–3 out at 8 PM, the show still said "first airs
+ * tomorrow"), while its episode list is current. Read next-up from the list:
+ * the first aired, unplayed episode of the first real season. */
+const firstAiredCache = new TTLCache<NextUp | null>(10 * 60 * 1000, 500);
+
+export async function firstAiredFor(source: string, mediaId: string, now = Date.now()): Promise<NextUp | null> {
+	const key = scopeKey(`first:${source}:${mediaId}`);
+	const hit = firstAiredCache.get(key);
+	if (hit !== undefined) return hit;
+	try {
+		const detail = await floppy<{ related?: { seasons?: Record<string, unknown>[] } }>(
+			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/`
+		);
+		const first = (detail?.related?.seasons ?? [])
+			.map(seasonNumberOf)
+			.filter((n): n is number => n !== null && n > 0)
+			.sort((a, b) => a - b)[0];
+		let out: NextUp | null = null;
+		if (first !== undefined) {
+			const season = await floppy<{ related?: { episodes?: Record<string, unknown>[] } }>(
+				`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${first}/`
+			);
+			const ep = (season?.related?.episodes ?? [])
+				.map((e) => {
+					const item = (e.item ?? {}) as Record<string, unknown>;
+					return {
+						number: typeof item.episode_number === 'number' ? item.episode_number : null,
+						airDate: typeof item.release_datetime === 'string' ? item.release_datetime : null,
+						played: typeof e.progress === 'number' && e.progress > 0
+					};
+				})
+				.filter((e) => e.number !== null && !e.played && e.airDate !== null && Date.parse(e.airDate) <= now)
+				.sort((a, b) => (a.number as number) - (b.number as number))[0];
+			if (ep) out = { season: first, episode: ep.number as number, airDate: ep.airDate };
+		}
+		firstAiredCache.set(key, out);
+		return out;
+	} catch {
+		return null;
+	}
+}
+
 /** Fills in whatever the list row could not supply: episode title, and the
  *  episode total for season-scoped shows. Both lookups run concurrently. */
 async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
@@ -297,6 +341,12 @@ async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
 		const corrected = await nextUpFor(row.source, row.mediaId);
 		if (corrected === 'done') row = { ...row, next: null };
 		else if (corrected) row = { ...row, next: corrected };
+	}
+
+	// Not started, and Floppy says nothing's next — its show metadata may predate the premiere.
+	if (row.mediaType !== 'movie' && row.progress === 0 && !row.next) {
+		const first = await firstAiredFor(row.source, row.mediaId);
+		if (first) row = { ...row, next: first };
 	}
 
 	/* Caught up on what's out: the next episode — corrected or Floppy's own — has
