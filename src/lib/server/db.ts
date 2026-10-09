@@ -338,6 +338,14 @@ export const MIGRATIONS: Migration[] = [
 		detail    TEXT NOT NULL
 	);
 	CREATE INDEX webhook_unmatched_user ON webhook_unmatched (user_id, at);
+	`,
+	// v15 — streaming services and keywords on Seek's TMDB copy (own-tracking
+	// plan, step 5: the watchlist's service chips, and the anime rule). Every
+	// title is refreshed once to fill them.
+	`
+	ALTER TABLE titles ADD COLUMN services TEXT NOT NULL DEFAULT '[]';
+	ALTER TABLE titles ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]';
+	UPDATE titles SET refresh_after = '1970-01-01T00:00:00.000Z';
 	`
 ];
 

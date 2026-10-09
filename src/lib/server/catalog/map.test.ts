@@ -87,3 +87,16 @@ describe('refreshAfter', () => {
 		expect(refreshAfter({ mediaType: 'movie', status: 'Released', lastAirDate: null, nextAirDate: null }, NOW)).toBe(NOW + 7 * DAY);
 	});
 });
+
+describe('services and keywords', () => {
+	it('keeps US subscription services and keyword names', () => {
+		const { title } = mapShow(1, {
+			name: 'X',
+			'watch/providers': { results: { US: { flatrate: [{ provider_name: 'Netflix' }, { provider_name: 'Netflix' }], rent: [{ provider_name: 'Apple TV' }] } } },
+			keywords: { results: [{ name: 'anime' }, { name: 'magic' }] }
+		});
+		expect(title.services).toEqual(['Netflix']);
+		expect(title.keywords).toEqual(['anime', 'magic']);
+		expect(mapMovie(2, { title: 'Y', keywords: { keywords: [{ name: 'heist' }] } }).keywords).toEqual(['heist']);
+	});
+});

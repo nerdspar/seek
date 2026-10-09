@@ -19,10 +19,10 @@ export function saveTitle(t: TitleRow, seasons: Map<number, EpisodeRow[]>, tvmaz
 		d.prepare(
 			`INSERT INTO titles (media_type, tmdb_id, title, poster, backdrop, status, genres, networks, runtime,
 				origin_country, original_language, release_date, last_air_date, next_air_date, tvdb_id, imdb_id,
-				tvmaze_id, refreshed_at, refresh_after, last_error)
+				tvmaze_id, refreshed_at, refresh_after, last_error, services, keywords)
 			VALUES (@mediaType, @tmdbId, @title, @poster, @backdrop, @status, @genres, @networks, @runtime,
 				@originCountry, @originalLanguage, @releaseDate, @lastAirDate, @nextAirDate, @tvdbId, @imdbId,
-				@tvmazeId, @refreshedAt, @refreshAfter, NULL)
+				@tvmazeId, @refreshedAt, @refreshAfter, NULL, @services, @keywords)
 			ON CONFLICT (media_type, tmdb_id) DO UPDATE SET
 				title = excluded.title, poster = excluded.poster, backdrop = excluded.backdrop, status = excluded.status,
 				genres = excluded.genres, networks = excluded.networks, runtime = excluded.runtime,
@@ -30,12 +30,15 @@ export function saveTitle(t: TitleRow, seasons: Map<number, EpisodeRow[]>, tvmaz
 				release_date = excluded.release_date, last_air_date = excluded.last_air_date,
 				next_air_date = excluded.next_air_date, tvdb_id = excluded.tvdb_id, imdb_id = excluded.imdb_id,
 				tvmaze_id = COALESCE(excluded.tvmaze_id, titles.tvmaze_id), refreshed_at = excluded.refreshed_at,
-				refresh_after = excluded.refresh_after, last_error = NULL`
+				refresh_after = excluded.refresh_after, last_error = NULL, services = excluded.services,
+				keywords = excluded.keywords`
 		).run({
 			...t,
 			genres: JSON.stringify(t.genres),
 			networks: JSON.stringify(t.networks),
 			originCountry: JSON.stringify(t.originCountry),
+			services: JSON.stringify(t.services),
+			keywords: JSON.stringify(t.keywords),
 			tvmazeId,
 			refreshedAt: iso(refreshedAt),
 			refreshAfter: iso(dueAt)

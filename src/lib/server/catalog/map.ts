@@ -12,6 +12,21 @@ const names = (v: unknown) =>
 	Array.isArray(v) ? v.map((x) => str((x as { name?: unknown })?.name)).filter((x): x is string => x !== null) : [];
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
+/** US flatrate (subscription) providers from TMDB's `watch/providers`. */
+function usServices(d: Record<string, unknown>): string[] {
+	const us = ((d['watch/providers'] as Record<string, unknown> | undefined)?.results as Record<string, unknown> | undefined)?.US as
+		| Record<string, unknown>
+		| undefined;
+	const flat = Array.isArray(us?.flatrate) ? us.flatrate : [];
+	return [...new Set(flat.map((p) => str((p as { provider_name?: unknown })?.provider_name)).filter((n): n is string => n !== null))];
+}
+
+/** Keyword names (shows: keywords.results; films: keywords.keywords). */
+function keywordNames(d: Record<string, unknown>): string[] {
+	const k = (d.keywords ?? {}) as Record<string, unknown>;
+	return names(Array.isArray(k.results) ? k.results : k.keywords);
+}
+
 export type MediaType = 'tv' | 'movie';
 
 export type TitleRow = {
@@ -33,6 +48,10 @@ export type TitleRow = {
 	nextAirDate: string | null;
 	tvdbId: number | null;
 	imdbId: string | null;
+	/** US subscription services, TMDB's names as given (tidied when read). */
+	services: string[];
+	/** TMDB keywords (the anime rule reads "anime"). */
+	keywords: string[];
 };
 
 export type EpisodeRow = {
@@ -75,7 +94,9 @@ export function mapShow(tmdbId: number, d: Record<string, unknown>): { title: Ti
 			lastAirDate: str(last?.air_date),
 			nextAirDate: str(next?.air_date),
 			tvdbId: int(ext.tvdb_id),
-			imdbId: str(ext.imdb_id)
+			imdbId: str(ext.imdb_id),
+			services: usServices(d),
+			keywords: keywordNames(d)
 		},
 		seasons: (Array.isArray(d.seasons) ? d.seasons : [])
 			.map((s) => s as Record<string, unknown>)
@@ -109,7 +130,9 @@ export function mapMovie(tmdbId: number, d: Record<string, unknown>): TitleRow {
 		lastAirDate: null,
 		nextAirDate: null,
 		tvdbId: null,
-		imdbId: str(d.imdb_id) ?? str(ext.imdb_id)
+		imdbId: str(d.imdb_id) ?? str(ext.imdb_id),
+		services: usServices(d),
+		keywords: keywordNames(d)
 	};
 }
 

@@ -148,14 +148,17 @@ function servicesOf(item: Record<string, unknown>): string[] {
 	if (!providers || typeof providers !== 'object') return [];
 	const us = (providers as Record<string, unknown>).US;
 	if (!us || typeof us !== 'object') return [];
-
-	const names = new Set<string>();
 	// `flatrate` is subscription streaming; rent/buy are not "on a service I pay for".
-	for (const entry of ((us as Record<string, unknown>).flatrate as unknown[]) ?? []) {
-		const name = (entry as Record<string, unknown>)?.provider_name;
-		if (typeof name === 'string') names.add(dedupeKey(normaliseService(name)));
-	}
-	return [...names];
+	const names = (((us as Record<string, unknown>).flatrate as unknown[]) ?? [])
+		.map((entry) => (entry as Record<string, unknown>)?.provider_name)
+		.filter((n): n is string => typeof n === 'string');
+	return serviceNames(names);
+}
+
+/** TMDB provider names tidied into the watchlist's service chips (Seek's own
+ *  data uses this too, so the chips read the same either way). */
+export function serviceNames(raw: string[]): string[] {
+	return [...new Set(raw.map((name) => dedupeKey(normaliseService(name))))];
 }
 
 function mapRow(r: TrackedMedia, mediaType: MediaType): WatchlistRow {
