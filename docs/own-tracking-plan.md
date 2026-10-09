@@ -4,7 +4,7 @@
 and movie information straight from TMDB, and receives Jellyfin's "watched" webhook itself. Same
 shape as books: one home per fact, Seek is the only app you use.
 
-**Status:** agreed 2026-10-09 (decisions below). Step 1 in progress.
+**Status:** agreed 2026-10-09 (decisions below). Steps 1–2 done; step 3 in progress.
 
 ## Why
 
@@ -127,17 +127,25 @@ total, and the watchlist next-up matches Floppy's corrected next-up for every in
 
 ## Order (Floppy keeps running throughout)
 
-1. **TMDB info layer:** `titles` + `episodes` tables and the refresh schedule, filled for everything
-   you track. Nothing user-facing changes. *Done when* every tracked title has fresh info.
-2. **The copy + comparison:** run it, fix mismatches until the "done when" above holds for both of
-   you. Re-run it right before switching.
-3. **Read from Seek:** Watchlist, Show/Season/Movie pages, Library, Upcoming, Profile stats, one at a
-   time behind a setting, each checked against Floppy. Writes still go to Floppy *and* Seek, so both
-   stay current and switching back is always possible.
-4. **Write to Seek, webhook to Seek:** marking, statuses, ratings, shared marks, the long-press
-   rewatch menu; point Jellyfin's webhook at Seek. Floppy goes read-only (kept running, untouched) for a few weeks as a safety net.
-5. **Remove Floppy:** delete the Floppy client, the mirroring job, the next-up corrections, the
-   anime-bucket handling, the Floppy settings; drop Floppy from compose once you're happy.
+*Revised while building:* writes move to Seek **before** reads do. If screens read Seek while
+Jellyfin's marks still only reached Floppy, a watched episode would be missing from Seek until the
+nightly copy. So Seek becomes the place every change lands first, and screens switch once Seek is
+always the freshest copy.
+
+1. **TMDB info layer** *(done, deployed)*: `titles` + `episodes`, refreshed on a schedule.
+2. **The copy + comparison** *(done)*: everything tracked and every play copied out of Floppy for
+   both of you, re-run nightly, totals checked. First live run: 13,939/13,939 episode plays,
+   62/62 film plays, nothing to review.
+3. **Writes recorded in Seek** *(in progress)*: every change made in Seek (marks, undo, season
+   fill/clear, add/remove, status, rating) is recorded in Seek's tables as well as Floppy, for
+   everyone it counts for (shared shows). The nightly copy links these to Floppy's copies of the
+   same viewings and corrects any drift, so Floppy stays the record until the switch.
+4. **Jellyfin to Seek:** Seek's own webhook records the play and passes it on to Floppy, so Floppy
+   stays complete for going back. You swap the webhook URL in Jellyfin.
+5. **Read from Seek:** watchlist, show/season/movie pages, library, Upcoming, Profile stats, one at
+   a time, each checked against Floppy first. The long-press rewatch menu lands here.
+6. **Remove Floppy:** stop passing changes on, delete the Floppy client, the mirroring job, the
+   next-up corrections and anime-bucket handling; take Floppy out of the server setup.
 
 Each step is its own release with tests; you can stop after any of them and lose nothing.
 

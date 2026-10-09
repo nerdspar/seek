@@ -22,28 +22,78 @@ export function replaceTracked(userId: number, mediaType: MediaType, rows: Track
 	return { kept: rows.length, removed };
 }
 
-/** Make the copied plays for one person and media type match `plays` exactly:
- *  add new ones, drop ones Floppy no longer has (unmarked). Plays Seek recorded
- *  itself (source seek/jellyfin) are never touched. */
-export function syncImportedPlays(userId: number, mediaType: MediaType, plays: PlayRow[]): { added: number; removed: number } {
+/** A Seek-recorded play and Floppy's copy of it are the same viewing when this close. */
+export const SAME_VIEWING_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Make Seek's plays for one person and media type match Floppy's `plays`:
+ * - a play Seek recorded itself (a mark in Seek) is linked to Floppy's copy of
+ *   the same viewing rather than copied twice;
+ * - new Floppy plays are added; plays Floppy no longer has (unmarked) go;
+ * - a play Seek recorded before this run that Floppy never got is dropped —
+ *   Floppy is the record until the switch. Plays recorded during the run stay.
+ */
+export function syncImportedPlays(
+	userId: number,
+	mediaType: MediaType,
+	plays: PlayRow[],
+	runStart: string = nowIso()
+): { added: number; removed: number; linked: number } {
 	const d = db();
 	let added = 0;
 	let removed = 0;
+	let linked = 0;
 	d.transaction(() => {
+		const exists = d.prepare('SELECT 1 FROM plays WHERE user_id = ? AND external_key = ?');
+		const local = d.prepare(
+			`SELECT id, watched_at FROM plays WHERE user_id = ? AND media_type = ? AND tmdb_id = ? AND season IS ? AND episode IS ?
+			AND external_key IS NULL AND source IN ('seek', 'jellyfin')`
+		);
+		const link = d.prepare('UPDATE plays SET external_key = ? WHERE id = ?');
 		const ins = d.prepare(
-			`INSERT OR IGNORE INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, external_key, created_at)
+			`INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, external_key, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, 'import', ?, ?)`
 		);
 		const now = nowIso();
-		for (const p of plays) added += ins.run(userId, mediaType, p.tmdbId, p.season, p.episode, p.watchedAt, p.externalKey, now).changes;
+		for (const p of plays) {
+			if (exists.get(userId, p.externalKey)) continue;
+			const at = Date.parse(p.watchedAt);
+			const candidates = local.all(userId, mediaType, p.tmdbId, p.season, p.episode) as { id: number; watched_at: string }[];
+			const match = candidates
+				.map((c) => ({ id: c.id, gap: Math.abs(Date.parse(c.watched_at) - at) }))
+				.filter((c) => c.gap <= SAME_VIEWING_MS)
+				.sort((a, b) => a.gap - b.gap)[0];
+			if (match) {
+				link.run(p.externalKey, match.id);
+				linked++;
+			} else {
+				ins.run(userId, mediaType, p.tmdbId, p.season, p.episode, p.watchedAt, p.externalKey, now);
+				added++;
+			}
+		}
 		const keep = new Set(plays.map((p) => p.externalKey));
-		const have = d
-			.prepare("SELECT id, external_key FROM plays WHERE user_id = ? AND media_type = ? AND source = 'import'")
-			.all(userId, mediaType) as { id: number; external_key: string }[];
 		const del = d.prepare('DELETE FROM plays WHERE id = ?');
-		for (const h of have) if (!keep.has(h.external_key)) (del.run(h.id), removed++);
+		const backed = d
+			.prepare("SELECT id, external_key FROM plays WHERE user_id = ? AND media_type = ? AND external_key LIKE 'floppy:%'")
+			.all(userId, mediaType) as { id: number; external_key: string }[];
+		for (const h of backed) if (!keep.has(h.external_key)) (del.run(h.id), removed++);
+		removed += d
+			.prepare(
+				`DELETE FROM plays WHERE user_id = ? AND media_type = ? AND external_key IS NULL
+				AND source IN ('seek', 'jellyfin') AND created_at < ?`
+			)
+			.run(userId, mediaType, runStart).changes;
 	})();
-	return { added, removed };
+	return { added, removed, linked };
+}
+
+/** Plays Seek holds that are backed by Floppy (copied or linked). */
+export function floppyBackedPlayCount(userId: number, mediaType: MediaType): number {
+	return (
+		db().prepare("SELECT COUNT(*) AS n FROM plays WHERE user_id = ? AND media_type = ? AND external_key LIKE 'floppy:%'").get(userId, mediaType) as {
+			n: number;
+		}
+	).n;
 }
 
 /** This run's review notes replace the last run's. */
@@ -59,13 +109,6 @@ export function replaceReviews(userId: number, reviews: Review[]): void {
 	})();
 }
 
-export function importedPlayCount(userId: number, mediaType: MediaType): number {
-	return (
-		db().prepare("SELECT COUNT(*) AS n FROM plays WHERE user_id = ? AND media_type = ? AND source = 'import'").get(userId, mediaType) as {
-			n: number;
-		}
-	).n;
-}
 
 /**
  * Copied episode plays checked against Seek's TMDB copy: plays on an episode TMDB

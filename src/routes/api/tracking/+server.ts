@@ -4,6 +4,9 @@ import { FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { expire, invalidate } from '$lib/server/memo';
 import { Status } from '$lib/types';
 import type { MediaType } from '$lib/types';
+import { currentUser } from '$lib/server/userctx';
+import { mirror, recordPlay, setTracked, Status as Tracked, tmdbIdOf } from '$lib/server/tracking/write';
+import { db } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
 type Body = {
@@ -41,6 +44,20 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was changed.');
 		if (err instanceof FloppyError) error(502, err.message);
 		throw err;
+	}
+
+	// Seek's own record. Floppy records a play when a film is set Completed; so does Seek.
+	const me = currentUser();
+	const tmdbId = tmdbIdOf(source, mediaId);
+	if (me && tmdbId) {
+		const kind = mediaType === 'movie' ? 'movie' : 'tv';
+		mirror('a status change', () => {
+			setTracked(me.id, kind, tmdbId, { status, score });
+			if (kind === 'movie' && status === Tracked.Completed) {
+				const has = db().prepare("SELECT 1 FROM plays WHERE user_id = ? AND media_type = 'movie' AND tmdb_id = ?").get(me.id, tmdbId);
+				if (!has) recordPlay(me.id, 'movie', tmdbId, null, null);
+			}
+		});
 	}
 
 	/* Status decides which watchlist filter a show falls under, so the lists

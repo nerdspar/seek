@@ -5,6 +5,9 @@ import { expire, invalidate } from '$lib/server/memo';
 import type { MediaType } from '$lib/types';
 import { settleAdded } from '$lib/server/household/run';
 import { classifyShow } from '$lib/server/anime-sync';
+import { currentUser } from '$lib/server/userctx';
+import { ensureTracked, mirror, tmdbIdOf, untrack } from '$lib/server/tracking/write';
+import { ensureTitle } from '$lib/server/catalog/store';
 import type { RequestHandler } from './$types';
 
 type Body = { mediaType?: MediaType; source?: string; mediaId?: string; title?: string };
@@ -65,6 +68,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw err;
 	}
 	invalidateTracked(source, mediaId);
+	// Seek's own record, and its show info fetched on the next refresh (≤10 minutes).
+	const me = currentUser();
+	const tmdbId = tmdbIdOf(source, mediaId);
+	if (me && tmdbId) {
+		const kind = mediaType === 'movie' ? 'movie' : 'tv';
+		mirror('an add', () => {
+			ensureTracked(me.id, kind, tmdbId);
+			ensureTitle(kind, tmdbId);
+		});
+	}
 	/* A new show: together or solo? Settled per the household setting; 'pending'
 	   tells the button to offer "Watching together" right there. */
 	const household = mediaType === 'tv' ? settleAdded({ source, mediaId, title: body.title ?? null }) : null;
@@ -79,6 +92,9 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	try {
 		await removeMedia(mediaType, source, mediaId);
 		invalidateTracked(source, mediaId);
+		const me = currentUser();
+		const tmdbId = tmdbIdOf(source, mediaId);
+		if (me && tmdbId) mirror('a removal', () => untrack(me.id, mediaType === 'movie' ? 'movie' : 'tv', tmdbId));
 		return json({ ok: true });
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was removed.');

@@ -10,6 +10,8 @@ import { Status } from '$lib/types';
 import type { WatchlistRow } from '$lib/types';
 import type { MediaType } from '$lib/types';
 import { afterMark } from '$lib/server/household/run';
+import { currentUser } from '$lib/server/userctx';
+import { mirror, recordPlay, removeNewestPlay, tmdbIdOf, watchers } from '$lib/server/tracking/write';
 import type { RequestHandler } from './$types';
 
 /**
@@ -142,6 +144,16 @@ export const POST: RequestHandler = async ({ request }) => {
 			markApplied(key);
 			// A shared show or film: carry the play to the rest of the household shortly.
 			afterMark(source, mediaId, isMovie ? 'movie' : 'tv');
+			// Seek's own record (own-tracking plan): the same play, for everyone it counts for.
+			const me = currentUser();
+			const tmdbId = tmdbIdOf(source, mediaId);
+			if (me && tmdbId) {
+				const kind = isMovie ? 'movie' : 'tv';
+				mirror('a play', () => {
+					for (const id of watchers(me, source, mediaId, kind))
+						recordPlay(id, kind, tmdbId, isMovie ? null : (season as number), isMovie ? null : (episode as number));
+				});
+			}
 		}
 	} catch (err) {
 		if (err instanceof FloppyUnreachable) {
@@ -206,6 +218,13 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		if (!replay) {
 			await floppy(path, { method: 'DELETE' });
 			markApplied(key);
+			const me = currentUser();
+			const tmdbId = tmdbIdOf(source, mediaId);
+			if (me && tmdbId) {
+				mirror('an undo', () =>
+					removeNewestPlay(me.id, isMovie ? 'movie' : 'tv', tmdbId, isMovie ? null : (season as number), isMovie ? null : (episode as number))
+				);
+			}
 		}
 	} catch (err) {
 		if (err instanceof FloppyError && err.status === 405) {

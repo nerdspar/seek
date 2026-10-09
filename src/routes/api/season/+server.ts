@@ -3,6 +3,8 @@ import { floppy, FloppyError, FloppyUnreachable } from '$lib/server/floppy';
 import { expire, invalidate } from '$lib/server/memo';
 import { alreadyApplied, markApplied } from '$lib/server/idempotency';
 import { afterMark } from '$lib/server/household/run';
+import { currentUser } from '$lib/server/userctx';
+import { clearSeason, fillSeason, mirror, tmdbIdOf, watchers } from '$lib/server/tracking/write';
 import type { RequestHandler } from './$types';
 
 type Body = { source?: string; mediaId?: string; season?: number; episodes?: number; watched?: number };
@@ -107,6 +109,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	markApplied(key);
 	bustSeasonCaches(source, mediaId, season);
 	afterMark(source, mediaId);
+	// Seek's own record: the same fill, for everyone the show counts for.
+	const me = currentUser();
+	const tmdbId = tmdbIdOf(source, mediaId);
+	if (me && tmdbId) {
+		mirror('a season fill', () => {
+			for (const id of watchers(me, source, mediaId, 'tv')) fillSeason(id, tmdbId, season, marked);
+		});
+	}
 	return json({ ok: true, marked });
 };
 
@@ -119,6 +129,9 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	try {
 		await floppy(`${base(source, mediaId, season)}/`, { method: 'DELETE', timeoutMs: 30_000 });
 		bustSeasonCaches(source, mediaId, season);
+		const me = currentUser();
+		const tmdbId = tmdbIdOf(source, mediaId);
+		if (me && tmdbId) mirror('a season clear', () => clearSeason(me.id, tmdbId, season));
 		return json({ ok: true });
 	} catch (err) {
 		// An untracked season has nothing to clear, which is the desired end state

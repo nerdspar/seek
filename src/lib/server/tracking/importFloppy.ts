@@ -11,7 +11,7 @@ import { floppy } from '../floppy';
 import { currentUser } from '../userctx';
 import { ensureTitle } from '../catalog/store';
 import { isReview, playFromHistory, trackedFromList, type MediaType, type PlayRow, type Review, type TrackedRow } from './importMap';
-import { checkEpisodes, importedPlayCount, recordRun, replaceReviews, replaceTracked, syncImportedPlays, type ImportSummary } from './store';
+import { checkEpisodes, floppyBackedPlayCount, recordRun, replaceReviews, replaceTracked, syncImportedPlays, type ImportSummary } from './store';
 
 const PAGE = 200;
 type Page = { results?: unknown[]; pagination?: { total?: number; next?: string | null } };
@@ -33,6 +33,7 @@ export async function copyFromFloppy(): Promise<ImportSummary> {
 	const user = currentUser();
 	if (!user) throw new Error('copyFromFloppy needs a person');
 	const reviews: Review[] = [];
+	const runStart = new Date().toISOString();
 	const summary: ImportSummary = {
 		ranAt: new Date().toISOString(),
 		tracked: { tv: 0, movie: 0 },
@@ -67,10 +68,10 @@ export async function copyFromFloppy(): Promise<ImportSummary> {
 			else if (isReview(p)) (reviews.push(p), skipped++);
 			else plays.push(p);
 		}
-		const sync = syncImportedPlays(user.id, mediaType, plays);
+		const sync = syncImportedPlays(user.id, mediaType, plays, runStart);
 		summary.added += sync.added;
 		summary.removed += sync.removed;
-		summary.plays[mediaType] = { floppy: history.total, seek: importedPlayCount(user.id, mediaType), skipped };
+		summary.plays[mediaType] = { floppy: history.total, seek: floppyBackedPlayCount(user.id, mediaType), skipped };
 	}
 
 	const check = checkEpisodes(user.id);
