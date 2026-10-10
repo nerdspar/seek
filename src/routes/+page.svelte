@@ -2,7 +2,8 @@
 	import NewShows from '$lib/components/NewShows.svelte';
 	import { setSegment } from '$lib/segment';
 	import { finishing } from '$lib/finishing';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, invalidate, invalidateAll } from '$app/navigation';
+	import { startLiveRefresh } from '$lib/liveRefresh';
 	import { flip } from 'svelte/animate';
 	import { prefersReducedMotion } from 'svelte/motion';
 	import WatchRow from '$lib/components/WatchRow.svelte';
@@ -197,6 +198,16 @@
 	};
 
 	let toast = $state<Pending | null>(null);
+
+	/* Real time: changes made elsewhere (Jellyfin, your partner on a shared show,
+	   another device) arrive on their own — on returning to the app and every 30s
+	   while the list is on screen. Not while a mark or its undo is in play. */
+	$effect(() =>
+		startLiveRefresh({
+			refresh: () => invalidate('seek:watchlist'),
+			busy: () => inFlight.size > 0 || toast !== null || undoBusy
+		})
+	);
 	let undoBusy = $state(false);
 	let inFlight = $state<Set<string>>(new Set());
 

@@ -1,6 +1,5 @@
 import { error } from '@sveltejs/kit';
 import { getSeason } from '$lib/server/detail';
-import { memo } from '$lib/server/memo';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -13,8 +12,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		source: params.source,
 		mediaId: params.id,
 		seasonNumber,
-		season: memo(`season:${params.source}:${params.id}:${seasonNumber}`, 5 * 60 * 1000, () =>
-			getSeason(params.source, params.id, seasonNumber)
-		)
+		// Always fresh: Seek's own tables, milliseconds.
+		season: getSeason(params.source, params.id, seasonNumber)
 	};
 };

@@ -1,5 +1,4 @@
 import { getWatchlist } from '$lib/server/watchlist';
-import { memo } from '$lib/server/memo';
 import { getPrefs, SORTS, sortFor } from '$lib/server/prefs';
 import { type Company, type AnimeFilter, animeTagQuery } from '$lib/server/tags';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
@@ -14,7 +13,9 @@ const COMPANIES: Company[] = ['all', 'joint', 'solo'];
 const ANIME_FILTERS: AnimeFilter[] = ['all', 'only', 'hide'];
 const STATUSES = ['in_progress', 'planning', 'completed', 'paused', 'dropped', 'all'];
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async ({ url, depends }) => {
+	// Re-read on its own by the page (liveRefresh) — just this load, not the layout's.
+	depends('seek:watchlist');
 	const requested = url.searchParams.get('type') as MediaType | null;
 
 	/* Sort lives in server-side preferences (§4.5, §8) rather than the browser:
@@ -68,22 +69,19 @@ export const load: PageServerLoad = async ({ url }) => {
 	const animeTag = animeTagQuery(anime);
 
 	const filters = { status, company, anime, services };
-	const key = `watchlist:${mediaType}:${sortKey}:${status}:${company}:${anime}:${services.join('+')}`;
 
-	/* Streamed like every other route. This is the launch screen, so it is the
-	   one most often warm — but on a cold container a blank three seconds is
-	   exactly the thing this app exists to avoid, and a skeleton that appears
-	   instantly beats rows that appear eventually. */
-	const page = memo(key, 60 * 1000, () =>
-		getWatchlist(mediaType, {
+	/* Read fresh on every load, never cached: Seek builds the whole list from its
+	   own tables in tens of milliseconds, and a cached copy is exactly what left a
+	   change (yours, your partner's on a shared show, Jellyfin's) out of the list
+	   until a refresh. Streamed so the shell paints at once. */
+	const page = getWatchlist(mediaType, {
 			sort,
 			direction,
 			statuses: status === 'all' ? ['all'] : [status],
 			company,
 			services,
 			...animeTag
-		})
-	);
+		});
 
 	return {
 		// The Books segment: your setting, and a BookOrbit to read from.

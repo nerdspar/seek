@@ -12,7 +12,8 @@ import type { PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async ({ params }) => {
 	/* Streamed rather than awaited, same as the show page. */
-	const movie = memo(`movie:${params.source}:${params.id}`, 5 * 60 * 1000, () => getMovie(params.source, params.id));
+	// Your plays and status: always fresh (Seek's own tables, milliseconds).
+	const movie = getMovie(params.source, params.id);
 
 	/* Where to watch and "more like this", from TMDB. */
 	const extras = memo(`extras:movie:${params.id}`, 24 * 60 * 60 * 1000, () => getMovieExtras(params.id));

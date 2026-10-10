@@ -79,10 +79,6 @@ export async function getStats(key: RangeKey): Promise<Stats> {
 
 export type CollectionCounts = { tv: number; movie: number; anime: number };
 
-/** Shared so the route and the boot warmup cannot prime different keys. */
-export const COUNTS_KEY = 'collection:counts';
-export const COUNTS_TTL = 5 * 60 * 1000;
-
 export async function getCollectionCounts(): Promise<CollectionCounts> {
 	const me = currentUser();
 	return me ? seekCollectionCounts(me.id, me.householdId) : { tv: 0, movie: 0, anime: 0 };

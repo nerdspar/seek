@@ -15,7 +15,8 @@ export const load: PageServerLoad = async ({ params }) => {
 
 	// Where to watch, networks, similar titles: TMDB, cached a day.
 	const extras = memo(`extras:${params.id}`, 24 * 60 * 60 * 1000, () => getShowExtras(params.id));
-	const show = memo(`show:${params.source}:${params.id}`, 5 * 60 * 1000, () => getShow(params.source, params.id));
+	// Your plays and status: always fresh (Seek's own tables, milliseconds).
+	const show = getShow(params.source, params.id);
 	const tracking = getTracking('tv', params.source, params.id).catch(() => UNTRACKED);
 
 	/* "Together" is the household's shared list: a play by either of you counts

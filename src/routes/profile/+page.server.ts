@@ -1,13 +1,10 @@
 import {
-	COUNTS_KEY,
-	COUNTS_TTL,
 	getCollectionCounts,
 	getStats,
 	type RangeKey,
 	type Stats
 } from '$lib/server/stats';
 import { getRecentlyAdded } from '$lib/server/watchlist';
-import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
 import { listGoals, readingLog, shelfLinked } from '$lib/server/books/shelf';
 import { myBookList } from '$lib/server/books/discovery';
@@ -23,20 +20,15 @@ export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('range') as RangeKey | null;
 	const range: RangeKey = requested && RANGES.includes(requested) ? requested : 'all_time';
 
-	/* Streamed, not awaited. Floppy takes 9.4s to compute an all-time overview,
-	   and blocking the navigation on that made the tab look dead — the shell now
-	   renders immediately and the numbers arrive when they arrive.
-	   Cached for 30 minutes and warmed at boot, so in practice it is never slow:
-	   a slightly stale hours count is harmless, a 9.5s stall is not. */
-	const stats: Promise<Stats> = memo(`stats:${range}`, 30 * 60 * 1000, () => getStats(range));
+	/* Streamed, and always fresh: worked out from your plays in Seek's own
+	   tables in tens of milliseconds, so nothing is cached to go stale. */
+	const stats: Promise<Stats> = getStats(range);
 
-	// Counts for the Collection rows (§7.2), warmed at boot — see hooks.server.ts.
-	const counts = memo(COUNTS_KEY, COUNTS_TTL, getCollectionCounts);
+	// Counts for the Collection rows (§7.2).
+	const counts = getCollectionCounts();
 
-	/* Recently added to the library, so a show you just tracked is easy to find
-	   again. Streamed and cached; invalidated on add/remove (see /api/library) so
-	   a fresh addition appears at once. Independent of `range`. */
-	const recentlyAdded = memo('recent:added', 60 * 1000, () => getRecentlyAdded(12));
+	// Recently added, so a show you just tracked is easy to find again.
+	const recentlyAdded = getRecentlyAdded(12);
 
 	/* Your reading goals (Hardcover), when Books is on and you've linked your
 	   own Hardcover account. Streamed; the shelf module caches them. */

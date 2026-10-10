@@ -1,6 +1,5 @@
 import { error } from '@sveltejs/kit';
 import { getWatchlist, type WatchlistOptions } from '$lib/server/watchlist';
-import { memo } from '$lib/server/memo';
 import { ANIME_TAG } from '$lib/server/tags';
 import type { MediaType } from '$lib/types';
 import type { PageServerLoad } from './$types';
@@ -51,21 +50,15 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	const sortKey = url.searchParams.get('sort') ?? 'alphabetical';
 	const sortDef = SORTS[sortKey] ?? SORTS.alphabetical;
 
-	/* Streamed: only the 'all' view of each type is warmed, so any other
-	   view/sort combination would otherwise block on a cold build. */
+	/* Streamed, and always fresh (Seek's own tables, milliseconds). */
 	const { source, tag } = listSource(mediaType);
-	const page = memo(`library:${mediaType}:${viewKey}:${sortKey}`, 60 * 1000, () =>
-		getWatchlist(source, {
+	const page = getWatchlist(source, {
 			statuses: view.statuses,
 			sort: sortDef.sort,
 			direction: sortDef.direction,
-			// The grid shows poster, title and progress only — no next-up — so
-			// paging the whole library is cheap without per-row enrichment.
 			all: true,
-			enrich: false,
 			...tag
-		})
-	);
+		});
 
 	return {
 		mediaType,

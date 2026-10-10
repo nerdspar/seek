@@ -1,5 +1,4 @@
 import { getDiary } from '$lib/server/stats';
-import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
 import { myBookList } from '$lib/server/books/discovery';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
@@ -29,7 +28,7 @@ export const load: PageServerLoad = async ({ url }) => {
 		pageSize: PAGE,
 		media,
 		view,
-		result: view === 'watching' ? memo(`diary:${offset}`, 5 * 60 * 1000, () => getDiary(offset, PAGE)) : null,
+		result: view === 'watching' ? getDiary(offset, PAGE) : null,
 		books: view === 'reading' ? myBookList().catch(() => []) : null
 	};
 };
