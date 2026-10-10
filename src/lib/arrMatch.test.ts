@@ -17,28 +17,28 @@ const ep = (over: Partial<ArrEpisode>): ArrEpisode => ({
 
 describe('matchEpisode', () => {
 	it('matches by air date across a season renumber (the Bake Off / Re:ZERO case)', () => {
-		// Floppy numbers this as S1E07 (TMDB), Sonarr files the same broadcast as
+		// TMDB numbers this as S1E07, Sonarr files the same broadcast as
 		// S8E07; a different Sonarr episode shares the number S1E07 but aired years
 		// earlier. Air date must win.
 		const sonarr = [
 			ep({ id: 1, seasonNumber: 1, episodeNumber: 7, airDateUtc: '2010-09-28T19:00:00Z' }),
 			ep({ id: 2, seasonNumber: 8, episodeNumber: 7, airDateUtc: '2017-10-10T19:00:00Z' })
 		];
-		const floppy = { seasonNumber: 1, episodeNumber: 7, airDate: '2017-10-10T07:59:00Z' };
-		expect(matchEpisode(floppy, sonarr)?.id).toBe(2);
+		const ours = { seasonNumber: 1, episodeNumber: 7, airDate: '2017-10-10T07:59:00Z' };
+		expect(matchEpisode(ours, sonarr)?.id).toBe(2);
 	});
 
 	it('absorbs timezone skew within the window', () => {
 		const sonarr = [ep({ id: 5, airDateUtc: '2016-09-04T19:00:00Z' })];
-		// Floppy local datetime a few hours off, same broadcast.
-		const floppy = { seasonNumber: 1, episodeNumber: 23, airDate: '2016-09-04T08:00:00Z' };
-		expect(matchEpisode(floppy, sonarr)?.id).toBe(5);
+		// Our air date a few hours off, same broadcast.
+		const ours = { seasonNumber: 1, episodeNumber: 23, airDate: '2016-09-04T08:00:00Z' };
+		expect(matchEpisode(ours, sonarr)?.id).toBe(5);
 	});
 
 	it('does not match a date that is a whole week away', () => {
 		const sonarr = [ep({ id: 9, seasonNumber: 2, episodeNumber: 1, airDateUtc: '2016-09-11T19:00:00Z' })];
-		const floppy = { seasonNumber: 1, episodeNumber: 99, airDate: '2016-09-04T19:00:00Z' };
-		expect(matchEpisode(floppy, sonarr)).toBeNull();
+		const ours = { seasonNumber: 1, episodeNumber: 99, airDate: '2016-09-04T19:00:00Z' };
+		expect(matchEpisode(ours, sonarr)).toBeNull();
 	});
 
 	it('disambiguates a same-day season drop by episode number', () => {

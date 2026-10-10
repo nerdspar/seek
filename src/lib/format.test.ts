@@ -12,7 +12,7 @@ describe('hasRealAirTime', () => {
 	it('is false for a date-only value', () => {
 		expect(hasRealAirTime('2026-06-08')).toBe(false);
 	});
-	it("is false for Floppy's 11:59:59 padding", () => {
+	it('is false for an 11:59:59 placeholder', () => {
 		expect(hasRealAirTime('2026-06-08T11:59:59-04:00')).toBe(false);
 	});
 	it('is true for a genuine time', () => {

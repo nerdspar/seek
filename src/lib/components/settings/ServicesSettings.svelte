@@ -4,7 +4,7 @@
 	import { SERVICE_GROUPS, type ServiceGroup } from '$lib/serviceFields';
 	import StatusDot, { type DotState } from './StatusDot.svelte';
 
-	/** The household's services — addresses and keys for Floppy, TMDB, BookOrbit,
+	/** The household's services — addresses and keys for TMDB, BookOrbit,
 	 *  Hardcover, Sonarr, Radarr and email. Owner only. Secrets are
 	 *  never sent back here: a secret shows only as "set", and is sent again only
 	 *  when it's being replaced. */

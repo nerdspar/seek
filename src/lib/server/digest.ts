@@ -3,9 +3,8 @@
  *
  * Built from the same calendar the Upcoming tab uses, so it needs no new data
  * source — just a filter to today and a send. Deliberately one notification a
- * day, not one per episode: air *times* in Floppy's feed are mostly placeholders
- * (§5.2), so a per-episode "it's on now" would fire at the wrong moment for most
- * shows. A morning list keyed on the reliable part — the date — is the honest
+ * day, not one per episode: many episodes have no known air *time* (§5.2), so
+ * a per-episode "it's on now" would fire at the wrong moment for many shows. A morning list keyed on the reliable part — the date — is the honest
  * version.
  */
 import { getUpcoming } from './upcoming';

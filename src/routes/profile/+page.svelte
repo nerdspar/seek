@@ -281,8 +281,8 @@
 			</div>
 		{:then stats}
 			<!-- stats is non-null here: the load rejects rather than resolving null. -->
-				<!-- §7.1: every number below is read from Floppy's overview endpoint.
-				     Seek computes nothing except the date window. -->
+				<!-- §7.1: every number below comes from Seek's plays (tracking/stats.ts);
+				     this page only formats them. -->
 				<section class="headline">
 					<span class="big tnum">{fmt(stats.minutes)}</span>
 					<span class="unit">minutes logged · {stats.rangeLabel}</span>

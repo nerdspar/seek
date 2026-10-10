@@ -1,16 +1,9 @@
 /**
- * Server-load cache with stale-while-revalidate.
- *
- * The rule this enforces: **a request never waits for work it could serve from
- * cache.** Rebuilding the watchlist costs ~3.7s (a 2.3s list query plus an
- * 88-way episode-title fan-out), and paying that on a tap is what made the app
- * feel like it hung. So a stale entry is served immediately and refreshed behind
- * the response; only a genuinely cold key blocks.
- *
- * Safe because Floppy is authoritative and Seek stores no watch state: a stale
- * read can lag reality by seconds, never corrupt it. Writes update the affected
- * entry in place (see patch) rather than dropping it, so marking an episode does
- * not throw away the list it just updated.
+ * Server-load cache with stale-while-revalidate, for lookups from outside
+ * services (TMDB, Discover, book catalogues): a stale entry is served at once
+ * and refreshed behind the response; only a genuinely cold key blocks. Anything
+ * read from Seek's own tables is read fresh instead — it takes milliseconds,
+ * and a cached copy would only hide a change.
  *
  * Every key is namespaced to the current user (userctx), transparently: callers
  * keep writing `watchlist:tv:…`, and two people's watchlists live side by side
@@ -88,7 +81,7 @@ export async function memo<T>(rawKey: string, ttlMs: number, load: () => Promise
 	return run(key, load);
 }
 
-/** Replace a cached value without going back to Floppy. */
+/** Replace a cached value without reloading it. */
 export function put<T>(key: string, value: T): void {
 	store.set(scopeKey(key), { at: Date.now(), value, refreshing: false });
 	evictIfNeeded();

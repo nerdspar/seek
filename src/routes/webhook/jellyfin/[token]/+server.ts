@@ -5,7 +5,7 @@ import { handleJellyfin } from '$lib/server/tracking/jellyfin';
 import type { RequestHandler } from './$types';
 
 /** Jellyfin's webhook plugin posts here (own-tracking plan, step 4). The token in
- *  the URL says whose plays these are, the way Floppy's webhook URL does. */
+ *  the URL says whose plays these are. */
 export const POST: RequestHandler = async ({ params, request }) => {
 	const user = userByJellyfinToken(params.token);
 	if (!user) return new Response('Unknown webhook', { status: 404 });

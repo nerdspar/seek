@@ -1,7 +1,7 @@
 /**
- * Match a Floppy (TMDB-numbered) episode to its Sonarr (TVDB-numbered) episode.
+ * Match a Seek (TMDB-numbered) episode to its Sonarr (TVDB-numbered) episode.
  *
- * Floppy exposes no per-episode TVDB id, so these have to be lined up heuristically.
+ * Seek's TMDB copy has no per-episode TVDB id, so these have to be lined up heuristically.
  * Episode *number* within a season is unreliable: for shows where TMDB and TVDB
  * disagree on season structure (The Great British Bake Off is the classic case —
  * TMDB "Season 1" is the 2017 10-episode run, TVDB "Season 1" is the 2010 6-episode
@@ -9,7 +9,7 @@
  *
  * Air date is far more robust: the same episode aired on the same day regardless of
  * how each database numbers its seasons. So we match on air date first (within a
- * window, to absorb timezone skew between Floppy's local datetime and Sonarr's UTC),
+ * window, to absorb timezone skew between Seek's air dates and Sonarr's UTC),
  * and fall back to (season, episode) number only when there's no usable date.
  */
 import type { ArrEpisode } from './server/arr';
@@ -18,20 +18,20 @@ import type { ArrEpisode } from './server/arr';
  *  so a 20h window matches the same episode without colliding with its neighbours. */
 const MATCH_WINDOW_MS = 20 * 60 * 60 * 1000;
 
-export type FloppyEpisodeKey = {
+export type EpisodeKey = {
 	seasonNumber: number;
 	episodeNumber: number;
 	airDate: string | null;
 };
 
-const byNumber = (floppy: FloppyEpisodeKey, sonarr: ArrEpisode[]): ArrEpisode | null =>
+const byNumber = (ours: EpisodeKey, sonarr: ArrEpisode[]): ArrEpisode | null =>
 	sonarr.find(
-		(e) => e.seasonNumber === floppy.seasonNumber && e.episodeNumber === floppy.episodeNumber
+		(e) => e.seasonNumber === ours.seasonNumber && e.episodeNumber === ours.episodeNumber
 	) ?? null;
 
-export function matchEpisode(floppy: FloppyEpisodeKey, sonarr: ArrEpisode[]): ArrEpisode | null {
-	if (floppy.airDate) {
-		const t = Date.parse(floppy.airDate);
+export function matchEpisode(ours: EpisodeKey, sonarr: ArrEpisode[]): ArrEpisode | null {
+	if (ours.airDate) {
+		const t = Date.parse(ours.airDate);
 		if (!Number.isNaN(t)) {
 			const within = sonarr.filter(
 				(e) => e.airDateUtc && Math.abs(Date.parse(e.airDateUtc) - t) <= MATCH_WINDOW_MS
@@ -41,7 +41,7 @@ export function matchEpisode(floppy: FloppyEpisodeKey, sonarr: ArrEpisode[]): Ar
 				// A same-day release (a whole season dropped at once) puts every
 				// episode on one date, so "nearest date" can't tell them apart.
 				// Disambiguate by episode number, then fall back to nearest date.
-				const exact = byNumber(floppy, within);
+				const exact = byNumber(ours, within);
 				if (exact) return exact;
 				return [...within].sort(
 					(a, b) =>
@@ -51,5 +51,5 @@ export function matchEpisode(floppy: FloppyEpisodeKey, sonarr: ArrEpisode[]): Ar
 			}
 		}
 	}
-	return byNumber(floppy, sonarr);
+	return byNumber(ours, sonarr);
 }

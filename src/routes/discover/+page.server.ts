@@ -14,7 +14,7 @@ export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('type') as MediaType | null;
 
 	/* Lets other pages hand Discover a search to run. Tapping a cast member is
-	   the reason: an actor's name means nothing to Floppy's title search, and
+	   the reason: an actor's name means nothing to a title search, and
 	   the universal search here is the one thing that resolves people. */
 	const query = (url.searchParams.get('q') ?? '').trim();
 
@@ -57,7 +57,7 @@ export const load: PageServerLoad = async ({ url }) => {
 		presets,
 		platforms,
 		moodAvailable: tmdbConfigured(),
-		/* Streamed. Floppy builds these rows on its own schedule and they change
+		/* Streamed. These rows are built from TMDB and change
 		   slowly, so a stale read is fine and a blocking rebuild is not — and the
 		   movie side is not warmed at all. */
 		rows: memo(`discover:${mediaType}`, 30 * 60 * 1000, () => getDiscoverRows(mediaType)),

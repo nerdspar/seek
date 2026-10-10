@@ -458,7 +458,7 @@ export function setNotifyState(userId: number, patch: { lastDigest?: string; las
 /* ── Seek's own Jellyfin webhook (own-tracking plan, step 4) ───────────────── */
 
 /** This person's private webhook token, created on first ask. The URL is the
- *  credential (as with Floppy's), so it's long and random. */
+ *  credential, so it's long and random. */
 export function jellyfinToken(userId: number): string {
 	const have = db().prepare('SELECT jellyfin_token FROM users WHERE id = ?').get(userId) as { jellyfin_token: string | null } | undefined;
 	if (have?.jellyfin_token) return have.jellyfin_token;

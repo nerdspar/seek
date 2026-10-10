@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * Monthly hours as a smooth area chart, with an All / TV / Movies toggle.
-	 * Every number is Floppy's (combined_plays_charts.by_month) — this only draws.
+	 * Every number is computed server-side (tracking/stats.ts) — this only draws.
 	 *
 	 * The x-axis is trimmed to the last month any series has activity, so a
 	 * part-way year shows Jan→now rather than a flat tail of empty months, and it

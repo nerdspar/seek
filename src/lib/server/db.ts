@@ -4,8 +4,8 @@
  * Seek used to be stateless (two JSON files). Multi-user needs real storage:
  * accounts, sessions that can be invalidated, invites, and per-user credentials.
  * SQLite via better-sqlite3 (synchronous, transactional) in /data next to the
- * legacy JSON it migrates from. Watch state never lives here — it stays in each
- * person's Floppy; reading state lives on each person's Hardcover shelf.
+ * legacy JSON it migrates from. Watch state lives here too (`tracked`, `plays`);
+ * reading state lives on each person's Hardcover shelf.
  *
  * Migrations are append-only SQL run at open, tracked by PRAGMA user_version.
  * Never edit a shipped migration — add a new one.
@@ -129,7 +129,7 @@ export const MIGRATIONS: Migration[] = [
 		scanned_at  TEXT NOT NULL
 	);
 	`,
-	// v4 — the household's service settings (Floppy/BookOrbit addresses, API
+	// v4 — the household's service settings (service addresses, API
 	// keys…), edited in Settings → Services instead of the compose file. Secret
 	// values are encrypted like account links.
 	`
@@ -281,7 +281,7 @@ export const MIGRATIONS: Migration[] = [
 	CREATE INDEX episodes_air ON episodes (air_date);
 	`,
 	// v13 — what each person tracks and has watched, Seek's own (own-tracking
-	// plan, step 2). Filled by the copy from Floppy; nothing reads it until step 3.
+	// plan, step 2).
 	`
 	CREATE TABLE tracked (
 		user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

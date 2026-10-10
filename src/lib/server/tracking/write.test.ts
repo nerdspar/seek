@@ -32,7 +32,7 @@ describe("Seek's own record of each change", () => {
 		expect(status(603)).toBeUndefined();
 	});
 
-	it('a season fill marks the next aired episodes with no play, like Floppy', () => {
+	it('a season fill marks the next aired episodes with no play', () => {
 		const ins = db().prepare('INSERT INTO episodes (tmdb_id, season, episode, air_date) VALUES (10, 1, ?, ?)');
 		[1, 2, 3, 4].forEach((e) => ins.run(e, '2026-01-01'));
 		ins.run(5, '2099-01-01'); // not aired

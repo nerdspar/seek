@@ -30,7 +30,7 @@ export const actions: Actions = {
 			throw err;
 		}
 		setSession(cookies, url, user);
-		// Straight to linking their own Floppy / BookOrbit — nothing works until then.
+		// Straight to account settings, to link their own BookOrbit / Hardcover.
 		redirect(303, '/profile/settings?s=accounts&welcome=1');
 	}
 };

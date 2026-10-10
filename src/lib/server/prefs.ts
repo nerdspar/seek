@@ -1,6 +1,6 @@
 /**
  * Seek's own preferences (§8), per person: each account's prefs live on its row
- * in the user store (users.ts). Watch state belongs to Floppy and never lands here.
+ * in the user store (users.ts). Watch state lives in Seek's `tracked`/`plays` tables, not here.
  *
  * Server-side rather than localStorage because these affect the *server* render:
  * a default sort kept in the browser would mean the first paint shows one order
@@ -35,9 +35,7 @@ export type Prefs = {
 	/** Sort is remembered per media type (§4.5). */
 	sort: Record<string, SortKey>;
 	defaultTab: 'watchlist' | 'upcoming' | 'discover' | 'profile';
-	/** Season thumbnails on the show page. Off by default: Floppy returns the
-	 *  show's poster for every season, so it is usually a column of identical
-	 *  images — but some shows do have per-season art. */
+	/** Season thumbnails on the show page. Off by default. */
 	seasonArtwork: boolean;
 	/** Track who you watched something with — the joint/solo tag (§11). Off
 	 *  hides the chip, the watchlist filter and the sheet section; the tags
@@ -141,20 +139,18 @@ export function memberStartingPrefs(owner: Prefs): Prefs {
 	return start;
 }
 
-/** Maps Seek's labels to Floppy's closed sort enum. */
+/** Maps Seek's labels to the list's sort keys (tracking/read.ts `seekList`). */
 export const SORTS: Record<SortKey, { label: string; sort: string; direction: 'asc' | 'desc' }> = {
 	recently_watched: { label: 'Recently watched', sort: 'updated', direction: 'desc' },
 	newest_episode: { label: 'Newest episode', sort: 'next_episode_air_date', direction: 'desc' },
 	oldest_episode: { label: 'Oldest episode', sort: 'next_episode_air_date', direction: 'asc' },
 	alphabetical: { label: 'Alphabetical', sort: 'title', direction: 'asc' },
-	// Floppy has no episode-count sort; `runtime` is total runtime, which for TV
-	// orders longest-show-first and is the closest thing it exposes.
+	// `runtime` and `time_left` are kept key names: the list sorts them by total
+	// episodes and episodes left.
 	total_episodes: { label: 'Total episodes', sort: 'runtime', direction: 'desc' },
-	// `time_left` is minutes remaining rather than a literal episode count, but it
-	// is the only "how much is left" ordering Floppy offers.
 	episodes_left: { label: 'Episodes left', sort: 'time_left', direction: 'desc' },
-	// Verified against a live instance: `score` orders by *your* rating, not the
-	// community one, and unrated rows fall to the end.
+	// `score` orders by *your* rating, not the community one; unrated rows fall
+	// to the end.
 	your_rating: { label: 'Your rating', sort: 'score', direction: 'desc' }
 };
 

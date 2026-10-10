@@ -1,8 +1,8 @@
-/** Mirrors openapi.yaml components/schemas on Floppy v26.8.20. */
+/** Shapes shared by Seek's server and its pages. */
 
 export type MediaType = 'tv' | 'movie' | 'anime';
 
-/** Floppy stores user status as an int; the list endpoint also accepts labels. */
+/** A title's status, as stored. */
 export const Status = {
 	Planning: 0,
 	InProgress: 1,
@@ -11,82 +11,7 @@ export const Status = {
 	Dropped: 4
 } as const;
 
-export type NextEpisode = {
-	season_number: number | null;
-	episode_number: number;
-	air_date: string | null;
-};
-
-export type TrackedMedia = {
-	id: number | null;
-	consumption_id: number | null;
-	item: Record<string, unknown> | null;
-	item_id: string | null;
-	parent_id: string | null;
-	tracked: boolean;
-	created_at: string | null;
-	score: number | null;
-	status: number | null;
-	progress: number | null;
-	progress_scope: string | null;
-	progress_unit: string | null;
-	progressed_at: string | null;
-	start_date: string | null;
-	end_date: string | null;
-	notes: string | null;
-	lists: Record<string, unknown>[];
-	next_episode: NextEpisode | null;
-};
-
-export type Consumption = {
-	consumption_id: number;
-	created: string | null;
-	score: number | null;
-	progress: number | null;
-	progressed_at: string | null;
-	status: number | null;
-	start_date: string | null;
-	end_date: string | null;
-	notes: string | null;
-};
-
-/** Typed in the contract — unlike show-level `details`, safe to bind to (§12.6). */
-export type EpisodeDetails = {
-	air_date: string | null;
-	episode_number: number;
-	season_number: number;
-	runtime: number | null;
-	episode_type: string | null;
-	crew: Record<string, unknown>[];
-	guest_stars: Record<string, unknown>[];
-};
-
-export type CompleteEpisode = {
-	id: number | null;
-	media_id: string | null;
-	source: string | null;
-	media_type: string;
-	title: string | null;
-	max_progress: number;
-	image: string | null;
-	synopsis: string | null;
-	details: EpisodeDetails;
-	tracked: boolean;
-	consumptions_number: number;
-	consumptions: Consumption[];
-};
-
-export type FloppyInfo = {
-	version: string;
-	debug: boolean;
-	frontend_url: string;
-	language: string;
-	timezone: string;
-	admin_enabled: boolean;
-	track_time: boolean;
-};
-
-/** The shape Seek's own client code consumes. Decoupled from Floppy's envelope. */
+/** One watchlist row. */
 export type WatchlistRow = {
 	/** TMDB id of the *show* — §12.2: never the episode's id. */
 	mediaId: string;
@@ -94,27 +19,24 @@ export type WatchlistRow = {
 	mediaType: MediaType;
 	title: string;
 	poster: string | null;
-	/** Null when Floppy has no next-up: caught up, or nothing has aired. */
+	/** Null when there is no next-up: caught up, or nothing has aired. */
 	next: {
 		season: number;
 		episode: number;
 		airDate: string | null;
-		/** Absent when Floppy has no episode title; the pill falls back to SxxEyy. */
+		/** Absent when the episode has no title; the pill falls back to SxxEyy. */
 		title?: string | null;
 	} | null;
 	progress: number;
 	maxProgress: number | null;
 	left: number | null;
-	/** US subscription services, from TMDB data Floppy already carries. */
+	/** US subscription services, from Seek's TMDB copy. */
 	services: string[];
 };
 
 /* ── Detail views (§4.4, §6.1) ────────────────────────────────────────────
-   Shapes Seek's own components consume, mapped from Floppy in
-   $lib/server/detail.ts. Deliberately decoupled: on the show endpoint
-   `details.seasons` and `details.episodes` are COUNTS, not arrays — the real
-   lists live under `related` (§12.6 in practice). Nothing outside that mapper
-   should have to know. */
+   Shapes Seek's own components consume, built from Seek's plays and TMDB
+   copy in $lib/server/tracking/detail.ts. */
 
 export type SeasonSummary = {
 	seasonNumber: number;
@@ -122,7 +44,7 @@ export type SeasonSummary = {
 	poster: string | null;
 	/** Episodes watched in this season; null when the season isn't tracked. */
 	progress: number | null;
-	/** Total episodes, when Floppy reports one. */
+	/** Total episodes, when known. */
 	maxProgress: number | null;
 	/** Episodes that have actually aired (≤ maxProgress) — what a whole-season
 	 *  mark stops at, so a currently-airing season isn't ticked past what's out.
@@ -147,13 +69,10 @@ export type MovieDetail = {
 	genres: string[];
 	score: number | null;
 	scoreCount: number | null;
-	/** Always 1 for a movie, but read from Floppy rather than assumed. */
+	/** Always 1 for a movie. */
 	maxProgress: number | null;
 	progress: number;
-	/** Whether a play is on record. Not `progress > 0`: the two write paths
-	 *  disagree — PATCHing the status to Completed sets `progress`, while the
-	 *  watch endpoint leaves it at 0 and sets `end_date` instead. See
-	 *  docs/floppy-api-notes.md. */
+	/** Whether a play is on record. */
 	watched: boolean;
 	tracked: boolean;
 	status: string | null;
@@ -233,8 +152,8 @@ export type SearchResult = {
 	title: string;
 	poster: string | null;
 	year: number | null;
-	/** Whether it is already in the Floppy library. The search endpoint does not
-	 *  report this, so it is cross-referenced against the local list. */
+	/** Whether it is already on your list. TMDB's search does not report this,
+	 *  so it is cross-referenced against Seek's `tracked` table. */
 	tracked: boolean;
 };
 
@@ -246,7 +165,7 @@ export type UpcomingItem = {
 	episode: number | null;
 	/** UTC instant. */
 	start: string;
-	/** False when Floppy padded a date with no known time (§5.2). */
+	/** False when only the date is known (§5.2). */
 	hasTime: boolean;
 	poster: string | null;
 	/** Present when the title matched something tracked, enabling a link. */

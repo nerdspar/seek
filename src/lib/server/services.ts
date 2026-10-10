@@ -2,8 +2,8 @@
  * Service settings storage. The owner edits them in Settings → Services; they
  * live in the `settings` table, secret ones encrypted.
  *
- * Upgrading from env config: on boot, any env var Seek used to read (FLOPPY_URL,
- * TMDB_API_KEY, …) that has no stored row yet is copied in, once. From then on
+ * Upgrading from env config: on boot, any env var Seek used to read (TMDB_API_KEY,
+ * SONARR_URL, …) that has no stored row yet is copied in, once. From then on
  * the stored value is the one used — editing the compose file no longer changes
  * anything, and the old env lines can simply be deleted. A setting cleared in
  * Settings is stored as empty, so it stays off rather than falling back to env.
@@ -15,8 +15,8 @@ import { SERVICE_FIELDS, SERVICE_KEYS, type ServiceKey } from '$lib/serviceField
 
 const SECRET = new Set<string>(SERVICE_FIELDS.filter((f) => f.secret).map((f) => f.key));
 
-/* Read on nearly every request (FLOPPY_URL is part of every Floppy call), so
-   decrypted values are kept in memory; every write goes through set(). */
+/* Read on nearly every request, so decrypted values are kept in memory; every
+   write goes through set(). */
 let cache: Map<string, string> | null = null;
 let cacheFor: unknown = null; // the database the cache was read from
 

@@ -4,8 +4,8 @@ import type { PageServerLoad } from './$types';
 
 /**
  * Trending titles for search's empty state (§6.4 / Hobi's
- * `08-search-empty-trending`). Reuses Floppy's own Discover row rather than
- * calling TMDB — it is already built, already cached, and already reflects what
+ * `08-search-empty-trending`). Reuses Discover's own trending row rather than
+ * calling TMDB again — it is already built, already cached, and already reflects what
  * the household is likely to recognise.
  */
 export const load: PageServerLoad = async () => {

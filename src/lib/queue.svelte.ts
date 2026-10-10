@@ -1,5 +1,5 @@
 /**
- * Durable write queue — actions reach Floppy eventually, even offline.
+ * Durable write queue — actions reach the server eventually, even offline.
  *
  * Every write in Seek is optimistic: the UI updates first, then the request
  * goes out. Online, nothing changes — the request lands and we move on. Offline
@@ -17,8 +17,8 @@
  *
  * If the server later turns a replayed action down for good (a 4xx), it
  * leaves the queue — but not silently: a notice says what didn't save and
- * why, the screen drops its optimistic guess, and it reloads from Floppy, so
- * what you see never quietly disagrees with what Floppy has.
+ * why, the screen drops its optimistic guess, and it reloads from the server,
+ * so what you see never quietly disagrees with what Seek has.
  *
  * Client-only: every entry point no-ops during SSR.
  */
@@ -106,10 +106,9 @@ export async function queuedWrite(
 
 	try {
 		const res = await fetch(url, { ...init, headers });
-		/* 503 is the write endpoints' "Floppy unreachable, nothing was recorded"
-		   signal (see /api/watch, /api/season). The device is online but the
-		   backing store is not, so this is exactly the offline case the queue
-		   exists for — park it and replay later rather than rolling the user back.
+		/* 503 means "unavailable, nothing was recorded". The device is online but
+		   the server can't take the write, so this is exactly the offline case the
+		   queue exists for — park it and replay later rather than rolling the user back.
 		   Safe against double-apply because a 503 means nothing landed. Any other
 		   response — success or a real error — is the server's answer; hand it back
 		   and let the caller decide (they roll back on !ok as before). */
@@ -167,7 +166,7 @@ export async function flush(): Promise<void> {
 	if (rejected.length) settleRejected(rejected);
 }
 
-/** Say what didn't save, drop the screen's guess, and show Floppy's truth. */
+/** Say what didn't save, drop the screen's guess, and show the server's truth. */
 function settleRejected(rejected: Rejection<Queued>[]) {
 	for (const { entry } of rejected) {
 		const { source, mediaId } = describeWrite(entry);

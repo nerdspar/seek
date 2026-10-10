@@ -83,7 +83,6 @@
 	/* ── Shared shows (household mirroring) ───────────────────────────────── */
 	type SharedState = {
 		mirroring: boolean;
-		waitingOn: string[];
 		shows: { source: string; mediaId: string; mediaType?: 'tv' | 'movie'; title: string | null }[];
 	};
 	let sharedShows = $state<SharedState | null>(null);
@@ -312,7 +311,7 @@
 		{/each}
 	</ul>
 	{#if confirmRemove !== null}
-		<p class="hint msg">Removing someone deletes their Seek account and its links. Their own Floppy and BookOrbit data aren't touched.</p>
+		<p class="hint msg">Removing someone deletes their Seek account, their list and their watch history. Their BookOrbit and Hardcover accounts aren't touched.</p>
 	{/if}
 	{#if memberMsg}<p class="hint msg">{memberMsg}</p>{/if}
 </section>
@@ -320,13 +319,7 @@
 {#if sharedShows && account.household.members.length > 1}
 	<section>
 		<h3>Shared shows</h3>
-		{#if !sharedShows.mirroring}
-			<p class="hint">
-				Mark a show <strong>Together</strong> and a play by either of you counts for both — once
-				{sharedShows.waitingOn.join(' and ')}
-				{sharedShows.waitingOn.length === 1 && sharedShows.waitingOn[0] !== 'you' ? 'links' : 'link'} a Floppy account under Your accounts.
-			</p>
-		{/if}
+		<p class="hint">Mark a show <strong>Together</strong> and a play by either of you counts for both.</p>
 		{#if sharedShows.mirroring && newShowsMode}
 			<div class="newshows">
 				<span class="label">New shows start as</span>

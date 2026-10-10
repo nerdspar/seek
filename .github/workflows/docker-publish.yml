@@ -77,27 +77,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=seek
           cache-to: type=gha,mode=max,scope=seek
-
-      # The Floppy MCP server (mcp/) ships as its own image so TrueNAS can pull it
-      # like the app, rather than build from source it does not have. Published to
-      # ghcr.io/<owner>/<repo>-mcp; docker-compose.yml's seek-mcp service uses it.
-      - name: Derive MCP image tags
-        id: meta_mcp
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short
-            type=ref,event=tag
-
-      - name: Build and push MCP server
-        uses: docker/build-push-action@v7
-        with:
-          context: ./mcp
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta_mcp.outputs.tags }}
-          labels: ${{ steps.meta_mcp.outputs.labels }}
-          cache-from: type=gha,scope=mcp
-          cache-to: type=gha,mode=max,scope=mcp

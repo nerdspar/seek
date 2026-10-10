@@ -23,15 +23,15 @@
 
 	let { data }: { data: PageData } = $props();
 
-	/* ── Sonarr download state, merged onto Floppy's episode rows ───────────────
+	/* ── Sonarr download state, merged onto Seek's episode rows ─────────────────
 	   Matched by air date server-side (see /api/arr/episodes), so shows that TMDB
 	   and TVDB number differently — absolute-numbered anime, re-split seasons like
-	   Bake Off — line up correctly. The map is keyed by the Floppy episode number
+	   Bake Off — line up correctly. The map is keyed by the TMDB episode number
 	   the page renders by; `arrEpisodeIds` are the real Sonarr ids, for the
 	   season-level search/monitor actions. Loaded only when management is on. */
 	let arrEpisodes = $state<Map<number, ArrEpisode>>(new Map());
 	let arrEpisodeIds = $state<number[]>([]);
-	/* The real Sonarr season number(s) this Floppy season maps to (a renumbered
+	/* The real Sonarr season number(s) this TMDB season maps to (a renumbered
 	   show maps to a different Sonarr season), for the season monitor toggle. */
 	let arrSonarrSeasons = $state<number[]>([]);
 	/* The show:season the loaded episodes belong to; `arrReady` matches it against

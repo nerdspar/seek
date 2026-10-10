@@ -1,7 +1,6 @@
 /**
  * Next-up from Seek's own data (own-tracking plan, step 3): your plays plus the
- * show's episode list. Same rules Seek applies to Floppy today, without the
- * corrections — there's nothing stale to correct:
+ * show's episode list. The rules:
  *
  * - nothing watched yet → the first aired episode of the first season;
  * - otherwise, in the season you most recently played, the first aired,

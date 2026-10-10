@@ -1,5 +1,5 @@
 /**
- * Upcoming's three kinds of row — episodes (the Floppy calendar), films
+ * Upcoming's three kinds of row — episodes (from Seek's TMDB copy), films
  * (theater / digital dates) and books (release dates) — merged into one
  * timeline and filtered by kind. Client-safe.
  */

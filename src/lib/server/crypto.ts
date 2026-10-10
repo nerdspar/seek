@@ -4,8 +4,8 @@
  * - Passwords: scrypt (Node built-in, no dependency), stored self-describing as
  *   `scrypt$N$r$p$salt$hash` so the cost can be raised later without breaking
  *   existing hashes.
- * - Secrets Seek holds on a user's behalf (Floppy token, calendar token,
- *   BookOrbit password): AES-256-GCM under the token key (secrets.ts), stored as
+ * - Secrets Seek holds on a user's behalf (BookOrbit password, Hardcover
+ *   token): AES-256-GCM under the token key (secrets.ts), stored as
  *   `v1:iv:tag:ciphertext` (base64url). GCM authenticates, so a tampered or
  *   wrong-key value fails loudly instead of decrypting to garbage.
  */

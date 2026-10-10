@@ -1,5 +1,5 @@
 /**
- * TMDB, for the mood/theme search Floppy has no equivalent for (§6.2).
+ * TMDB: show and film info, search, and the mood/theme search (§6.2).
  * Server-only — the key never reaches the browser.
  */
 import { TMDB_API_KEY } from './env';
@@ -408,12 +408,7 @@ export type ShowExtras = {
 	services: { name: string; logo: string | null }[];
 	similar: TmdbResult[];
 	/**
-	 * Episode count per season number.
-	 *
-	 * This is the same data Floppy exposes as `max_progress` on each season, but
-	 * getting it from Floppy costs one request per season — measured at 869ms for
-	 * an eight-season show, which was most of the show page's load time. TMDB
-	 * returns all of them inside the call this function already makes.
+	 * Episode count per season number, from the call this function already makes.
 	 */
 	seasonEpisodes: Record<number, number>;
 	/**
@@ -427,14 +422,7 @@ export type ShowExtras = {
 
 const extrasCache = new TTLCache<ShowExtras>(24 * 60 * 60 * 1000, 500);
 
-/**
- * Networks, streaming services and similar shows in one TMDB call.
- *
- * Floppy carries none of this at show level: its show detail exposes only
- * `details.studios` (production companies, not networks) and no recommendations
- * — those live on *season* detail. One append_to_response call is cheaper and
- * more honest than stitching those together.
- */
+/** Networks, streaming services and similar shows in one TMDB call. */
 export async function getShowExtras(mediaId: string): Promise<ShowExtras> {
 	const empty: ShowExtras = { networks: [], services: [], similar: [], seasonEpisodes: {}, lastAired: null };
 	if (!TMDB_API_KEY()) return empty;

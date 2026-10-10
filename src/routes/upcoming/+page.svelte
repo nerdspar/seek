@@ -214,7 +214,7 @@
 											<span class="ep">{item.note}</span>
 										{/if}
 										<!-- Absolute datetime, which Hobi omits (§5.2) — but only
-										     when Floppy actually knows the time. -->
+										     when the air time is actually known. -->
 										<!-- Always format the real instant. Slicing to a date-only
 										     string would re-parse as UTC midnight and show the
 										     previous day west of Greenwich. -->

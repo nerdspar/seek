@@ -11,7 +11,7 @@ import type { User } from '../users';
 
 export type Kind = 'tv' | 'movie';
 
-/** Floppy's status codes, which Seek keeps. */
+/** Status codes, as stored in `tracked.status`. */
 export const Status = { Planning: 0, Watching: 1, Paused: 2, Completed: 3, Dropped: 4 } as const;
 
 /** The TMDB id, when this is a TMDB item (the only kind Seek keeps). */
@@ -51,7 +51,7 @@ export function setTracked(userId: number, kind: Kind, tmdbId: number, change: {
 	}
 }
 
-/** Stop tracking: the title and every play of it go, as in Floppy. */
+/** Stop tracking: the title and every play of it go. */
 export function untrack(userId: number, kind: Kind, tmdbId: number): void {
 	const d = db();
 	d.transaction(() => {
@@ -103,10 +103,9 @@ export function removeNewestPlay(userId: number, kind: Kind, tmdbId: number, sea
 }
 
 /**
- * Mark a season: the next `count` aired episodes with no play yet, in order —
- * what Floppy's "increase progress" does. Episodes come from Seek's TMDB copy;
- * if it doesn't have the season yet, nothing is recorded (the nightly copy
- * fills it in).
+ * Mark a season: the next `count` aired episodes with no play yet, in order.
+ * Episodes come from Seek's TMDB copy; if it doesn't have the season yet,
+ * nothing is recorded (the nightly copy fills it in).
  */
 export function fillSeason(userId: number, tmdbId: number, season: number, count: number, now = Date.now()): number {
 	const d = db();
@@ -129,8 +128,8 @@ export function clearSeason(userId: number, tmdbId: number, season: number): voi
 	db().prepare("DELETE FROM plays WHERE user_id = ? AND media_type = 'tv' AND tmdb_id = ? AND season = ?").run(userId, tmdbId, season);
 }
 
-/** Who a mark counts for: you, plus the household for a shared show or film —
- *  as the household mirror does in Floppy. Unmarking stays yours alone. */
+/** Who a mark counts for: you, plus the household for a shared show or film.
+ *  Unmarking stays yours alone. */
 export function watchers(me: User, source: string, mediaId: string, kind: SharedKind): number[] {
 	if (!isShared(me.householdId, source, mediaId, kind)) return [me.id];
 	const members = mirrorMembers(me.householdId).map((u) => u.id);

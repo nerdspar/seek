@@ -101,7 +101,7 @@ describe('titles', () => {
 		const { d } = deps();
 		settle(H(), owner.id, { source: 'tmdb', mediaId: '1', title: null }, d);
 		await fillTitles(H(), async () => {
-			throw new Error('Floppy down');
+			throw new Error('down');
 		});
 		expect(pendingShows(H())[0].title).toBeNull();
 	});

@@ -1,6 +1,6 @@
 /**
  * Sonarr / Radarr integration (§ requests). Server-only — the API keys live in
- * env and never reach the browser, the same rule as the Floppy token.
+ * env and never reach the browser, the same rule as every service credential.
  *
  * Seek indexes everything by TMDB id. Radarr takes a TMDB id directly; Sonarr is
  * TVDB-native, so a show is resolved through Sonarr's own lookup
@@ -235,7 +235,7 @@ export async function libraryStatus(): Promise<{ sonarr: string[]; radarr: strin
 
 /* ── On the server, not on your list ───────────────────────────────────────── */
 
-/** A Sonarr series or Radarr movie, as a browse tile (TMDB-keyed, like Floppy). */
+/** A Sonarr series or Radarr movie, as a browse tile (TMDB-keyed, like Seek). */
 export type ServerTitle = {
 	mediaType: 'tv' | 'movie';
 	source: 'tmdb';
@@ -246,7 +246,7 @@ export type ServerTitle = {
 	addedAt: string | null;
 };
 
-/** One library row as a tile; null when it has no TMDB id to match Floppy on. */
+/** One library row as a tile; null when it has no TMDB id to match on. */
 export function mapServerTitle(service: Service, raw: unknown): ServerTitle | null {
 	const r = rec(raw);
 	const tmdbId = r.tmdbId;
@@ -374,8 +374,8 @@ export async function addTitle(
  *
  * Shapes below were probed against a live Sonarr 4.0 / Radarr 6.4 (see the plan
  * doc). Series and movie both carry tmdbId, so the title match reuses the proven
- * tmdbId path rather than needing TVDB. Episodes line up to Floppy's rows by
- * (season, episode) number — Floppy exposes no per-episode TVDB id. Every mapper
+ * tmdbId path rather than needing TVDB. Episodes line up to Seek's TMDB rows
+ * via $lib/arrMatch — there is no per-episode TVDB id to join on. Every mapper
  * is defensive: a field the API drops becomes null/empty rather than a throw.
  */
 
@@ -724,7 +724,7 @@ export async function getMovie(tmdbId: string): Promise<ArrMovie | null> {
 
 /** Episodes for one Sonarr season, joined to their files (so audio languages and
  *  quality are present on the ones you have). Keyed by episode number for the
- *  season page to merge onto Floppy's rows. */
+ *  season page to merge onto Seek's episode rows. */
 /* The whole-series episode+file list (seasonNumber omitted) is what the air-date
    match needs, and it's the dominant cost of opening a season — so cache it briefly
    so season→season navigation is instant. Cleared on any download mutation below so

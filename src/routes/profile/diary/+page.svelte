@@ -39,8 +39,8 @@
 	/**
 	 * Jump to a date.
 	 *
-	 * The offset is resolved server-side rather than estimated here. Floppy pages
-	 * by days *with activity*, so calendar distance is not the offset, and the
+	 * The offset is resolved server-side rather than estimated here. The diary
+	 * pages by days *with activity*, so calendar distance is not the offset, and the
 	 * error compounds with every quiet day — asking for 2025-01-01 used to land
 	 * on 2023-09-28.
 	 */

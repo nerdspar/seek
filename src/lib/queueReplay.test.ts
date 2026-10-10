@@ -48,7 +48,7 @@ describe('replay', () => {
 		expect(sent).toEqual(['a', 'b', 'c']);
 		expect(left).toEqual(['a', 'b', 'c']);
 		expect(rejected.map((r) => [r.entry.target, r.reason])).toEqual([['b', 'Episode not found']]);
-		expect(rejectionNotice(rejected)).toBe('Couldn’t mark b S1E2 watched: Episode not found. Showing what Floppy has now.');
+		expect(rejectionNotice(rejected)).toBe('Couldn’t mark b S1E2 watched: Episode not found. Showing what Seek has now.');
 	});
 
 	it('stops on a server error or no network, keeping the rest in order for next time', async () => {
@@ -68,6 +68,6 @@ describe('replay', () => {
 
 	it('one notice for several, with the server status when it gave no reason', async () => {
 		const rejected = await replay([entry('a', 1), entry('b', 2, '/api/library')], async () => reply(409), async () => {});
-		expect(rejectionNotice(rejected)).toBe('Couldn’t mark a S1E1 watched (and 1 more): HTTP 409. Showing what Floppy has now.');
+		expect(rejectionNotice(rejected)).toBe('Couldn’t mark a S1E1 watched (and 1 more): HTTP 409. Showing what Seek has now.');
 	});
 });

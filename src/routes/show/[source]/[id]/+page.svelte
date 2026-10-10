@@ -189,8 +189,8 @@
 	 * Toggle an entire season.
 	 *
 	 * Clearing is one DELETE on the season path, which removes every episode's
-	 * plays. Marking has to step forward one episode at a time because Floppy's
-	 * progress route only accepts increase/decrease — the server route loops.
+	 * plays. Marking is one POST: the server fills in every aired episode you
+	 * haven't seen.
 	 */
 	async function toggleSeason(season: SeasonSummary, e: MouseEvent) {
 		e.preventDefault();
@@ -324,8 +324,8 @@
 		if (trackBusy) return;
 		const next = !current;
 
-		/* Removing throws away whatever progress Floppy holds for the show, which
-		   is not something to discover afterwards. Adding needs no such warning. */
+		/* Removing throws away every play of the show, which is not something to
+		   discover afterwards. Adding needs no such warning. */
 		if (!next && !confirm('Remove this from your library? Any watched progress goes with it.')) return;
 		if (!next) menuOpen = false;
 
@@ -354,10 +354,11 @@
 		trackEdit = null;
 	}
 
-	/* §11: joint vs solo is show-level in this household, so a tag on the item is
-	   the whole mechanism — no Floppy changes, no per-play attribution. */
-	/* Anime or not (the Shows/Anime split): Floppy's genre decides, and the menu
-	   overrules it for the household. Local value wins until the next load. */
+	/* §11: joint vs solo is show-level in this household, so the shared list
+	   (household/shared.ts) is the whole mechanism — no per-play attribution. */
+	/* Anime or not (the Shows/Anime split): Seek's rule over its TMDB copy
+	   decides, and the menu overrules it for the household. Local value wins
+	   until the next load. */
 	let animeEdit = $state<boolean | null>(null);
 	async function setAnime(next: boolean, showTitle: string) {
 		const before = animeEdit;

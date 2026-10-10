@@ -10,8 +10,8 @@
  *   until one of you decides. Deciding late loses nothing: sharing catches up.
  *
  * New shows arrive two ways. Added in Seek, they're settled on the spot. Added
- * anywhere else — a Jellyfin play, a download, Floppy's own site — the mirror
- * pass finds them in each person's newest additions. Either person's decision
+ * anywhere else — a Jellyfin play, a download — the new-shows scan
+ * finds them in each person's newest additions. Either person's decision
  * holds for both. Shows from before this existed count as decided.
  */
 import { db, nowIso } from '../db';
@@ -77,8 +77,8 @@ export function pendingShows(householdId: number): ShowRef[] {
 	).map((r) => ({ source: r.source, mediaId: r.media_id, title: r.title }));
 }
 
-/** Fill in titles the inbox doesn't have yet (a show Floppy hadn't fetched
- *  details for when it was first seen), and keep them. */
+/** Fill in titles the inbox doesn't have yet (a show whose details weren't
+ *  fetched when it was first seen), and keep them. */
 export async function fillTitles(householdId: number, titleOf: (show: ShowRef) => Promise<string | null>): Promise<void> {
 	for (const show of pendingShows(householdId).filter((s) => !s.title)) {
 		const title = await titleOf(show).catch(() => null);

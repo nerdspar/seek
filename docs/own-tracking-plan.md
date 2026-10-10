@@ -4,8 +4,9 @@
 and movie information straight from TMDB, and receives Jellyfin's "watched" webhook itself. Same
 shape as books: one home per fact, Seek is the only app you use.
 
-**Status:** agreed 2026-10-09 (decisions below). Steps 1–6 built: Seek is the record; Floppy is read
-only by the catch-up copy, and only while someone still has it linked. Rewatch menu next.
+**Status:** done (2026-10-09). Floppy is gone from the code: Jellyfin points at Seek, the
+copy, the Floppy client, its settings and the MCP server are removed. This document is kept as the
+record of how the switch was made. Rewatch menu next.
 
 ## Why
 
@@ -161,8 +162,10 @@ always the freshest copy.
    reading Floppy's history back only to a day before its last run, 10 minutes after boot and
    nightly — so Jellyfin marks that reach Floppy before its webhook URL is swapped still arrive.
    It stops when Floppy is unlinked in Settings; after that Floppy can be shut down.
-7. **Next:** the long-press rewatch menu (the watch API already takes a date for *Watched on…*),
-   then delete the Floppy client and its settings once nobody has it linked.
+7. **Floppy removed** *(done)*: Jellyfin's webhook points at Seek for both of you; the client,
+   the catch-up copy, Floppy linking and service settings, the calendar parser and the Floppy MCP
+   server are deleted. The users table keeps its two Floppy token columns, unused.
+8. **Next:** the long-press rewatch menu (the watch API already takes a date for *Watched on…*).
 
 Each step is its own release with tests; you can stop after any of them and lose nothing.
 

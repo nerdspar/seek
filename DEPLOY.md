@@ -7,8 +7,8 @@ via [`docker-compose.yml`](docker-compose.yml).
 There is **no `.env` file** on the NAS — you paste the secrets straight into
 `docker-compose.yml`. (`.env` is only used for local development.)
 
-Seek stores **no watch state**. Floppy is the single source of truth; the one
-folder below holds Seek's own preferences and nothing else.
+Seek is the record: the one folder below holds everything — accounts,
+settings, what each person tracks and every play. Back it up.
 
 ---
 
@@ -61,11 +61,11 @@ chown -R 1000:1000 /mnt/NAS/Data/seek
 
 The container runs as the `node` user (uid 1000), so it needs to own that path.
 
-It holds Seek's accounts and settings (`seek.db`) and the secrets Seek generates
-for itself (`secrets.json` — session signing, the key that encrypts stored
-logins, Web Push keys). Back it up with the rest of `/mnt/NAS/Data`; losing it
-means setting Seek up again (nobody's Floppy or BookOrbit data is affected).
-**Do not** put anything about watch history here — Floppy owns that.
+It holds Seek's database (`seek.db` — accounts, settings, what each person
+tracks and every play) and the secrets Seek generates for itself
+(`secrets.json` — session signing, the key that encrypts stored logins, Web
+Push keys). **Back it up** with the rest of `/mnt/NAS/Data`: losing it loses
+your watch history.
 
 ## 3. Put `docker-compose.yml` on the NAS
 
@@ -80,33 +80,6 @@ There is nothing to fill in. The only variable is `TZ`; no secrets, tokens or
 addresses go in the compose file. (Behind a tunnel you'll also set `ORIGIN` —
 see "Security".)
 
-**If Floppy runs on this same host** — including in a *different compose stack* —
-reach it by container name: keep the two `networks:` blocks, and in Settings →
-Services give Floppy's address as `http://floppy:8000`. Two things to verify,
-because both are easy to get wrong:
-
-**The network name is project-prefixed.** Floppy's compose declares `floppy-net`
-with no `name:` override, so Compose creates it as `<project>_floppy-net` — most
-often `floppy_floppy-net`. `external: true` does no fuzzy matching:
-
-```bash
-docker network ls | grep floppy
-```
-
-Put that exact string in the `name:` field at the bottom of `docker-compose.yml`.
-On this NAS it is **`ix-floppy_floppy-net`** (TrueNAS Apps adds an `ix-` prefix);
-the shipped file already has it.
-
-**The port is the internal one, not the published one.** Floppy listens on 8000
-inside its container; `8007:8000` publishes it as 8007. Use 8000:
-
-```bash
-docker ps --filter name=floppy --format '{{.Names}}\t{{.Ports}}'
-```
-
-To skip all of this, comment out both `networks:` blocks and use Floppy's LAN
-address (`http://192.168.1.10:8007`) in Settings → Services instead.
-
 ## 4. Launch and set up
 
 ```bash
@@ -119,16 +92,17 @@ docker compose logs seek
    **setup code** from the log (TrueNAS → Apps → Seek → Logs). The code proves
    you're the one who deployed Seek; it changes on every restart until the
    first account exists.
-2. Seek opens **Settings → Services**. Add **Floppy**'s address, then the
-   rest you use: **TMDB** key, **Books** (BookOrbit address + Hardcover token),
-   **Sonarr / Radarr**, **Jellyfin**, **Email**. Each one is checked when you
-   save, so a typo shows up immediately.
-3. Under **Your accounts**, link your own Floppy (and calendar, and BookOrbit).
-4. Invite the household from **Settings → Household**. Each person links their
-   own accounts the same way.
+2. Seek opens **Settings → Services**. Add your **TMDB** key (required — every
+   show and film comes from it), then the rest you use: **Books** (BookOrbit
+   address + Hardcover token), **Sonarr / Radarr**, **Email**. Each one is
+   checked when you save, so a typo shows up immediately.
+3. Under **Your accounts**, copy your **Jellyfin webhook URL** into Jellyfin's
+   Webhook plugin (one per person), and link BookOrbit if you use it.
+4. Invite the household from **Settings → Household**. Each person sets up
+   their own webhook the same way.
 
 The container healthcheck hits `/api/health`, which reports unhealthy only if
-Floppy is configured but unreachable.
+Seek can't read its own database.
 
 ## 5. Add it to the iPhone home screen
 
@@ -160,8 +134,7 @@ boot to carry them over.
    twice and notifications keep working).
 2. **Every device lands on `/setup` once** (old sessions named no user). Create
    your account with your old `SEEK_PASSPHRASE` as the setup code. Your old
-   `FLOPPY_TOKEN` / `FLOPPY_CALENDAR_TOKEN` (and `BOOKORBIT_USER/PASSWORD`, if
-   set) become *your* linked accounts; your preferences and notification
+   `BOOKORBIT_USER/PASSWORD`, if set, become *your* linked account; your preferences and notification
    devices carry over. Seek then looks exactly as it did.
 3. **Add anything new** in Settings → Services (e.g. Books: BookOrbit address +
    Hardcover token), and link your BookOrbit login under Your accounts.
@@ -172,19 +145,19 @@ boot to carry them over.
 
 ## Security
 
-Seek proxies every Floppy call server-side, so the browser never sees a token —
-but **anyone who can sign in can control that person's Floppy library**, so
-every page and API route requires an account.
+Every outside service is called server-side, so the browser never sees a key —
+but **anyone who can sign in can change that person's list and history**, so
+every page and API route requires an account. (The Jellyfin webhook is the one
+exception: it's reached by a long random per-person URL instead.)
 
 - **Accounts, not a shared secret.** Each person signs in with their own email
   and password; the owner invites everyone else (there's no open signup).
   Creating the first (owner) account needs the setup code printed in the
   server log, so a stranger who finds a fresh install can't claim it.
 - **Nobody runs on someone else's account.** Each request runs as the signed-in
-  person with *their* Floppy token, caches and preferences. A household member
-  who hasn't linked Floppy sees a "link your account" prompt — never the
-  owner's library. The owner is no exception.
-- **Stored secrets are encrypted.** Floppy/calendar tokens, BookOrbit passwords
+  person, with *their* list, history, linked accounts and preferences — never
+  anyone else's. The owner is no exception.
+- **Stored secrets are encrypted.** BookOrbit passwords, Hardcover tokens
   and the API keys in Settings → Services are AES-GCM encrypted at rest, and
   each is checked against the real service when it's saved. The key is
   generated into `/data/secrets.json`; to keep it apart from the database (so a
@@ -267,11 +240,12 @@ Seek does not depend on it.
 Add `cloudflared` to this same compose file. Nothing about Seek's own config
 changes.
 
-The `networks:` key is not optional. Compose puts a service on the default
-network *only* while it names no networks of its own — and `seek` names
-`floppy-net`, so it is not on the default one. Omit this and `cloudflared` lands
-somewhere `seek` isn't, the hostname fails to resolve, and the Cloudflare
-dashboard shows the Host leg in error while the tunnel itself looks healthy.
+Both services must be on the same network. With no `networks:` key on either,
+Compose puts them both on the project's default network, which is all this
+needs. If you give one of them a `networks:` list, give the other the same one —
+otherwise `cloudflared` lands somewhere `seek` isn't, the hostname fails to
+resolve, and the Cloudflare dashboard shows the Host leg in error while the
+tunnel itself looks healthy.
 
 ```yaml
   cloudflared:
@@ -282,8 +256,6 @@ dashboard shows the Host leg in error while the tunnel itself looks healthy.
     environment:
       # Zero Trust → Networks → Tunnels → Create a tunnel → Docker → copy the token.
       TUNNEL_TOKEN: "PASTE_TUNNEL_TOKEN_HERE" # ⬅ TUNNEL_TOKEN
-    networks:
-      - floppy-net # must match seek's, or it cannot resolve `seek`
 ```
 
 Confirm they landed together before debugging anything else:
@@ -344,8 +316,8 @@ outside. LAN clients stay individually counted.
   (or change your password). Every other device's session dies; nobody else in
   the household is affected.
 - **Someone leaving the household:** the owner removes them in Settings →
-  Household. Their Seek account and its stored links are deleted; their own
-  Floppy and BookOrbit data are untouched.
+  Household. Their Seek account, list, watch history and stored links are
+  deleted; their BookOrbit and Hardcover accounts are untouched.
 - **Nuclear option:** delete `sessionSecret` from `/data/secrets.json` and restart
   — every session for everyone is invalidated (Seek makes a new one).
 
@@ -353,9 +325,8 @@ outside. LAN clients stay individually counted.
 
 Everything is in the app — nothing to add to the compose file:
 
-- **Upcoming and the daily notification** — each person links their Floppy
-  calendar under Your accounts.
-- **Search, Discover, artwork** — TMDB key in Settings → Services.
+- **Jellyfin marking plays** — each person pastes their webhook URL (Settings →
+  Your accounts) into Jellyfin's Webhook plugin.
 - **Books** — BookOrbit address + Hardcover token in Settings → Services; each
   person links their BookOrbit login.
 - **Push notifications** — always available (Seek makes its own VAPID keys). On
@@ -367,10 +338,8 @@ Everything is in the app — nothing to add to the compose file:
 | Symptom | Cause |
 |---|---|
 | `denied` / `manifest unknown` on pull | Not logged in to GHCR, or the first build hasn't published. Check GitHub → Packages. |
-| Health shows `"token":"rejected"` | Your linked Floppy token is wrong or was regenerated in Floppy — re-link it under Settings → Your accounts. |
 | Lost the setup code | It's printed on every boot (and every time `/setup` is opened) until the first account exists: TrueNAS → Apps → Seek → Logs. |
-| `network ... declared as external, but could not be found` | The `name:` under the top-level `networks:` doesn't match. Run `docker network ls \| grep floppy` — it's project-prefixed, e.g. `floppy_floppy-net`. |
-| Health shows `reachable:false` with a container-name URL | Wrong internal port (it's 8000, not the published 8007), or Seek isn't actually on Floppy's network. |
-| Watchlist empty, health OK | No shows are `in_progress` with an unwatched episode — check Floppy directly. |
+| `network ... declared as external, but could not be found` | An old compose file still names Floppy's network. Remove the `networks:` lines from `seek` (and from `cloudflared`, if you have it) and the top-level `networks:` block. |
+| Watchlist empty, health OK | No shows are in progress with an aired, unwatched episode — check the Library. |
+| A Jellyfin play didn't show up | Settings → Your accounts lists anything the webhook couldn't match. Check the plugin sends to your own URL. |
 | App works, but TrueNAS shows it stuck "Deploying" / "Starting" | The container healthcheck is failing. `/api/health` is deliberately reachable without a session so it can pass while the gate is on; if this comes back on an older image, that is the cause. Check with `docker inspect --format '{{json .State.Health}}' seek`. |
-| Undo fails with a 405 | Floppy removed `DELETE` on the episode watch path. See the API findings in [README.md](README.md). |

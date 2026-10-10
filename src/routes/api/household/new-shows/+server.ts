@@ -31,7 +31,7 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const me = locals.user;
 	if (!me) error(401);
-	if (!mirroringAvailable(me.householdId)) error(409, 'Sharing starts once two of you have Floppy linked.');
+	if (!mirroringAvailable(me.householdId)) error(409, 'Sharing needs at least two people in the household.');
 	const b = await request.json().catch(() => ({}));
 	if (typeof b.source !== 'string' || typeof b.mediaId !== 'string' || (b.choice !== 'together' && b.choice !== 'solo')) {
 		error(400, 'source, mediaId and a choice of together or solo are required');

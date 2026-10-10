@@ -1,7 +1,6 @@
 /**
  * Adding a title to someone's list, with its show info fetched on the spot so
- * it's on the watchlist — episodes, next-up and all — the moment it's added
- * (Avatar: Seven Havens sat missing for a day under Floppy).
+ * it's on the watchlist — episodes, next-up and all — the moment it's added.
  */
 import { db } from '../db';
 import { ensureTitle } from '../catalog/store';

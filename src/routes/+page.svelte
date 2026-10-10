@@ -81,7 +81,7 @@
 	/** Null while the current filter combination is still loading. */
 	let resultCount = $state<number | null>(null);
 	let loadFailed = $state<string | null>(null);
-	/** Set when the load failed only because this person hasn't linked Floppy. */
+	/** Set when the load failed only because this person hasn't linked a service. */
 	let loadNotLinked = $state<LinkService | null>(null);
 
 	/* One effect owns the streamed page: a new payload supersedes any local
@@ -119,7 +119,7 @@
 	 * Only the orderings Seek can evaluate from data already on the row are
 	 * handled. `updated` (Recently watched) is the default and the one that
 	 * actually moves on a mark — the row just became the most recently touched.
-	 * Sorts keyed on values Floppy computes server-side are left alone rather
+	 * Sorts keyed on values computed server-side are left alone rather
 	 * than guessed at; the next load corrects them.
 	 */
 	function reorderAfterMark(k: string) {
@@ -169,9 +169,8 @@
 		order = keys;
 	}
 
-	/* No anime segment. Floppy files anime inside the TV library, so a third tab
-	   would sit empty, and separating it was dropped rather than pursued — see
-	   BACKLOG.md. */
+	/* No anime segment: anime stays in the TV list, split out by the anime
+	   filter instead — see BACKLOG.md. */
 	const SEGMENTS: { id: MediaType; label: string }[] = [
 		{ id: 'tv', label: 'TV Shows' },
 		{ id: 'movie', label: 'Movies' }
@@ -214,7 +213,7 @@
 	/* Writes run one at a time.
 	   Swiping several rows quickly used to fire the marks in parallel, and each
 	   one costs a write plus a re-read on the server. Queuing them keeps a burst
-	   of taps from turning into a burst of concurrent Floppy work — the UI is
+	   of taps from turning into a burst of concurrent writes — the UI is
 	   already optimistic, so nothing visible waits on the queue. */
 	let writeQueue: Promise<unknown> = Promise.resolve();
 	function enqueue<T>(job: () => Promise<T>): Promise<T> {
@@ -475,7 +474,7 @@
 					onclick={() => onsegment(seg.id)}>{seg.label}</button
 				>
 			{/each}
-			<!-- Books live on their own page (BookOrbit, not Floppy) but read as a
+			<!-- Books live on their own page but read as a
 			     third segment of the same list. -->
 			{#if data.books}
 				<button role="tab" aria-selected="false" onclick={() => goto('/books', { noScroll: true })}>Books</button>
@@ -548,14 +547,14 @@
 			<NotLinked service={loadNotLinked} />
 		{:else if loadFailed}
 			<div class="empty">
-				<h2>Can't reach Floppy</h2>
+				<h2>Couldn't load your list</h2>
 				<p>{loadFailed}</p>
 			</div>
 		{:else if rows.length === 0}
 			<div class="empty">
 				<h2>Nothing here</h2>
 				{#if data.mediaType === 'movie'}
-					<p>Your Floppy movie library is empty — 0 movies tracked under any status.</p>
+					<p>No films on your list yet. Add one from Search or Discover.</p>
 				{:else if filtersActive}
 					<p>Nothing matches these filters. <button class="link" onclick={() => applyFilters({ status: 'in_progress', company: 'all', anime: 'all', services: [] })}>Reset them</button>.</p>
 				{:else}
@@ -587,7 +586,7 @@
 			{#if missing}
 				<NotLinked service={missing} />
 			{:else}
-				<div class="empty"><h2>Can't reach Floppy</h2><p>{err.message}</p></div>
+				<div class="empty"><h2>Couldn't load your list</h2><p>{err.message}</p></div>
 			{/if}
 		{/await}
 		</div>

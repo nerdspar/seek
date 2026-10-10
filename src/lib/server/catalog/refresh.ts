@@ -64,8 +64,8 @@ export async function refreshDue(limit = 80, gapMs = 250): Promise<{ refreshed: 
 }
 
 /**
- * Add the titles this person tracks (read from Floppy until step 4). Run for each
- * person by the scheduler; only TMDB-sourced items, since Seek keys on TMDB.
+ * Add every title anyone tracks (Seek's `tracked` table) to the catalog. Run by
+ * the scheduler.
  */
 export async function seedTrackedTitles(): Promise<number> {
 	const rows = db().prepare('SELECT DISTINCT media_type, tmdb_id FROM tracked').all() as { media_type: MediaType; tmdb_id: number }[];

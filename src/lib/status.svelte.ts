@@ -1,12 +1,12 @@
 /**
- * Shared, session-lived overlay for a title's Floppy library membership (and its
+ * Shared, session-lived overlay for a title's library membership (and its
  * watch status), so a change made on one screen shows on every other without a
  * reload — the same idea `arr.svelte.ts` uses for Sonarr/Radarr membership.
  *
  * It holds only what THIS session has changed or had confirmed. Read it as
  * `overlay ?? the value the page loaded`: a title nobody has touched falls
  * straight through to its loaded value, and an external change (another device,
- * Floppy itself) arrives the normal way — through a fresh load, whose value is the
+ * a Jellyfin play) arrives the normal way — through a fresh load, whose value is the
  * fallback. Two layers per title: `opt` is an in-flight optimistic change, `server`
  * is one the server confirmed; `opt` wins so a pending change is never masked by a
  * slightly-older confirmation. Client-only; a no-op during SSR.
@@ -64,7 +64,7 @@ function read<K extends keyof Fields>(source: string, id: string, field: K, fall
 	return fallback;
 }
 
-/** Whether the title is in the Floppy library — overlay first, else `fallback`. */
+/** Whether the title is on your list — overlay first, else `fallback`. */
 export const trackedOf = (source: string, id: string, fallback: boolean): boolean =>
 	read(source, id, 'tracked', fallback);
 

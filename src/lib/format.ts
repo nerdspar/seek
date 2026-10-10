@@ -4,9 +4,9 @@ export const epLabel = (season: number, episode: number) =>
 	`S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
 
 /**
- * Floppy pads a date with no known time as 11:59:59 — roughly 60% of calendar
- * events and many `air_date` values. Rendering that as "11:59 PM" would be
- * wrong, so a time is shown only when one is genuinely known.
+ * A date-only value, or one padded to the 11:59:59 "no known time" placeholder,
+ * has no real time. Rendering that as "11:59 PM" would be wrong, so a time is
+ * shown only when one is genuinely known.
  */
 export function hasRealAirTime(iso: string): boolean {
 	if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false; // date-only

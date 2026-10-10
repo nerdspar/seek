@@ -249,7 +249,7 @@
 			: 0
 	);
 
-	/* Floppy reports no next_episode for a movie, so "has nothing next" cannot
+	/* A movie never has a next episode, so "has nothing next" cannot
 	   stand in for "finished" the way it does on a show — progress has to be
 	   read instead. */
 	const unwatchedMovie = $derived(row.mediaType === 'movie' && row.progress < (row.maxProgress ?? 1));

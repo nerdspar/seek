@@ -11,11 +11,9 @@
 	 * the same thing twice. Company had no place on the page at all.
 	 *
 	 * Films used to differ here, taking a plain watched toggle on the grounds
-	 * that a film is binary. That stopped being true once Floppy had other
-	 * writers: a Jellyfin webhook parks a film at In progress while it plays,
-	 * and an add from Seek files it under Planning, so all five statuses occur
-	 * on films whether or not this row can express them. Both types now open the
-	 * same picker.
+	 * that a film is binary. But an add files a film under Planning and any of
+	 * the five statuses can be set on one, so both types now open the same
+	 * picker.
 	 *
 	 * The columns are fixed rather than sized to their contents, so rating
 	 * something or switching to Together never moves the chip next to it. That

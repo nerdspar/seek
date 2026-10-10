@@ -1,7 +1,7 @@
 /**
  * Seek's own data, read in the shapes the screens already use (own-tracking
- * plan, step 5). No Floppy: tracked titles and plays from Seek's tables, show
- * info from Seek's TMDB copy, next-up computed fresh.
+ * plan, step 5): tracked titles and plays from Seek's tables, show info from
+ * Seek's TMDB copy, next-up computed fresh.
  */
 import { db } from '../db';
 import { serviceNames } from '../serviceNames';
@@ -11,7 +11,7 @@ import { nextUp, type Ep, type Played } from './nextUp';
 import type { MediaType, WatchlistRow } from '$lib/types';
 import type { WatchlistPage } from '../watchlist';
 
-/** Floppy's status words, which the screens and prefs still use. */
+/** The status words the screens and prefs use, to `tracked.status` codes. */
 const STATUS_CODE: Record<string, number> = { planning: 0, in_progress: 1, paused: 2, completed: 3, dropped: 4 };
 
 type TitleInfo = {
@@ -181,7 +181,7 @@ const cmp = (a: string | number | null, b: string | number | null) => {
 	return a < b ? -1 : 1;
 };
 
-/** The watchlist / library list, from Seek's data. Same options as Floppy's list. */
+/** The watchlist / library list, from Seek's data. */
 export function seekList(userId: number, householdId: number, mediaType: MediaType, o: SeekListOptions = {}, now = Date.now()): WatchlistPage {
 	const kind = mediaType === 'movie' ? 'movie' : 'tv';
 	const statuses = o.statuses ?? ['in_progress'];

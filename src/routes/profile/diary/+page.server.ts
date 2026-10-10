@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ url }) => {
 	   cheap. */
 	const offset = Math.max(0, Number(url.searchParams.get('offset') ?? 0) || 0);
 
-	/* Two diaries: what you watched (Floppy) and what you read (started and
+	/* Two diaries: what you watched (your plays) and what you read (started and
 	   finished books). Only the kinds you have switched on are offered. */
 	const media = mediaOn(await getPrefs(), bookorbitConfigured() || hardcoverConfigured());
 	const watchingOn = media.tv || media.movie;

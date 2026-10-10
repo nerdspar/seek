@@ -2,7 +2,7 @@
  * Server-side idempotency for append-style writes.
  *
  * The offline queue attaches an `Idempotency-Key` to every write and replays it
- * on reconnect ($lib/queue). Floppy's watch POST *appends* a play rather than
+ * on reconnect ($lib/queue). The watch POST *appends* a play rather than
  * upserting, so replaying a request that already landed — the classic
  * "committed, but the response never made it back" case, and now also the parked
  * 503 — would record a second play. This remembers the keys whose write has

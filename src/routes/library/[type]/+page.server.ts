@@ -7,9 +7,8 @@ import type { PageServerLoad } from './$types';
 const TYPES: MediaType[] = ['tv', 'movie', 'anime'];
 
 /**
- * The Shows/Anime split is a view over Floppy's `tv` library, filtered by the
- * `anime` tag that anime-sync keeps from Floppy's "Anime" genre — not Floppy's
- * own grouped `anime` bucket. So "anime" browses tv?tag=anime, and "tv" (Shows)
+ * The Shows/Anime split is a view over the `tv` list, filtered by the `anime`
+ * tag (anime-sync.ts). So "anime" browses tv?tag=anime, and "tv" (Shows)
  * browses the inverse.
  */
 function listSource(mediaType: MediaType): { source: MediaType; tag?: Partial<WatchlistOptions> } {

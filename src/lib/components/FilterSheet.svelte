@@ -149,7 +149,7 @@
 		{#if showCompany}
 		<section>
 			<h3>Watching with</h3>
-			<p class="hint">Shows tagged <code>joint</code> in Floppy are the ones you watch together.</p>
+			<p class="hint">Shows marked Together are the ones you watch with someone in the household.</p>
 			<div class="chips">
 				{#each COMPANY as c (c.id)}
 					<button class:on={filters.company === c.id} onclick={() => onchange({ ...filters, company: c.id })}>
@@ -216,7 +216,6 @@
 	section { margin-bottom: 20px; }
 	h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
 	.hint { margin: -4px 0 8px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
-	code { padding: 1px 5px; border-radius: 5px; background: var(--surface-raised); font-size: 11.5px; }
 
 	input {
 		width: 100%; height: 40px; padding: 0 12px; margin-bottom: 8px;

@@ -88,9 +88,8 @@
 	let jointEdit = $state<boolean | null>(null);
 	let jointBusy = $state(false);
 
-	/* Company is a household tag, so it applies to films exactly as it does to
-	   shows — verified against a live instance that Floppy stores and filters it
-	   on a movie. It is hidden when the feature is switched off in settings. */
+	/* Company applies to films exactly as it does to shows (household/shared.ts
+	   keeps a list of each). It is hidden when the feature is switched off in settings. */
 	async function toggleJoint(current: boolean, movieTitle: string) {
 		if (jointBusy) return;
 		const before = jointEdit;
@@ -202,7 +201,7 @@
 	}
 
 	/* Recording a play is no longer done from here: setting Completed in the
-	   status picker makes Floppy record one. Taking a play back has no such
+	   status picker records one. Taking a play back has no such
 	   path — moving off Completed leaves it behind — so this stays as the one
 	   control that can, reachable from the menu. */
 	let watchBusy = $state(false);

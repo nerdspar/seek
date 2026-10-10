@@ -41,9 +41,8 @@ export const load: PageServerLoad = async ({ url, depends }) => {
 	const sortKey = sortFor(prefs, mediaType);
 	const { sort, direction } = SORTS[sortKey];
 
-	/* Films are watched or they are not. Floppy does accept all five statuses on
-	   one — and the Jellyfin webhook writes In progress while a film is playing —
-	   but a library of 53 held 53 Completed and nothing else, so defaulting this
+	/* Films are watched or they are not. Any of the five statuses can be set on
+	   one, but a library of 53 held 53 Completed and nothing else, so defaulting this
 	   tab to the in-progress backlog that makes the TV tab useful renders it
 	   empty however full the library is. Movies open on everything instead, and
 	   the chips narrow it. */
@@ -57,8 +56,8 @@ export const load: PageServerLoad = async ({ url, depends }) => {
 	const company = (COMPANIES as string[]).includes(rawCompany) ? (rawCompany as Company) : 'all';
 	const services = url.searchParams.getAll('service').filter(Boolean);
 
-	/* The Shows/Anime split is the `anime` tag (from Floppy's "Anime" genre, see
-	   anime-sync.ts), and it only exists on the tv list — so the anime filter is
+	/* The Shows/Anime split is the `anime` tag (Seek's rule over its TMDB copy plus
+	   household overrides, see anime-sync.ts), and it only exists on the tv list — so the anime filter is
 	   offered only there. 'only' keeps the tagged shows, 'hide'
 	   keeps the rest; both take precedence over company (also a tag) in getWatchlist. */
 	const showAnime = mediaType === 'tv';

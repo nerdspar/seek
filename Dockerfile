@@ -38,9 +38,8 @@ COPY --from=build /app/build ./build
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 
-# Seek's own state: the household user store (seek.db), plus the legacy
-# preferences/push JSON it migrates from. Watch state is never stored here — it
-# stays in each person's Floppy.
+# Seek's own state: accounts, settings, what each person tracks and every play
+# (seek.db), plus the legacy preferences/push JSON it migrates from.
 RUN mkdir -p /data && chown -R node:node /data
 USER node
 

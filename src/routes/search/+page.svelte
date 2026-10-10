@@ -42,7 +42,7 @@
 	});
 
 	/* §6.4: live search, firing 1s after typing stops. The debounce is the
-	   point — every keystroke would hammer TMDB through Floppy for results the
+	   point — every keystroke would hammer TMDB for results the
 	   user is still in the middle of describing. */
 	let seq = 0;
 	$effect(() => {
@@ -171,7 +171,7 @@
 				{/each}
 			</ul>
 		{:else}
-			<p class="msg">Search Floppy's providers to add something new.</p>
+			<p class="msg">Search TMDB for any show or film to add.</p>
 		{/if}
 	{:else if searching}
 		<p class="msg">Searching…</p>

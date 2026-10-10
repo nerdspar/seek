@@ -6,14 +6,14 @@ import { requireConfigured, requireManage, arrFail } from '$lib/server/arrRoute'
 import type { RequestHandler } from './$types';
 
 /**
- * Per-episode download state for one Floppy (TMDB) season, matched to Sonarr by
+ * Per-episode download state for one TMDB season, matched to Sonarr by
  * **air date** rather than episode number — so shows where TMDB and TVDB disagree
  * on season structure (e.g. The Great British Bake Off) line up correctly instead
  * of mapping to the wrong episode or to nothing.
  *
- * Matching is done here, where both Floppy's season and Sonarr's full episode list
+ * Matching is done here, where both Seek's season and Sonarr's full episode list
  * are available: each returned episode carries the real Sonarr id / hasFile /
- * monitored / file, but is re-keyed to the Floppy episode number the client renders
+ * monitored / file, but is re-keyed to the TMDB episode number the client renders
  * by. `episodeIds` are the matched Sonarr ids, for season-level search/monitor.
  */
 export const GET: RequestHandler = async ({ url }) => {
@@ -32,18 +32,18 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (!series) return json({ inLibrary: false, episodes: [] });
 
 		// Fetch both halves concurrently: Sonarr's whole episode list (so the
-		// air-date match can reach the episode wherever TVDB files it) and Floppy's
+		// air-date match can reach the episode wherever TVDB files it) and Seek's
 		// own season (for the air dates to match against).
-		const [sonarrAll, floppySeason] = await Promise.all([
+		const [sonarrAll, seekSeason] = await Promise.all([
 			getSeasonEpisodes(series.id),
 			getSeason(source, tmdbId, season).catch(() => null)
 		]);
 
-		// If Floppy can't be read, fall back to the Sonarr episodes numbered under
+		// If the season can't be read, fall back to the Sonarr episodes numbered under
 		// this season.
-		const floppyEps: { seasonNumber: number; episodeNumber: number; airDate: string | null }[] =
-			floppySeason
-				? floppySeason.episodes.map((e) => ({
+		const ourEps: { seasonNumber: number; episodeNumber: number; airDate: string | null }[] =
+			seekSeason
+				? seekSeason.episodes.map((e) => ({
 						seasonNumber: e.seasonNumber,
 						episodeNumber: e.episodeNumber,
 						airDate: e.airDate
@@ -55,18 +55,18 @@ export const GET: RequestHandler = async ({ url }) => {
 		const episodes: ArrEpisode[] = [];
 		const episodeIds: number[] = [];
 		const sonarrSeasonSet = new Set<number>();
-		for (const fe of floppyEps) {
-			const se = matchEpisode(fe, sonarrAll);
+		for (const ours of ourEps) {
+			const se = matchEpisode(ours, sonarrAll);
 			if (!se) continue;
 			sonarrSeasonSet.add(se.seasonNumber);
-			// Re-key to the Floppy episode number the client lists by; keep the real
+			// Re-key to the TMDB episode number the client lists by; keep the real
 			// Sonarr id/hasFile/monitored/file for status and per-episode actions.
-			episodes.push({ ...se, seasonNumber: fe.seasonNumber, episodeNumber: fe.episodeNumber });
+			episodes.push({ ...se, seasonNumber: ours.seasonNumber, episodeNumber: ours.episodeNumber });
 			episodeIds.push(se.id);
 		}
 
 		// Monitored reflects the Sonarr *season* flag(s) of the season(s) these
-		// episodes actually live in (a renumbered show maps a Floppy season to a
+		// episodes actually live in (a renumbered show maps a TMDB season to a
 		// different Sonarr season) — not "every episode monitored", since a season
 		// can be monitored while its downloaded episodes are individually not.
 		const sonarrSeasons = [...sonarrSeasonSet];

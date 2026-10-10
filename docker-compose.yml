@@ -1,17 +1,17 @@
 # =============================================================================
-# Seek — self-hosted PWA front-ending Floppy for fast episode marking.
+# Seek — self-hosted PWA for tracking shows, films and books.
 # The image is built by GitHub Actions and pulled from GHCR; TrueNAS just runs
 # it. Nothing secret goes in this file: Seek generates its own secrets, and the
-# household's services (Floppy, TMDB, BookOrbit, Hardcover, Sonarr, Radarr,
+# household's services (TMDB, BookOrbit, Hardcover, Sonarr, Radarr,
 # email) are set in the app under Settings → Services.
 #
 # ── 1. Create the storage folder on your NAS ─────────────────────────────
 #        mkdir -p /mnt/NAS/Data/seek
 #        chown -R 1000:1000 /mnt/NAS/Data/seek
 #      (The container runs as the `node` user, uid 1000.)
-#      This holds everything Seek keeps: accounts and settings (seek.db) and
-#      its generated secrets (secrets.json). Floppy remains the source of truth
-#      for watch state. Back it up with the rest of /mnt/NAS/Data.
+#      This holds everything Seek keeps: accounts, settings, what you track and
+#      every play (seek.db), and its generated secrets (secrets.json). Back it
+#      up with the rest of /mnt/NAS/Data.
 #
 # ── 2. Log in to GHCR once (private image) and launch ────────────────────
 #        docker login ghcr.io -u nerdspar     # paste a read:packages PAT
@@ -20,8 +20,9 @@
 # ── 3. Set up in the browser ─────────────────────────────────────────────
 #      Open http://<nas-ip>:8100. Seek asks for a setup code — it's printed in
 #      the container log ("First-run setup code: XXXX-XXXX"; TrueNAS → Apps →
-#      Seek → Logs). Create your account, then add Floppy's address under
-#      Settings → Services and link your own Floppy under Your accounts.
+#      Seek → Logs). Create your account, then add a TMDB key under
+#      Settings → Services and paste your Jellyfin webhook URL (Your accounts)
+#      into Jellyfin's Webhook plugin.
 #      On the iPhone: Share → Add to Home Screen. See DEPLOY.md for more.
 # =============================================================================
 
@@ -48,97 +49,9 @@ services:
       - /mnt/NAS/Data/seek:/data
 
     healthcheck:
-      # Reports unhealthy if Floppy is configured but unreachable, so an outage
-      # shows up in `docker ps` rather than as a blank screen.
+      # Reports unhealthy if Seek can't read its own database.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
-
-    # ── Reaching Floppy on this same host ────────────────────────────────────
-    # Uncomment this and the top-level `networks:` block below. Works across
-    # compose stacks — Seek and Floppy do not need to be in the same project.
-    networks:
-      - floppy-net
-
-  # ── Floppy MCP server (optional) ─────────────────────────────────────────
-  # A read-only Model Context Protocol server exposing your Floppy watch history
-  # and ratings, so a Claude client can recommend from what you have actually
-  # watched ("recommend me anime based on what I've watched and rated").
-  #
-  # Published to GHCR by the same workflow as seek, so TrueNAS pulls it rather
-  # than building from source it does not have. It speaks MCP over HTTP so it can
-  # live here as a long-lived service; on floppy-net it reaches Floppy at the same
-  # http://floppy:8000 Seek uses.
-  #
-  # NOTE: this image is a separate GHCR package (seek-mcp). After its first push,
-  # set that package's visibility to match seek (or grant your GHCR pull token
-  # access), or the pull below will 403/not-found.
-  #
-  # Point a Claude client at  http://<nas-ip>:8110/mcp
-  #   • Claude Code:    claude mcp add --transport http floppy http://<nas-ip>:8110/mcp
-  #   • Claude Desktop: Settings → Connectors → Add custom connector → that URL
-  # Both must run on a machine that can reach this port. See mcp/README.md.
-  #
-  # SECURITY: this holds the Floppy token and will hand your library to anyone
-  # who can reach 8110. It is READ-ONLY — no one can change your library through
-  # it — but set MCP_AUTH_TOKEN before exposing the port beyond a trusted LAN,
-  # and send it from the client as `Authorization: Bearer <token>`.
-  #
-  # Do not need it? Delete this whole service; nothing else depends on it.
-  seek-mcp:
-    # Image built by .github/workflows/docker-publish.yml. To build on the box
-    # instead (needs the repo checked out here), comment out `image:` and
-    # uncomment `build: ./mcp`.
-    image: ghcr.io/nerdspar/seek-mcp:latest
-    # build: ./mcp
-    container_name: seek-mcp
-    restart: unless-stopped
-    environment:
-      TZ: "America/New_York"
-
-      # Same Floppy as Seek — the container name and INTERNAL port on floppy-net.
-      FLOPPY_URL: "http://floppy:8000" # ⬅ FLOPPY_URL
-
-      # Floppy → Settings → Integrations → API Token (the same one Seek uses).
-      FLOPPY_TOKEN: "PASTE_FLOPPY_TOKEN_HERE" # ⬅ FLOPPY_TOKEN
-
-      # Leave EMPTY on a trusted LAN. Set a long random string (openssl rand -hex
-      # 32) before exposing 8110 through a reverse proxy or tunnel, and pass it as
-      # a Bearer token from the client.
-      MCP_AUTH_TOKEN: "" # ⬅ MCP_AUTH_TOKEN (recommended if exposed)
-
-    ports:
-      # host:container — the server listens on 8110 inside the container. Change
-      # the LEFT number if 8110 is already taken on your NAS.
-      - "8110:8110"
-
-    healthcheck:
-      # /health needs no auth, so this works whether or not MCP_AUTH_TOKEN is set.
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8110/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-
-    networks:
-      - floppy-net
-
-# Compose prefixes network names with the project name, and TrueNAS Apps adds a
-# further `ix-` prefix, so Floppy's `floppy-net` exists on the host as
-# `ix-floppy_floppy-net`. `external: true` does no fuzzy matching — the `name:`
-# below must match exactly. Re-check if Floppy is ever redeployed:
-#
-#     docker network ls | grep floppy
-#
-# Getting it wrong fails at startup with "network ... declared as external, but
-# could not be found" — a loud, harmless failure, not a silent misconfiguration.
-#
-# To skip all of this and reach Floppy over the LAN instead, comment out this
-# whole block AND the service's `networks:` above, then set Floppy's address in
-# Settings → Services to its LAN address, e.g. http://192.168.1.10:8007.
-networks:
-  floppy-net:
-    external: true
-    name: ix-floppy_floppy-net # verified on this host with the command above

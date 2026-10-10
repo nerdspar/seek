@@ -5,7 +5,7 @@ import type { RequestHandler } from './$types';
 
 type Body = {
 	tmdbId?: string | number;
-	/** Sonarr season number(s) to flip (the real Sonarr seasons the Floppy season
+	/** Sonarr season number(s) to flip (the real Sonarr seasons the TMDB season
 	 *  maps to), and/or the matched episode ids. Both are usually sent together so
 	 *  the season flag and its episodes stay consistent. */
 	seasons?: number[];

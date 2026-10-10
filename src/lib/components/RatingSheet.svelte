@@ -8,12 +8,12 @@
 		busy?: boolean;
 		onpick: (score: number | null) => void;
 		onclose: () => void;
-		/** Top of the scale: 10 for shows and films (Floppy), 5 for books (BookOrbit). */
+		/** Top of the scale: 10 for shows and films, 5 for books (BookOrbit). */
 		max?: number;
 	};
 	let { title, score, busy = false, onpick, onclose, max = SCORE_MAX }: Props = $props();
 
-	/* 1-10 rather than 0-10. Floppy accepts 0, but a zero and no rating are
+	/* 1-10 rather than 0-10: a zero and no rating are
 	   indistinguishable to a reader, and "no rating" already has its own control. */
 	const SCORES = $derived(Array.from({ length: max }, (_, i) => i + 1));
 </script>

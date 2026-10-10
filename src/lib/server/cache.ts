@@ -1,5 +1,5 @@
 /** Bounded in-memory cache. Process-local and deliberately not persisted —
- *  §1 says Floppy is the single source of truth; this only holds derived
+ *  §1: the database is the single source of truth; this only holds derived
  *  metadata that is cheap to re-fetch. */
 export class TTLCache<V> {
 	#map = new Map<string, { v: V; exp: number }>();

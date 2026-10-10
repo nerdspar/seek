@@ -1,7 +1,6 @@
 /**
  * The household's shared titles — the shows (and films) where a play by either
- * of you counts for both. Stored in Seek (not Floppy tags: those don't work on
- * grouped anime), one list per household. Mirroring itself is in mirror.ts.
+ * of you counts for both. Stored in Seek, one list per household. Mirroring itself is in mirror.ts.
  *
  * Shows are the common case, so `mediaType` defaults to 'tv' everywhere; a film
  * says 'movie'. The two are kept apart because TMDB numbers them separately — a

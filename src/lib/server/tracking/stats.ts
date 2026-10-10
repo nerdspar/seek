@@ -1,8 +1,7 @@
 /**
  * Profile's Watching numbers, the diary, collection counts and Upcoming, from
- * Seek's own plays and TMDB copy (own-tracking plan, step 5) — the same shapes
- * Floppy's statistics, history and calendar fed. Dates are the server's local
- * time (the container's TZ), as Floppy's were.
+ * Seek's own plays and TMDB copy (own-tracking plan, step 5). Dates are the
+ * server's local time (the container's TZ).
  */
 import { db } from '../db';
 import { rangeDates, type DiaryDay, type DiaryEntry, type RangeKey, type Stats, type CollectionCounts } from '../stats';

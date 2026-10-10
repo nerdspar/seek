@@ -1,36 +1,27 @@
 # Backlog
 
 Things flagged but deliberately not built. Build order is in
-[seek-spec.md](seek-spec.md) §13; API behaviour is in
-[docs/floppy-api-notes.md](docs/floppy-api-notes.md).
+[seek-spec.md](seek-spec.md) §13; how Seek keeps its own records is in
+[docs/own-tracking-plan.md](docs/own-tracking-plan.md).
 
 Everything in §13's build order has shipped, along with filters, sort, the
 joint/solo tag, the collection views, settings, deployment, the session gate,
 themes, movie tracking and its own detail page. What is left is below.
 
-Anime is a Floppy tag, not Floppy's separate anime bucket (that migration was
-never worth the database surgery): see src/lib/server/anime-sync.ts.
+Anime is Seek's rule over TMDB (Animation plus an East Asian origin or TMDB's
+"anime" keyword) with per-show household overrides: see
+src/lib/server/tracking/anime.ts.
 
 ## Done since
 
+- **Seek keeps its own records** (2026-10-09): Floppy retired. What you track
+  and every play live in Seek; TMDB + TVmaze for show info; Seek's own Jellyfin
+  webhook; shared shows write both plays at once. See docs/own-tracking-plan.md.
 - **Together or solo for new shows** (2026-10-04): household setting Ask /
   Together / Solo; the + confirmation and Sonarr add sheet ask; shows added
   elsewhere land in a Watchlist inbox (and a push). Undecided stays solo.
-- **Widow's Bay 10/10** (2026-10-04): Floppy's season progress is the furthest
-  episode, not a count; in-progress seasons are now counted from their episodes.
-- **Anime** (2026-10-04): decided by Floppy's "Anime" genre plus a per-show
-  override in the show menu, for everyone's library — no longer the Jellyfin
-  Anime library. Jellyfin is now unused by Seek.
 
 ## Accepted, not open
-
-- **Saturday Night Live is the slowest show to open**, at 2.2s cold against 1.1s
-  for a normal one, and 98ms warm. Measured: Floppy spends 2.5s returning 1.4 MB
-  for it, and the bulk of that is **2,754 cast entries**, not the 53 seasons —
-  Seek displays 20 of them. Nothing here can trim what Floppy sends, the page
-  streams so the shell is immediate, and 2× a normal show is not worth chasing.
-
-## Accepted, not open (continued)
 
 - **Two toast mechanisms, deliberately.** The global one in `+layout.svelte`
   carries confirmations; each page keeps its own `note` for errors. Folding them

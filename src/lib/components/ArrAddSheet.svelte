@@ -36,8 +36,8 @@
 	let newTag = $state('');
 	let search = $state(false);
 
-	/* Together or solo, for a show in a household that shares (two people on
-	   Floppy). Pre-picked from the household setting; with "Ask", neither is —
+	/* Together or solo, for a show in a household that shares (two or more
+	   people). Pre-picked from the household setting; with "Ask", neither is —
 	   leave it and the show waits on the Watchlist for an answer. */
 	let household = $state<{ mirroring: boolean; mode: 'ask' | 'together' | 'solo' } | null>(null);
 	let together = $state<boolean | null>(null);
@@ -110,7 +110,7 @@
 			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
 
 			markInArr(item.mediaType, item.tmdbId);
-			// It's in your Floppy library now too: every + on screen shows it at once.
+			// It's on your list now too: every + on screen shows it at once.
 			if (body.tracked) confirmTitle('tmdb', item.tmdbId, { tracked: true });
 			haptic();
 			void notify(

@@ -1,6 +1,6 @@
 /**
- * Jellyfin's webhook, read the way Floppy's handler reads it, so the template
- * already set up in Jellyfin works as-is (own-tracking plan, step 4). Pure: the
+ * Jellyfin's webhook, read so the template already set up in Jellyfin works
+ * as-is (own-tracking plan, step 4). Pure: the
  * payload in, what it means out.
  */
 

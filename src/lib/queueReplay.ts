@@ -75,5 +75,5 @@ export async function replay<T extends Parked>(
 export function rejectionNotice(rejected: Rejection[]): string {
 	const first = describeWrite(rejected[0].entry);
 	const more = rejected.length > 1 ? ` (and ${rejected.length - 1} more)` : '';
-	return `Couldn’t ${first.label}${more}: ${rejected[0].reason}. Showing what Floppy has now.`;
+	return `Couldn’t ${first.label}${more}: ${rejected[0].reason}. Showing what Seek has now.`;
 }

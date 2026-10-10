@@ -298,7 +298,7 @@
 					onclick={() => { clearMood(); goto(`/discover?type=${seg.id}`, { noScroll: true }); }}
 				>{seg.label}</button>
 			{/each}
-			<!-- Books discovery is its own page (Hardcover, not TMDB/Floppy). -->
+			<!-- Books discovery is its own page (Hardcover, not TMDB). -->
 			{#if data.books}
 				<button role="tab" aria-selected="false" onclick={() => goto('/discover/books', { noScroll: true })}>Books</button>
 			{/if}
@@ -446,7 +446,7 @@
 				{@render skeletonShelves(3)}
 			{:then rows}
 				{#if !rows.length}
-					<div class="empty"><h2>Nothing to suggest yet</h2><p>Floppy builds these rows from your history.</p></div>
+					<div class="empty"><h2>Nothing to suggest yet</h2><p>These rows come from TMDB and what you watch. Check the TMDB key under Settings → Services.</p></div>
 				{:else}
 				{#each rows as row (row.key)}
 				<section class="shelf">

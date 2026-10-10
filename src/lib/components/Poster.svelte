@@ -1,7 +1,7 @@
 <script lang="ts">
-	/** Poster/still with a graceful fallback. Floppy hands back a TMDB URL even
-	 *  when TMDB has no artwork, so a plain <img> renders the browser's broken
-	 *  -image glyph. This degrades to the same neutral block as a null src. */
+	/** Poster/still with a graceful fallback. An image URL can still fail to
+	 *  load, and a plain <img> then renders the browser's broken-image glyph.
+	 *  This degrades to the same neutral block as a null src. */
 	type Props = {
 		src: string | null;
 		alt?: string;

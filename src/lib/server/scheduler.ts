@@ -34,7 +34,7 @@ async function notifyTick(): Promise<void> {
 }
 
 /** Run a job for every account. One person's failure (no calendar linked,
- *  Floppy hiccup) never stops the others. */
+ *  a service hiccup) never stops the others. */
 export async function forEachUser(job: (user: User) => Promise<void>): Promise<void> {
 	for (const user of listUsers()) {
 		try {

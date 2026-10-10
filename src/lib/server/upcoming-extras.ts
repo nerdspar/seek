@@ -1,6 +1,6 @@
 /**
- * Upcoming beyond the Floppy calendar (which carries episodes and the odd film
- * premiere): when the films you're waiting on reach theaters and digital, and
+ * Upcoming beyond the episode calendar (which also carries tracked films'
+ * release dates): when the films you're waiting on reach theaters and digital, and
  * when books you want — or new ones by authors you read — come out.
  *
  * Its own stream, separate from the calendar, so episodes never wait on it.

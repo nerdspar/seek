@@ -10,7 +10,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const me = locals.user;
 	if (!me) error(401);
 	return json({
-		waitingOn: [],
 		mirroring: mirrorMembers(me.householdId).length >= 2,
 		shows: listShared(me.householdId)
 	});
