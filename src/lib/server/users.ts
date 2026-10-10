@@ -38,8 +38,6 @@ type UserRow = {
 	role: Role;
 	session_version: number;
 	email_verified_at: string | null;
-	floppy_token_enc: string | null;
-	floppy_calendar_token_enc: string | null;
 	bookorbit_username: string | null;
 	bookorbit_password_enc: string | null;
 	bookorbit_library_id: number | null;

@@ -373,6 +373,17 @@ export const MIGRATIONS: Migration[] = [
 	// can be traced (Bake Off S17E03). The table keeps its old name.
 	`
 	ALTER TABLE webhook_unmatched ADD COLUMN outcome TEXT NOT NULL DEFAULT 'unmatched';
+	`,
+	// v19 — the last of Floppy: each person's stored Floppy tokens, the copy's
+	// review list and run log, and the key that linked a play to Floppy's copy
+	// of it. Plays themselves are untouched.
+	`
+	ALTER TABLE users DROP COLUMN floppy_token_enc;
+	ALTER TABLE users DROP COLUMN floppy_calendar_token_enc;
+	DROP TABLE IF EXISTS import_review;
+	DROP TABLE IF EXISTS import_runs;
+	DROP INDEX IF EXISTS plays_external;
+	ALTER TABLE plays DROP COLUMN external_key;
 	`
 ];
 

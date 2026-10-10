@@ -73,8 +73,8 @@ export function recordPlay(
 	const d = db();
 	d.transaction(() => {
 		d.prepare(
-			`INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, external_key, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+			`INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 		).run(userId, kind, tmdbId, season, episode, at, source, nowIso());
 		ensureTracked(userId, kind, tmdbId, kind === 'movie' ? Status.Completed : Status.Watching, at);
 		if (kind === 'tv') {

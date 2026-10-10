@@ -3,7 +3,7 @@ import { openDatabase, useDatabase, db } from '../db';
 import { afterUnplay, clearSeason, fillSeason, playsOf, recordPlay, removeNewestPlay, removePlay, rewatchSeason, settleCompletion, setTracked, Status, untrack } from './write';
 
 const plays = (where = '1=1') =>
-	db().prepare(`SELECT season, episode, source, external_key FROM plays WHERE ${where} ORDER BY season, episode, id`).all();
+	db().prepare(`SELECT season, episode, source FROM plays WHERE ${where} ORDER BY season, episode, id`).all();
 const status = (id: number) => (db().prepare('SELECT status FROM tracked WHERE tmdb_id = ?').get(id) as { status: number } | undefined)?.status;
 
 beforeEach(() => {
