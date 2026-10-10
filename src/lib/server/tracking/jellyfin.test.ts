@@ -92,4 +92,43 @@ describe('handleJellyfin', () => {
 		]);
 		expect(recentWebhook(2)).toEqual([]);
 	});
+
+	it("finds an episode TMDB files under a second show by name, number and air date (Bake Off S17E03 → 87012 S10E03)", async () => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		db().exec(`INSERT INTO titles (media_type, tmdb_id, title, refreshed_at, refresh_after) VALUES
+			('tv', 34549, 'The Great British Bake Off', 'x', 'x'), ('tv', 87012, 'The Great British Bake Off', 'x', 'x')`);
+		db().exec(`INSERT INTO episodes (tmdb_id, season, episode, air_date) VALUES
+			(34549, 7, 3, '2016-09-07'), (87012, 10, 2, '2026-09-29'), (87012, 10, 3, '2026-10-06')`);
+		find.mockImplementation(async (path: string) => (path === '/search/tv' ? { results: [{ id: 87012, name: 'The Great British Bake Off' }] } : {}));
+		const bakeOff = {
+			Event: 'Stop',
+			PlaybackPositionTicks: 40_000_000_000,
+			Item: {
+				Type: 'Episode',
+				SeriesName: 'The Great British Bake Off',
+				ParentIndexNumber: 17,
+				IndexNumber: 3,
+				RunTimeTicks: 45_000_000_000,
+				PremiereDate: '2026-10-06T00:00:00.0000000Z',
+				ProviderIds: {},
+				ExternalUrls: [{ Name: 'TMDB', Url: 'https://www.themoviedb.org/tv/34549' }]
+			}
+		};
+		expect(await handleJellyfin(me, bakeOff)).toEqual({ ok: true, did: 'recorded' });
+		expect(plays()).toEqual([{ user_id: 1, tmdb_id: 87012, season: 10, episode: 3, source: 'jellyfin' }]);
+	});
+
+	it('never guesses when two episodes fit, and a repeated miss is one entry', async () => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		db().exec(`INSERT INTO titles (media_type, tmdb_id, title, refreshed_at, refresh_after) VALUES
+			('tv', 1, 'Twin', 'x', 'x'), ('tv', 2, 'Twin', 'x', 'x')`);
+		db().exec(`INSERT INTO episodes (tmdb_id, season, episode, air_date) VALUES (1, 1, 3, '2026-10-06'), (2, 1, 3, '2026-10-06')`);
+		find.mockResolvedValue({});
+		const twin = { Event: 'MarkPlayed', Item: { Type: 'Episode', SeriesName: 'Twin', ParentIndexNumber: 5, IndexNumber: 3, PremiereDate: '2026-10-06T00:00:00Z', ProviderIds: {} } };
+		expect(await handleJellyfin(me, twin)).toMatchObject({ did: 'unmatched' });
+		expect(await handleJellyfin(me, { ...twin, Event: 'Stop', PlaybackPositionTicks: 10, Item: { ...twin.Item, UserData: { Played: true } } })).toMatchObject({ did: 'unmatched' });
+		expect(plays()).toEqual([]);
+		expect(recentWebhook(1)).toHaveLength(1);
+		expect(recentWebhook(1)[0]).toMatchObject({ outcome: 'unmatched', event: 'Stop' });
+	});
 });

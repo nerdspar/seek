@@ -40,6 +40,53 @@ async function findByOwnId(kind: Kind, imdbId: string | null, tvdbId: number | n
 	return null;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const sameName = (a: string) => a.toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, '');
+
+type SearchTv = { results?: { id: number; name?: string; original_name?: string }[] };
+
+/**
+ * The last resort for an episode: TMDB splits some shows in two or numbers them
+ * differently from Jellyfin (Bake Off: Jellyfin's single show has Series 17;
+ * TMDB has the BBC years as one show and the Channel 4 years as another, so
+ * it's that one's season 10). Same name, same episode number, aired the same
+ * day (±1 for time zones) — taken only when exactly one episode fits.
+ */
+async function findByAirDate(seriesName: string, episode: number, airDate: string, linked: number | null): Promise<Target | null> {
+	const key = sameName(seriesName);
+	if (!key) return null;
+	const ids = new Set<number>(linked ? [linked] : []);
+	for (const t of db().prepare("SELECT tmdb_id, title FROM titles WHERE media_type = 'tv'").all() as { tmdb_id: number; title: string }[]) {
+		if (sameName(t.title) === key) ids.add(t.tmdb_id);
+	}
+	// Shows Seek hasn't seen yet: TMDB's own search, exact names only.
+	try {
+		const found = await tmdb<SearchTv>('/search/tv', { query: seriesName });
+		for (const r of (found.results ?? []).slice(0, 5)) {
+			if (sameName(r.name ?? '') === key || sameName(r.original_name ?? '') === key) ids.add(r.id);
+		}
+	} catch {
+		/* the catalog's candidates are still worth trying */
+	}
+	const day = Date.parse(`${airDate}T00:00:00Z`);
+	if (!Number.isFinite(day)) return null;
+	const within = [new Date(day - DAY_MS), new Date(day + DAY_MS)].map((d) => d.toISOString().slice(0, 10));
+	const hits: Target[] = [];
+	for (const id of ids) {
+		const filled = db().prepare("SELECT 1 FROM titles WHERE media_type = 'tv' AND tmdb_id = ? AND refreshed_at IS NOT NULL").get(id);
+		if (!filled) {
+			ensureTitle('tv', id);
+			await refreshTitle('tv', id, 0).catch(() => {});
+		}
+		for (const e of db()
+			.prepare('SELECT season, episode FROM episodes WHERE tmdb_id = ? AND episode = ? AND season > 0 AND air_date BETWEEN ? AND ?')
+			.all(id, episode, within[0], within[1]) as { season: number; episode: number }[]) {
+			hits.push({ kind: 'tv', tmdbId: id, season: e.season, episode: e.episode });
+		}
+	}
+	return hits.length === 1 ? hits[0] : null;
+}
+
 /** Does Seek's TMDB copy have this episode? Fetches the show's info first if needed. */
 async function episodeExists(tmdbId: number, season: number, episode: number): Promise<boolean> {
 	const filled = db().prepare("SELECT refreshed_at FROM titles WHERE media_type = 'tv' AND tmdb_id = ?").get(tmdbId) as
@@ -58,6 +105,17 @@ export type WebhookOutcome = 'recorded' | 'duplicate' | 'removed' | 'unmatched' 
 function note(userId: number, outcome: WebhookOutcome, event: string, title: string, detail: string): void {
 	console.log(`[webhook] user ${userId}: ${event} ${title} → ${outcome}${detail ? ` (${detail})` : ''}`);
 	const d = db();
+	/* One viewing sends several events (a stop, another on each pause near the
+	   end, "played"). A matched play is recorded once; the same miss again within
+	   the half hour is the same viewing, so it updates the entry rather than
+	   adding one. */
+	const last = d.prepare('SELECT id, at, title, outcome FROM webhook_unmatched WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as
+		| { id: number; at: string; title: string; outcome: string }
+		| undefined;
+	if (last && outcome !== 'recorded' && last.title === title && last.outcome === outcome && Date.now() - Date.parse(last.at) < SAME_VIEWING_MS) {
+		d.prepare('UPDATE webhook_unmatched SET at = ?, event = ?, detail = ? WHERE id = ?').run(nowIso(), event, detail, last.id);
+		return;
+	}
 	d.prepare('INSERT INTO webhook_unmatched (user_id, at, event, title, detail, outcome) VALUES (?, ?, ?, ?, ?, ?)').run(userId, nowIso(), event, title, detail, outcome);
 	d.prepare(
 		'DELETE FROM webhook_unmatched WHERE user_id = ? AND id NOT IN (SELECT id FROM webhook_unmatched WHERE user_id = ? ORDER BY id DESC LIMIT 50)'
@@ -83,6 +141,9 @@ export async function handleJellyfin(user: User, payload: unknown): Promise<Webh
 	target ??= await findByOwnId(ev.kind, ev.imdbId, ev.tvdbId);
 	if (!target && ev.kind === 'tv' && ev.tmdbId && ev.season !== null && ev.episode !== null) {
 		if (await episodeExists(ev.tmdbId, ev.season, ev.episode)) target = { kind: 'tv', tmdbId: ev.tmdbId, season: ev.season, episode: ev.episode };
+	}
+	if (!target && ev.kind === 'tv' && ev.seriesName && ev.episode !== null && ev.airDate) {
+		target = await findByAirDate(ev.seriesName, ev.episode, ev.airDate, ev.tmdbId);
 	}
 	if (!target) {
 		note(user.id, 'unmatched', ev.event, ev.title, `ids: tmdb ${ev.tmdbId ?? '–'}, imdb ${ev.imdbId ?? '–'}, tvdb ${ev.tvdbId ?? '–'}`);

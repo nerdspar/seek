@@ -25,6 +25,11 @@ export type JellyfinEvent =
 			/** The episode's (or film's) own ids, for TMDB /find. */
 			imdbId: string | null;
 			tvdbId: number | null;
+			/** The show's name and the episode's first air date (yyyy-mm-dd), for
+			 *  shows TMDB splits or numbers differently (Bake Off: Jellyfin's S17 is
+			 *  TMDB's second show, season 10). */
+			seriesName: string | null;
+			airDate: string | null;
 			title: string;
 			/** When it was played, if Jellyfin says; else now. */
 			playedAt: string | null;
@@ -99,6 +104,8 @@ export function readJellyfin(payload: unknown): JellyfinEvent {
 		episode: kind === 'tv' ? episode : null,
 		imdbId: str(ids.Imdb),
 		tvdbId: int(ids.Tvdb),
+		seriesName: kind === 'tv' ? series : null,
+		airDate: str(item.PremiereDate)?.slice(0, 10) ?? null,
 		title: kind === 'tv' && series ? `${series} S${season ?? '?'}E${episode ?? '?'}` : name,
 		playedAt: action === 'play' ? str(userData.LastPlayedDate) : null,
 		event

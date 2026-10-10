@@ -27,6 +27,8 @@ describe('readJellyfin', () => {
 			imdbId: 'tt42121826',
 			tvdbId: null,
 			title: 'Re:ZERO -Starting Life in Another World- S4E17',
+			seriesName: 'Re:ZERO -Starting Life in Another World-',
+			airDate: null,
 			playedAt: null,
 			event: 'MarkPlayed'
 		});
