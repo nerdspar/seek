@@ -10,17 +10,20 @@ const ok = (body: unknown = {}) => new Response(JSON.stringify(body), { status: 
 const res = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 
 describe('checkGroup', () => {
-	it('confirms Floppy by its version, and explains an unreachable one', async () => {
-		setSettings({ FLOPPY_URL: 'http://floppy:8007' });
-		const f = vi.fn().mockResolvedValueOnce(ok({ version: 'v26.9.24' }));
-		expect(await checkGroup('floppy', { fetch: f })).toEqual({ ok: true, message: 'Connected to Floppy v26.9.24.' });
-		expect(f.mock.calls[0][0]).toBe('http://floppy:8007/api/v1/info/');
+	it('TMDB is required: no key is a problem, a working key says so', async () => {
+		const f = vi.fn().mockResolvedValueOnce(ok({}));
+		expect(await checkGroup('tmdb', { fetch: f })).toEqual({ ok: false, message: 'Seek needs a TMDB key to track shows and movies.' });
+		expect(f).not.toHaveBeenCalled();
+		setSettings({ TMDB_API_KEY: 'k' });
+		expect(await checkGroup('tmdb', { fetch: f })).toEqual({ ok: true, message: 'TMDB key works.' });
+	});
 
+	it('explains a service that does not answer', async () => {
+		setSettings({ SONARR_URL: 'http://sonarr:8989', SONARR_API_KEY: 'k' });
 		const down = vi.fn().mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }));
-		expect(await checkGroup('floppy', { fetch: down, saved: true })).toEqual({
-			ok: false,
-			message: "Saved, but Floppy didn’t answer: can't connect (ECONNREFUSED)."
-		});
+		const r = await checkGroup('sonarr', { fetch: down, saved: true });
+		expect(r?.ok).toBe(false);
+		expect(r?.message).toMatch(/^Saved, but .*can't connect \(ECONNREFUSED\)\.$/);
 	});
 
 	it('tests what you typed before saving; a secret left alone uses the saved one', async () => {

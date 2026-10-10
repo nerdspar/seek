@@ -213,24 +213,18 @@ describe('removing members', () => {
 describe('credentials', () => {
 	it('stores secrets encrypted and hands them back decrypted', async () => {
 		const u = await owner();
-		users.setFloppyToken(u.id, ' flp_abc ');
-		users.setCalendarToken(u.id, 'cal_123');
 		users.setBookOrbit(u.id, { username: 'scott', password: 'bo-pass', libraryId: 2 });
 		users.setHardcoverToken(u.id, 'hc_mine');
 
 		const raw = db().prepare('SELECT * FROM users WHERE id = ?').get(u.id) as Record<string, unknown>;
-		expect(String(raw.floppy_token_enc)).not.toContain('flp_abc');
 		expect(String(raw.bookorbit_password_enc)).not.toContain('bo-pass');
 		expect(String(raw.hardcover_token_enc)).not.toContain('hc_mine');
 
 		expect(users.getCredentials(u.id)).toEqual({
-			floppyToken: 'flp_abc',
-			calendarToken: 'cal_123',
 			bookorbit: { username: 'scott', password: 'bo-pass', libraryId: 2 },
 			hardcoverToken: 'hc_mine'
 		});
 		expect(users.linkedStatus(u.id)).toEqual({
-			floppy: true,
 			bookorbit: { username: 'scott', libraryId: 2 },
 			hardcover: true
 		});
@@ -238,11 +232,11 @@ describe('credentials', () => {
 
 	it('clearing a credential unlinks it', async () => {
 		const u = await owner();
-		users.setFloppyToken(u.id, 'flp_abc');
-		users.setFloppyToken(u.id, null);
+		users.setHardcoverToken(u.id, 'hc_abc');
+		users.setHardcoverToken(u.id, null);
 		users.setBookOrbit(u.id, null);
-		expect(users.getCredentials(u.id)).toEqual({ floppyToken: null, calendarToken: null, bookorbit: null, hardcoverToken: null });
-		expect(users.linkedStatus(u.id).floppy).toBe(false);
+		expect(users.getCredentials(u.id)).toEqual({ bookorbit: null, hardcoverToken: null });
+		expect(users.linkedStatus(u.id).hardcover).toBe(false);
 	});
 });
 

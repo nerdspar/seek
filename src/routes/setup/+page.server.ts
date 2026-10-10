@@ -1,10 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { TMDB_API_KEY } from '$lib/server/env';
 import { AccountError, createOwner, userCount } from '$lib/server/users';
 import { announceSetupCode, setupCodeIsPassphrase, setupCodeMatches } from '$lib/server/session';
 import { setSession, throttled } from '$lib/server/auth';
 import { importLegacyPush } from '$lib/server/push';
 import { importEnvCredentials } from '$lib/server/upgrade';
-import { floppyConfigured } from '$lib/server/env';
 import { warmInBackground } from '$lib/server/warmup';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -48,13 +48,13 @@ export const actions: Actions = {
 			throw err;
 		}
 
-		// An upgraded deployment: the old env Floppy/BookOrbit logins become yours.
+		// An upgraded deployment: the old env BookOrbit login becomes yours.
 		importEnvCredentials();
 		// Devices that had notifications before accounts keep them, as the owner's.
 		await importLegacyPush(owner.id).catch((err) => console.warn('[seek] legacy push import failed:', err));
 		setSession(cookies, url, owner);
 		warmInBackground(owner);
-		// A brand-new install has nothing to show until Floppy is connected.
-		redirect(303, floppyConfigured() ? '/' : '/profile/settings?s=services&welcome=1');
+		// A brand-new install has nothing to show until TMDB is connected.
+		redirect(303, TMDB_API_KEY() ? '/' : '/profile/settings?s=services&welcome=1');
 	}
 };

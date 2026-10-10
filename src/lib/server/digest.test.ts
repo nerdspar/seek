@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
-import { parseIcal } from './ical';
 import type { UpcomingItem } from '$lib/types';
 
 let items: UpcomingItem[] = [];
@@ -8,13 +7,18 @@ vi.mock('./push', () => ({}));
 
 import { buildTodayDigest } from './digest';
 
-/* What Floppy's feed says for Lanterns S1E8: an all-day event on Sunday Oct 4. */
-const lanterns = (): UpcomingItem => {
-	const [e] = parseIcal(
-		['BEGIN:VEVENT', 'SUMMARY:Lanterns S1 E8', 'DTSTART;VALUE=DATE:20261004', 'END:VEVENT'].join('\r\n')
-	);
-	return { ...e, poster: null, mediaId: null, source: null, mediaType: 'tv' } as unknown as UpcomingItem;
-};
+/* Lanterns S1E8: a date with no time, Sunday Oct 4 (as Upcoming gives it). */
+const lanterns = (): UpcomingItem => ({
+	title: 'Lanterns',
+	season: 1,
+	episode: 8,
+	start: '2026-10-04T12:00:00.000Z',
+	hasTime: false,
+	poster: null,
+	mediaId: '1',
+	source: 'tmdb',
+	mediaType: 'tv'
+});
 
 let tz: string | undefined;
 beforeAll(() => {

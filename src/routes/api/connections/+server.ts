@@ -4,20 +4,11 @@ import {
 	linkedStatus,
 	setBookOrbit,
 	setBookOrbitLibrary,
-	setCalendarToken,
-	setFloppyToken,
 	setHardcoverToken
 } from '$lib/server/users';
 import { checkHardcoverToken } from '$lib/server/books/hardcover';
-import {
-	checkBookOrbitLogin,
-	checkCalendarToken,
-	checkFloppyToken,
-	forgetCurrentUserData,
-	normalizeCalendarToken
-} from '$lib/server/connections';
+import { checkBookOrbitLogin, forgetCurrentUserData } from '$lib/server/connections';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
-import { warmInBackground } from '$lib/server/warmup';
 import type { RequestHandler } from './$types';
 
 /**
@@ -41,22 +32,6 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	const body = await request.json().catch(() => ({}));
 
 	switch (body.service) {
-		case 'floppy': {
-			// One token does everything: Floppy's account token opens the API and
-			// the calendar feed. People paste the calendar link; take the token from it.
-			const token = normalizeCalendarToken(String(body.token ?? ''));
-			const check = await checkFloppyToken(token);
-			if (!check.ok) return fail(check.error);
-			const calendar = await checkCalendarToken(token);
-			if (!calendar.ok) {
-				return fail('That token works for Floppy but not its calendar. Paste the link from Floppy → Calendar instead — it does both.');
-			}
-			setFloppyToken(me.id, token);
-			setCalendarToken(me.id, null);
-			forgetCurrentUserData();
-			warmInBackground(me);
-			return json({ linked: linkedStatus(me.id) });
-		}
 		case 'bookorbit': {
 			const username = String(body.username ?? '');
 			const password = String(body.password ?? '');
@@ -90,12 +65,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { service } = await request.json().catch(() => ({}));
 	const creds = getCredentials(me.id);
 	switch (service) {
-		case 'floppy': {
-			if (!creds.floppyToken) return json({ ok: false, error: 'Not linked.' });
-			const api = await checkFloppyToken(creds.floppyToken);
-			if (!api.ok) return json(api);
-			return json(await checkCalendarToken(creds.calendarToken ?? creds.floppyToken));
-		}
 		case 'bookorbit': {
 			if (!creds.bookorbit) return json({ ok: false, error: 'Not linked.' });
 			const check = await checkBookOrbitLogin(creds.bookorbit.username, creds.bookorbit.password);
@@ -126,10 +95,6 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 	if (!me) error(401);
 	const body = await request.json().catch(() => ({}));
 	switch (body.service) {
-		case 'floppy':
-			setFloppyToken(me.id, null);
-			setCalendarToken(me.id, null);
-			break;
 		case 'bookorbit':
 			setBookOrbit(me.id, null);
 			break;

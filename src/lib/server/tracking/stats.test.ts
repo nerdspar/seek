@@ -73,5 +73,7 @@ describe('collection, diary and upcoming', () => {
 	it('upcoming: tracked shows’ episodes in the window, date-only marked as such', () => {
 		const up = seekUpcoming(1, Date.parse('2026-10-09T12:00:00Z'));
 		expect(up.map((u) => `${u.title} S${u.season}E${u.episode} ${u.hasTime}`)).toEqual(['Lanterns S1E3 false']);
+		// Date only: anchored at midday UTC so it's Oct 20 in every US time zone, not the 19th.
+		expect(up[0].start).toBe('2026-10-20T12:00:00.000Z');
 	});
 });

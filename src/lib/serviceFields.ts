@@ -5,8 +5,6 @@
  * names so an existing deployment's values are recognised and copied over.
  */
 export type ServiceKey =
-	| 'FLOPPY_URL'
-	| 'FLOPPY_PUBLIC_URL'
 	| 'TMDB_API_KEY'
 	| 'BOOKORBIT_URL'
 	| 'HARDCOVER_TOKEN'
@@ -40,32 +38,10 @@ export type ServiceGroup = {
 
 export const SERVICE_GROUPS: ServiceGroup[] = [
 	{
-		id: 'floppy',
-		needs: ['FLOPPY_URL'],
-		title: 'Floppy',
-		about: 'Your TV and movie tracker. Each person links their own Floppy token under Your accounts.',
-		fields: [
-			{
-				key: 'FLOPPY_URL',
-				label: 'Address',
-				kind: 'url',
-				placeholder: 'http://10.0.1.14:8007',
-				hint: 'How Seek reaches Floppy (a LAN address is fine).'
-			},
-			{
-				key: 'FLOPPY_PUBLIC_URL',
-				label: 'Address from your phone',
-				kind: 'url',
-				placeholder: 'https://floppy.example.com',
-				hint: 'Optional — for the "Open in Floppy" links.'
-			}
-		]
-	},
-	{
 		id: 'tmdb',
 		needs: ['TMDB_API_KEY'],
 		title: 'TMDB',
-		about: 'Artwork, cast, recommendations and Discover for shows and movies.',
+		about: 'Every show and movie: episodes, air dates, artwork, cast, search and Discover. Seek needs it to track anything.',
 		fields: [{ key: 'TMDB_API_KEY', label: 'API key', secret: true, hint: 'themoviedb.org → Settings → API.' }]
 	},
 	{

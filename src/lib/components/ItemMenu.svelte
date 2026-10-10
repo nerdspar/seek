@@ -4,28 +4,26 @@
 
 	/**
 	 * The rare things. Status, rating and company are one tap each on the chip
-	 * row; what is left is sharing, jumping to Floppy, and the one irreversible
+	 * row; what is left is sharing, the anime switch, and the one irreversible
 	 * action on the page — which is exactly what an overflow menu is for.
 	 */
 	type Props = {
 		title: string;
 		/** Public TMDB page. The only link worth sending someone outside the house. */
 		sourceUrl: string | null;
-		/** Floppy's own page for this item, when FLOPPY_PUBLIC_URL is configured. */
-		floppyUrl: string | null;
 		busy?: boolean;
 		/** Films only, and only when a play exists: the status picker can set
 		 *  Completed (which records a play) but moving off it leaves the play
 		 *  behind, so this is the only way to take one back. */
 		onclearhistory?: () => void;
 		/** Shows only: whether it counts as anime (null hides the row), and the
-		 *  household's say-so when Floppy's genre gets it wrong. */
+		 *  household's say-so when Seek's rule gets it wrong. */
 		anime?: boolean | null;
 		onanime?: (next: boolean) => void;
 		onremove: () => void;
 		onclose: () => void;
 	};
-	let { title, sourceUrl, floppyUrl, busy = false, onclearhistory, anime = null, onanime, onremove, onclose }: Props = $props();
+	let { title, sourceUrl, busy = false, onclearhistory, anime = null, onanime, onremove, onclose }: Props = $props();
 
 	async function share() {
 		if (!sourceUrl) return;
@@ -66,12 +64,6 @@
 					<span>Share</span>
 				</button>
 			{/if}
-			{#if floppyUrl}
-				<a class="row" href={floppyUrl} target="_blank" rel="noreferrer" onclick={onclose}>
-					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6" /><path d="M20 4 10.5 13.5" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
-					<span>Open in Floppy</span>
-				</a>
-			{/if}
 			{#if onclearhistory}
 				<button disabled={busy} onclick={onclearhistory}>
 					<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" /><path d="M3.5 4.5V9H8" /><path d="M12 8v4.4l3 1.8" /></svg>
@@ -97,7 +89,7 @@
 	.pad { padding: 0 var(--gutter) 8px; }
 	h2 { margin: 0 0 14px; font-size: 18px; font-weight: 600; }
 	.rows { display: flex; flex-direction: column; gap: 4px; }
-	.rows button, .rows .row {
+	.rows button {
 		display: flex; align-items: center; gap: 12px;
 		min-height: var(--tap); padding: 0 14px;
 		border-radius: var(--radius); background: var(--surface-raised);

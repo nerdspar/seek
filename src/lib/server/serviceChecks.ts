@@ -69,17 +69,9 @@ export async function checkGroup(group: string, opts: CheckOptions = {}): Promis
 	const both = (name: string): ServiceCheck => ({ ok: false, message: `${name} needs both an address and an API key.` });
 
 	switch (group) {
-		case 'floppy': {
-			const url = get('FLOPPY_URL');
-			if (!url) return { ok: false, message: 'Seek needs Floppy’s address to do anything.' };
-			const r = await reach(f, `${url}/api/v1/info/`);
-			if (typeof r === 'string') return failed('Floppy didn’t answer', r);
-			const info = (await r.json().catch(() => ({}))) as { version?: string };
-			return { ok: true, message: `Connected to Floppy${info.version ? ` ${info.version}` : ''}.` };
-		}
 		case 'tmdb': {
 			const key = get('TMDB_API_KEY');
-			if (!key) return off('TMDB');
+			if (!key) return { ok: false, message: 'Seek needs a TMDB key to track shows and movies.' };
 			const r = await reach(f, `https://api.themoviedb.org/3/configuration?api_key=${encodeURIComponent(key)}`);
 			return typeof r === 'string' ? failed('TMDB refused the key', r) : { ok: true, message: 'TMDB key works.' };
 		}

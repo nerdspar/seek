@@ -6,10 +6,6 @@
 	let { service }: { service: LinkService } = $props();
 
 	const COPY: Record<LinkService, { title: string; body: string }> = {
-		floppy: {
-			title: 'Link your Floppy account',
-			body: 'Your watchlist, shows, stats and Upcoming come from your own Floppy. Add your Floppy calendar link to see them.'
-		},
 		hardcover: {
 			title: 'Link your Hardcover account',
 			body: 'What you read, want to read and rate lives on your own Hardcover shelf. Add your Hardcover token to see it.'

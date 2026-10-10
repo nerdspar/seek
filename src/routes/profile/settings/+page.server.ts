@@ -1,7 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
-import { FLOPPY_PUBLIC_URL, floppyConfigured } from '$lib/server/env';
+import { TMDB_API_KEY } from '$lib/server/env';
 import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
 import { householdName, jellyfinToken, linkedStatus, listMembers, listPendingInvites } from '$lib/server/users';
 import { recentUnmatched } from '$lib/server/tracking/jellyfin';
@@ -17,14 +17,9 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const me = locals.user;
 	if (!me) error(401);
-	const publicUrl = FLOPPY_PUBLIC_URL();
 	return {
 		prefs: await getPrefs(),
 		defaultPresets: DEFAULT_PRESET_LABELS(),
-		/* Verified against the running instance: Floppy has no bare /settings/
-		   route and its settings paths carry no trailing slash, so `/settings/`
-		   404s. Lands on notifications because that is what this row points at. */
-		floppyUrl: publicUrl ? `${publicUrl}/settings/notifications` : null,
 		/* The commit this build came from (CI stamps it; "dev" locally), so the
 		   deployed version is visible at a glance. */
 		build: env.SEEK_BUILD_SHA || 'dev',
@@ -40,7 +35,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			},
 			linked: linkedStatus(me.id),
 			bookorbit: bookorbitConfigured(),
-			// Seek's own Jellyfin webhook (own-tracking plan, step 4): your private URL.
+			// Seek's Jellyfin webhook: your private URL.
 			jellyfin: {
 				url: `${url.origin}/webhook/jellyfin/${jellyfinToken(me.id)}`,
 				unmatched: recentUnmatched(me.id)
@@ -48,6 +43,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		},
 		// The household's service settings — owner only (keys never leave the server).
 		services: me.role === 'owner' ? settingsForDisplay() : null,
-		floppyReady: floppyConfigured()
+		// Shows and movies all come from TMDB; until it's set, Settings says so first.
+		tmdbReady: Boolean(TMDB_API_KEY())
 	};
 };

@@ -32,7 +32,7 @@ describe('forEachUser', () => {
 		const ran: number[] = [];
 		await forEachUser(async (u) => {
 			ran.push(u.id);
-			if (u.id === owner.id) throw new NotLinkedError('floppy');
+			if (u.id === owner.id) throw new NotLinkedError('bookorbit');
 			throw new Error('boom');
 		});
 		expect(ran).toEqual([owner.id, member.id]);

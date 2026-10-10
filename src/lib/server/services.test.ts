@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { openDatabase, useDatabase, db } from './db';
 import { importEnvSettings, setSettings, setting, settingsForDisplay } from './services';
-import { FLOPPY_URL, NotConfiguredError, floppyConfigured } from './env';
 
 const saved = { ...process.env };
 function restoreEnv(saved: NodeJS.ProcessEnv) {
@@ -13,7 +12,7 @@ function restoreEnv(saved: NodeJS.ProcessEnv) {
 
 beforeEach(() => {
 	useDatabase(openDatabase(':memory:'));
-	for (const k of ['FLOPPY_URL', 'TMDB_API_KEY', 'HARDCOVER_TOKEN', 'BOOKORBIT_URL']) delete process.env[k];
+	for (const k of ['SONARR_URL', 'TMDB_API_KEY', 'HARDCOVER_TOKEN', 'BOOKORBIT_URL']) delete process.env[k];
 });
 afterEach(() => {
 	restoreEnv(saved);
@@ -22,13 +21,13 @@ afterEach(() => {
 
 describe('service settings', () => {
 	it('stores secrets encrypted and shows only whether they are set', () => {
-		setSettings({ FLOPPY_URL: 'http://10.0.1.14:8007/', TMDB_API_KEY: ' tmdb-secret ' });
-		expect(setting('FLOPPY_URL')).toBe('http://10.0.1.14:8007'); // trailing slash dropped
+		setSettings({ SONARR_URL: 'http://10.0.1.14:8989/', TMDB_API_KEY: ' tmdb-secret ' });
+		expect(setting('SONARR_URL')).toBe('http://10.0.1.14:8989'); // trailing slash dropped
 		expect(setting('TMDB_API_KEY')).toBe('tmdb-secret');
 		const raw = db().prepare("SELECT value FROM settings WHERE key = 'TMDB_API_KEY'").get() as { value: string };
 		expect(raw.value).not.toContain('tmdb-secret');
 		const shown = settingsForDisplay();
-		expect(shown.FLOPPY_URL).toEqual({ value: 'http://10.0.1.14:8007', set: true });
+		expect(shown.SONARR_URL).toEqual({ value: 'http://10.0.1.14:8989', set: true });
 		expect(shown.TMDB_API_KEY).toEqual({ set: true });
 		expect(JSON.stringify(shown)).not.toContain('tmdb-secret');
 	});
@@ -38,26 +37,20 @@ describe('service settings', () => {
 		expect(db().prepare('SELECT COUNT(*) AS n FROM settings').get()).toEqual({ n: 0 });
 	});
 
-	it('Floppy is required: unset reads as not configured', () => {
-		expect(floppyConfigured()).toBe(false);
-		expect(() => FLOPPY_URL()).toThrow(NotConfiguredError);
-		setSettings({ FLOPPY_URL: 'http://floppy:8007' });
-		expect(FLOPPY_URL()).toBe('http://floppy:8007');
-	});
 });
 
 describe('upgrading from env', () => {
 	it('copies env values in once; after that Settings wins and env can go', () => {
-		process.env.FLOPPY_URL = 'http://old:8007';
+		process.env.SONARR_URL = 'http://old:8989';
 		process.env.TMDB_API_KEY = 'tmdb';
-		expect(importEnvSettings().sort()).toEqual(['FLOPPY_URL', 'TMDB_API_KEY']);
+		expect(importEnvSettings().sort()).toEqual(['SONARR_URL', 'TMDB_API_KEY']);
 		expect(importEnvSettings()).toEqual([]); // idempotent
 
-		setSettings({ FLOPPY_URL: 'http://new:8007' });
-		process.env.FLOPPY_URL = 'http://edited-in-compose:8007';
-		expect(setting('FLOPPY_URL')).toBe('http://new:8007');
+		setSettings({ SONARR_URL: 'http://new:8989' });
+		process.env.SONARR_URL = 'http://edited-in-compose:8989';
+		expect(setting('SONARR_URL')).toBe('http://new:8989');
 
-		delete process.env.FLOPPY_URL;
+		delete process.env.SONARR_URL;
 		delete process.env.TMDB_API_KEY;
 		expect(setting('TMDB_API_KEY')).toBe('tmdb');
 	});

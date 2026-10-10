@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { openDatabase, useDatabase, db } from '../db';
 import { afterUnplay, clearSeason, fillSeason, recordPlay, removeNewestPlay, settleCompletion, setTracked, Status, untrack } from './write';
-import { addImportedPlays } from './store';
 
 const plays = (where = '1=1') =>
 	db().prepare(`SELECT season, episode, source, external_key FROM plays WHERE ${where} ORDER BY season, episode, id`).all();
@@ -42,29 +41,6 @@ describe("Seek's own record of each change", () => {
 		expect((plays() as { episode: number }[]).map((p) => p.episode)).toEqual([1, 2, 3, 4]);
 		clearSeason(1, 10, 1);
 		expect(plays()).toEqual([]);
-	});
-});
-
-describe('catching up from Floppy alongside plays Seek recorded itself', () => {
-	const floppyPlay = (key: string, e: number, at: string) => ({ mediaType: 'tv' as const, tmdbId: 10, season: 1, episode: e, watchedAt: at, externalKey: key });
-
-	it("links a mark made in Seek to Floppy's copy of the same viewing instead of copying it twice", () => {
-		recordPlay(1, 'tv', 10, 1, 1, '2026-10-09T20:00:00Z');
-		const r = addImportedPlays(1, 'tv', [floppyPlay('floppy:episode:1', 1, '2026-10-09T20:00:03Z')]);
-		expect(r).toEqual({ added: 0, linked: 1 });
-		expect(plays()).toEqual([{ season: 1, episode: 1, source: 'seek', external_key: 'floppy:episode:1' }]);
-	});
-
-	it('never removes a play, whatever Floppy has', () => {
-		recordPlay(1, 'tv', 10, 1, 1, '2026-10-01T00:00:00Z');
-		addImportedPlays(1, 'tv', []);
-		expect(plays()).toHaveLength(1);
-	});
-
-	it('adds a viewing only Floppy has, once', () => {
-		const p = floppyPlay('floppy:episode:2', 2, '2026-10-09T20:00:00Z');
-		expect(addImportedPlays(1, 'tv', [p]).added).toBe(1);
-		expect(addImportedPlays(1, 'tv', [p]).added).toBe(0);
 	});
 });
 

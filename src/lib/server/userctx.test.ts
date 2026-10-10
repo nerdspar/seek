@@ -4,8 +4,6 @@ import * as users from './users';
 import {
 	runAs,
 	currentUser,
-	floppyToken,
-	calendarToken,
 	bookorbitLogin,
 	scopeKey,
 	unscoped,
@@ -20,8 +18,6 @@ let member: users.User;
 beforeEach(async () => {
 	useDatabase(openDatabase(':memory:'));
 	process.env.SEEK_TOKEN_KEY = 'k';
-	process.env.FLOPPY_TOKEN = 'env-owner-token';
-	process.env.FLOPPY_CALENDAR_TOKEN = 'env-cal';
 	process.env.BOOKORBIT_USER = 'env-bo';
 	process.env.BOOKORBIT_PASSWORD = 'env-bo-pw';
 	owner = await users.createOwner({ email: 'o@x.co', name: 'Owner', password: 'password-1' });
@@ -30,7 +26,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
 	useDatabase(null);
-	for (const k of ['SEEK_TOKEN_KEY', 'FLOPPY_TOKEN', 'FLOPPY_CALENDAR_TOKEN', 'BOOKORBIT_USER', 'BOOKORBIT_PASSWORD']) {
+	for (const k of ['SEEK_TOKEN_KEY', 'BOOKORBIT_USER', 'BOOKORBIT_PASSWORD']) {
 		delete process.env[k];
 	}
 });
@@ -38,48 +34,35 @@ afterEach(() => {
 describe('credential resolution', () => {
 	it('outside any user context there is nobody to act for — env tokens are never used', () => {
 		expect(currentUser()).toBeNull();
-		expect(() => floppyToken()).toThrow(/No user context/);
-		expect(calendarToken()).toBeNull();
 		expect(bookorbitLogin()).toBeNull();
 	});
 
 	it('the owner uses only what they linked, like everyone else', () => {
 		runAs(owner, () => {
 			expect(currentUser()?.id).toBe(owner.id);
-			expect(() => floppyToken()).toThrow(NotLinkedError);
-			users.setFloppyToken(owner.id, 'flp_owner_own');
+			expect(bookorbitLogin()).toBeNull();
+			users.setBookOrbit(owner.id, { username: 'own', password: 'pw', libraryId: null });
 			refreshCredentials();
-			expect(floppyToken()).toBe('flp_owner_own');
+			expect(bookorbitLogin()?.username).toBe('own');
 		});
-	});
-
-	it('one Floppy token does both: the calendar uses it unless an older separate one is saved', () => {
-		users.setFloppyToken(member.id, 'acct_tok');
-		runAs(member, () => expect(calendarToken()).toBe('acct_tok'));
-		users.setCalendarToken(member.id, 'old_cal');
-		runAs(member, () => expect(calendarToken()).toBe('old_cal'));
 	});
 
 	it('a member NEVER falls back to the owner’s env credentials', () => {
 		runAs(member, () => {
-			expect(() => floppyToken()).toThrow(NotLinkedError);
-			expect(calendarToken()).toBeNull();
 			expect(bookorbitLogin()).toBeNull();
 		});
 	});
 
 	it('a member uses their own linked credentials', () => {
-		users.setFloppyToken(member.id, 'flp_member');
 		users.setBookOrbit(member.id, { username: 'wife', password: 'pw', libraryId: 3 });
 		runAs(member, () => {
-			expect(floppyToken()).toBe('flp_member');
 			expect(bookorbitLogin()).toEqual({ username: 'wife', password: 'pw', libraryId: 3 });
 		});
 	});
 
 	it('the not-linked error tells the person what to do', () => {
 		runAs(member, () => {
-			expect(() => floppyToken()).toThrow(/Settings → Your accounts/);
+			expect(new NotLinkedError('bookorbit').message).toMatch(/Settings → Your accounts/);
 		});
 	});
 });

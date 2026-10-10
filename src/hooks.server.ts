@@ -5,7 +5,7 @@ import { startScheduler } from '$lib/server/scheduler';
 import { warmEveryone } from '$lib/server/warmup';
 import { getUser, userCount } from '$lib/server/users';
 import { runAs, NotLinkedError } from '$lib/server/userctx';
-import { NotConfiguredError, floppyConfigured } from '$lib/server/env';
+import { NotConfiguredError, TMDB_API_KEY } from '$lib/server/env';
 import { announceSetupCode } from '$lib/server/session';
 import { upgradeFromEnv } from '$lib/server/upgrade';
 
@@ -66,14 +66,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 		redirect(303, `/login${next}`);
 	} else if (
 		event.locals.user?.role === 'owner' &&
-		!floppyConfigured() &&
+		!TMDB_API_KEY() &&
 		!path.startsWith('/api/') &&
 		!path.startsWith('/profile/settings') &&
 		!isPublic(path) &&
 		path !== '/logout' &&
 		event.request.method === 'GET'
 	) {
-		// Nothing works until Seek knows where Floppy is: finish setting up first.
+		// Shows and movies all come from TMDB: finish setting up first.
 		redirect(303, '/profile/settings?s=services&welcome=1');
 	}
 
@@ -113,7 +113,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		});
 	};
 
-	// Everything this request does — Floppy calls, caches, prefs — is for them.
+	// Everything this request does — reads, writes, caches, prefs — is for them.
 	return event.locals.user ? runAs(event.locals.user, render) : render();
 };
 

@@ -3,11 +3,9 @@
 	import StatusDot from './StatusDot.svelte';
 
 	/** "Your accounts" — the credentials Seek uses on *your* behalf: your own
-	 *  Floppy (watchlist, stats, Upcoming — one token opens the API and the
-	 *  calendar), BookOrbit (books) and, optionally, Hardcover. Each is checked
+	 *  BookOrbit (books) and, optionally, Hardcover. Each is checked
 	 *  against the real service before it's saved. */
 	type Linked = {
-		floppy: boolean;
 		bookorbit: { username: string; libraryId: number | null } | null;
 		hardcover: boolean;
 	};
@@ -20,7 +18,7 @@
 	let { account }: Props = $props();
 	const linked = $derived(account.linked);
 
-	type Service = 'floppy' | 'bookorbit' | 'hardcover';
+	type Service = 'bookorbit' | 'hardcover';
 	let open = $state<Service | null>(null);
 	let busy = $state(false);
 	let msg = $state<{ service: Service; ok: boolean; text: string } | null>(null);
@@ -133,12 +131,6 @@
 
 	const SERVICES: { id: Service; label: string; what: string; how: string }[] = [
 		{
-			id: 'floppy',
-			label: 'Floppy',
-			what: 'Your watchlist, shows, stats, history and Upcoming',
-			how: 'In Floppy, open Calendar and copy its feed link (…/calendar/download/…). Paste the whole link — its token opens your Floppy and your calendar, so it’s the only one Seek needs.'
-		},
-		{
 			id: 'bookorbit',
 			label: 'BookOrbit',
 			what: 'Your books, reading progress and goals',
@@ -195,7 +187,7 @@
 						<input
 							bind:value={token}
 							type="password"
-							placeholder={s.id === 'floppy' ? 'Floppy calendar link or token' : 'Hardcover API token'}
+							placeholder="Hardcover API token"
 							autocomplete="off"
 							autocapitalize="off"
 							autocorrect="off"

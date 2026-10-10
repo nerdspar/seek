@@ -374,8 +374,6 @@ export function consumeVerify(token: string): User | null {
 
 /** Credentials Seek uses on someone's behalf, decrypted. Server-only. */
 export type Credentials = {
-	floppyToken: string | null;
-	calendarToken: string | null;
 	bookorbit: { username: string; password: string; libraryId: number | null } | null;
 	hardcoverToken: string | null;
 };
@@ -384,11 +382,9 @@ const dec = (v: string | null) => (v ? decryptSecret(v) : null);
 
 export function getCredentials(userId: number): Credentials {
 	const r = row(userId);
-	if (!r) return { floppyToken: null, calendarToken: null, bookorbit: null, hardcoverToken: null };
+	if (!r) return { bookorbit: null, hardcoverToken: null };
 	const boPassword = dec(r.bookorbit_password_enc);
 	return {
-		floppyToken: dec(r.floppy_token_enc),
-		calendarToken: dec(r.floppy_calendar_token_enc),
 		bookorbit:
 			r.bookorbit_username && boPassword
 				? { username: r.bookorbit_username, password: boPassword, libraryId: r.bookorbit_library_id }
@@ -399,7 +395,6 @@ export function getCredentials(userId: number): Credentials {
 
 /** Which credentials are linked — safe to send to the browser. */
 export type LinkedStatus = {
-	floppy: boolean;
 	bookorbit: { username: string; libraryId: number | null } | null;
 	hardcover: boolean;
 };
@@ -407,7 +402,6 @@ export type LinkedStatus = {
 export function linkedStatus(userId: number): LinkedStatus {
 	const r = row(userId);
 	return {
-		floppy: Boolean(r?.floppy_token_enc),
 		bookorbit: r?.bookorbit_username
 			? { username: r.bookorbit_username, libraryId: r.bookorbit_library_id }
 			: null,
@@ -416,14 +410,6 @@ export function linkedStatus(userId: number): LinkedStatus {
 }
 
 const enc = (v: string | null) => (v ? encryptSecret(v) : null);
-
-export function setFloppyToken(userId: number, token: string | null): void {
-	db().prepare('UPDATE users SET floppy_token_enc = ? WHERE id = ?').run(enc(token?.trim() || null), userId);
-}
-
-export function setCalendarToken(userId: number, token: string | null): void {
-	db().prepare('UPDATE users SET floppy_calendar_token_enc = ? WHERE id = ?').run(enc(token?.trim() || null), userId);
-}
 
 export function setHardcoverToken(userId: number, token: string | null): void {
 	db().prepare('UPDATE users SET hardcover_token_enc = ? WHERE id = ?').run(enc(token?.trim() || null), userId);

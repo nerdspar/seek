@@ -43,7 +43,7 @@ describe('show, season and episode pages from Seek', () => {
 	});
 
 	it('your status and rating; untracked when you have none', () => {
-		expect(seekTracking(1, 'tv', 66902)).toEqual({ tracked: true, status: 1, score: 8, floppyPath: null });
+		expect(seekTracking(1, 'tv', 66902)).toEqual({ tracked: true, status: 1, score: 8 });
 		expect(seekTracking(1, 'movie', 603).tracked).toBe(false);
 	});
 });

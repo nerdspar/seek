@@ -374,7 +374,6 @@
 				<ItemMenu
 					title={movie.title}
 					sourceUrl={movie.sourceUrl}
-					floppyUrl={null}
 					busy={trackBusy || watchBusy}
 					onclearhistory={watched ? clearWatchHistory : undefined}
 					onremove={() => toggleTracked(true)}

@@ -20,7 +20,6 @@
 
 	const prefs = $derived(data.prefs);
 	const defaultPresets = $derived(data.defaultPresets ?? []);
-	const floppyUrl = $derived(data.floppyUrl ?? null);
 
 	/* Fetched here rather than in the page load: building this list pages the
 	   whole library, and awaiting it on Profile blocked that page for 11s on a
@@ -72,7 +71,7 @@
 			title: 'You',
 			rows: [
 				{ id: 'account', title: 'Account', hint: `${data.account.me.name} · ${data.account.me.email}`, show: true },
-				{ id: 'accounts', title: 'Your accounts', hint: 'Floppy, BookOrbit, Hardcover', show: true }
+				{ id: 'accounts', title: 'Your accounts', hint: 'Jellyfin, BookOrbit, Hardcover', show: true }
 			]
 		},
 		{
@@ -378,16 +377,15 @@
 <PageHeader title={current ? current.title : 'Settings'} onback={() => goto(current ? '/profile/settings' : '/profile')} />
 
 <main>
-	{#if !data.floppyReady && data.services}
+	{#if !data.tmdbReady && data.services}
 		<p class="welcome">
-			Welcome to Seek. First, tell it where your apps are: open <a href="?s=services">Services</a> and add
-			Floppy’s address (and TMDB’s key). Then link your own Floppy under <a href="?s=accounts">Your accounts</a>.
+			Welcome to Seek. First, add a TMDB key under <a href="?s=services">Services</a> — every show and
+			movie comes from TMDB. Then point Jellyfin at Seek under <a href="?s=accounts">Your accounts</a>.
 		</p>
 	{:else if page.url.searchParams.get('welcome')}
 		<p class="welcome">
-			Welcome to Seek. Link your own Floppy{data.account.bookorbit ? ' and BookOrbit' : ''} under
-			<a href="?s=accounts">Your accounts</a> — that's where your shows{data.account.bookorbit ? ' and books' : ''}
-			come from.
+			Welcome to Seek. Point Jellyfin at Seek under <a href="?s=accounts">Your accounts</a> so your plays
+			are marked as you watch{data.account.bookorbit ? ', and link BookOrbit for your books' : ''}.
 		</p>
 	{/if}
 
@@ -431,7 +429,7 @@
 		<h3>Watching with</h3>
 		<!-- Whether anyone else is in the room is a household-specific idea. Off, the
 		     chip disappears from both detail pages and the watchlist filter goes with
-		     it; the tags already in Floppy are left alone. -->
+		     it; which shows are shared is kept. -->
 		<button
 			class="row"
 			role="switch"
@@ -450,9 +448,8 @@
 	<section>
 		<h3>Jellyfin</h3>
 		<p class="hint jf">
-			Your plays from Jellyfin can come to Seek directly. In Jellyfin's Webhook plugin, replace the
-			Floppy address with this one — the template stays the same. Seek records each play and passes it
-			on to Floppy, so nothing is lost either way.
+			Jellyfin marks what you watch in Seek as you watch it. In Jellyfin's Webhook plugin, add this
+			address for your Jellyfin user — it's yours alone.
 		</p>
 		<div class="jfurl">
 			<code>{data.account.jellyfin.url}</code>
@@ -467,26 +464,9 @@
 			</ul>
 		{/if}
 	</section>
-	<section>
-		<h3>Floppy</h3>
-		{#if floppyUrl}
-			<a class="out" href={floppyUrl} target="_blank" rel="noreferrer">
-				<span class="rowtext">
-					<span class="label">Floppy settings</span>
-					<span class="hint">Notifications and integrations live there (§9)</span>
-				</span>
-				<span class="chev">↗</span>
-			</a>
-		{:else}
-			<p class="hint">
-				Add Floppy’s “Address from your phone” under Services to link out to Floppy’s own settings —
-				notifications are configured there, not here.
-			</p>
-		{/if}
-	</section>
 
 	{:else if section === 'services' && data.services}
-		<ServicesSettings services={data.services} openFirst={data.floppyReady ? null : 'floppy'} extra={arrDefaults} />
+		<ServicesSettings services={data.services} openFirst={data.tmdbReady ? null : 'tmdb'} extra={arrDefaults} />
 	{:else if section === 'media'}
 		<section>
 			<p class="hint lead">Choose what Seek is for. Anything you turn off disappears from Watchlist, Discover, Upcoming and Profile — nothing is deleted.</p>
@@ -894,12 +874,6 @@
 	.chips button.on { background: var(--signal); color: #fff; }
 	.chips button:disabled { opacity: 0.4; }
 
-	.out {
-		display: flex; align-items: center; justify-content: space-between; gap: 14px;
-		min-height: var(--tap); padding: 9px 14px;
-		border-radius: var(--radius); background: var(--surface-raised);
-	}
-	.chev { color: var(--text-dim); font-size: 16px; }
 	code { padding: 1px 5px; border-radius: 5px; background: var(--surface-raised); font-size: 11.5px; }
 
 	input {

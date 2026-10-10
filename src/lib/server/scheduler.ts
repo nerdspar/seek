@@ -14,8 +14,6 @@ import { runAs, NotLinkedError } from './userctx';
 import { startMirroring } from './household/run';
 import { refreshDue, seedTrackedTitles } from './catalog/refresh';
 import { tmdbConfigured } from './tmdb';
-import { copyFromFloppy } from './tracking/importFloppy';
-import { lastRun } from './tracking/store';
 
 /* Every job here is per person: it runs once for each account, *as* that
    account, so it reads their prefs, their calendar and their devices. */
@@ -56,7 +54,6 @@ export function startScheduler(): void {
 	startMirroring();
 	started = true;
 	startCatalog();
-	startFloppyCopy();
 
 	/* A tick's work (a cold calendar build plus a push fan-out) can in principle
 	   outrun the interval; without this, two overlapping ticks could both pass the
@@ -106,34 +103,4 @@ function startCatalog(): void {
 	setTimeout(() => void seed(), 2 * 60 * 1000);
 	setInterval(() => void seed(), 6 * 60 * 60 * 1000);
 	setInterval(() => void refresh(), 10 * 60 * 1000);
-}
-
-/**
- * Catching up from Floppy (own-tracking plan): while someone still has Floppy
- * linked, add what reached Floppy alone — Jellyfin marks sent to Floppy's
- * webhook before Jellyfin points at Seek. ~10 minutes after boot, then nightly
- * at 4 AM; each reads back only to a day before the last run (usually one page
- * of Floppy's history). Unlinking Floppy in Settings stops it.
- */
-const DAY = 24 * 60 * 60 * 1000;
-function startFloppyCopy(): void {
-	let running = false;
-	const catchUp = async () => {
-		if (running) return;
-		running = true;
-		try {
-			await forEachUser(async (user) => {
-				const last = lastRun(user.id);
-				const since = last ? new Date(Date.parse(last.ranAt) - DAY).toISOString() : undefined;
-				const s = await copyFromFloppy(since);
-				if (s.added) console.log(`[copy] user ${user.id}: caught up ${s.added} from Floppy`);
-			});
-		} finally {
-			running = false;
-		}
-	};
-	setTimeout(() => void catchUp(), 10 * 60 * 1000);
-	setInterval(() => {
-		if (new Date().getHours() === 4) void catchUp();
-	}, 60 * 60 * 1000);
 }

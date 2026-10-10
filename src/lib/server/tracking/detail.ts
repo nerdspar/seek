@@ -39,7 +39,7 @@ export function seekTracking(userId: number, kind: Kind, id: number): Tracking {
 	const r = db().prepare('SELECT status, score FROM tracked WHERE user_id = ? AND media_type = ? AND tmdb_id = ?').get(userId, kind, id) as
 		| { status: number; score: number | null }
 		| undefined;
-	return r ? { tracked: true, status: r.status, score: r.score, floppyPath: null } : { tracked: false, status: null, score: null, floppyPath: null };
+	return r ? { tracked: true, status: r.status, score: r.score } : { tracked: false, status: null, score: null };
 }
 
 function playCounts(userId: number, id: number, season?: number): Map<string, number> {

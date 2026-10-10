@@ -563,7 +563,6 @@
 					<ItemMenu
 						title={show.title}
 						sourceUrl={show.sourceUrl}
-						floppyUrl={null}
 						busy={trackBusy}
 						anime={animeEdit ?? serverAnime}
 						onanime={(next) => setAnime(next, show.title)}

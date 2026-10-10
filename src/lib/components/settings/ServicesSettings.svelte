@@ -56,7 +56,7 @@
 	/** One line under each service: what's set, at a glance. */
 	function summary(g: ServiceGroup): string {
 		const set = g.fields.filter((f) => current[f.key]?.set);
-		if (!set.length) return g.id === 'floppy' ? 'Not set up' : 'Off';
+		if (!set.length) return g.id === 'tmdb' ? 'Not set up' : 'Off';
 		const address = g.fields.find((f) => f.kind === 'url' && current[f.key]?.value)?.key;
 		return address ? (current[address].value ?? '') : 'Set';
 	}

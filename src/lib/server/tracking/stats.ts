@@ -293,7 +293,9 @@ export function seekUpcoming(userId: number, now = Date.now()): UpcomingItem[] {
 			title: e.title,
 			season: e.season,
 			episode: e.episode,
-			start: e.air_at ? new Date(e.air_at).toISOString() : `${e.air_date}T00:00:00.000Z`,
+			// A date with no time is a date, not an instant: midday UTC keeps it on the
+			// same calendar day everywhere (midnight UTC is the evening before here).
+			start: e.air_at ? new Date(e.air_at).toISOString() : `${e.air_date}T12:00:00.000Z`,
 			hasTime: Boolean(e.air_at),
 			poster: e.poster,
 			mediaId: String(e.tmdb_id),
@@ -304,7 +306,7 @@ export function seekUpcoming(userId: number, now = Date.now()): UpcomingItem[] {
 			title: f.title,
 			season: null,
 			episode: null,
-			start: `${f.release_date}T00:00:00.000Z`,
+			start: `${f.release_date}T12:00:00.000Z`,
 			hasTime: false,
 			poster: f.poster,
 			mediaId: String(f.tmdb_id),

@@ -1,26 +1,19 @@
 /**
- * Shapes and labels for a show's user state, with nothing that touches Floppy.
- *
- * Split out from `$lib/server/tracking` deliberately: that module holds the API
- * client and therefore the credentials, and SvelteKit refuses to bundle it into
- * the browser. The picker needs the labels and bounds, so they live here where
- * both sides can import them.
+ * Shapes and labels for a title's user state, safe for the browser. Split out
+ * from `$lib/server/tracking`, which reads the database and can't be bundled
+ * into the client; the picker needs the labels and bounds, so they live here.
  */
 import { Status } from '$lib/types';
 
 export type Tracking = {
 	tracked: boolean;
-	/** Floppy's integer status, or null when not tracked. */
+	/** The status code (0 Planning … 4 Dropped), or null when not tracked. */
 	status: number | null;
 	/** The user's own 0–10 rating, not the community score. */
 	score: number | null;
-	/** Floppy's own page for this item, e.g. /details/tmdb/movie/1016084/blackberry.
-	 *  Taken from the list row rather than built: the slug is required — the
-	 *  slugless path 404s — and it is not derivable from the title reliably. */
-	floppyPath: string | null;
 };
 
-export const UNTRACKED: Tracking = { tracked: false, status: null, score: null, floppyPath: null };
+export const UNTRACKED: Tracking = { tracked: false, status: null, score: null };
 
 /** Every status, in the order a picker should list them. */
 export const STATUS_CHOICES = [
@@ -35,6 +28,6 @@ export function statusLabel(status: number | null): string | null {
 	return STATUS_CHOICES.find((c) => c.value === status)?.label ?? null;
 }
 
-/** Floppy rejects anything outside this range with a 400. */
+/** Ratings are 0–10. */
 export const SCORE_MIN = 0;
 export const SCORE_MAX = 10;
