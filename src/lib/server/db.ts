@@ -384,7 +384,39 @@ export const MIGRATIONS: Migration[] = [
 	DROP TABLE IF EXISTS import_runs;
 	DROP INDEX IF EXISTS plays_external;
 	ALTER TABLE plays DROP COLUMN external_key;
-	`
+	`,
+	// v20 — plays on part 2 of a two-parter TMDB lists as one episode (Grey's
+	// S4E17, House S6E22): part 2's number is missing and the merged episode is
+	// the one before it. The play moves there — or, if that episode already has
+	// a play from the same viewing (within 12 hours), it goes, rather than
+	// counting one viewing twice. Only where TMDB's season is known, and only
+	// plays over 60 days old: a new episode Seek's copy hasn't fetched yet
+	// looks the same and must not be folded into the one before it.
+	(db) => {
+		const strays = db
+			.prepare(
+				`SELECT p.id, p.user_id, p.tmdb_id, p.season, p.episode, p.watched_at FROM plays p
+				WHERE p.media_type = 'tv' AND p.season IS NOT NULL AND p.episode > 1
+				AND EXISTS (SELECT 1 FROM episodes e WHERE e.tmdb_id = p.tmdb_id AND e.season = p.season AND e.episode = p.episode - 1)
+				AND NOT EXISTS (SELECT 1 FROM episodes e WHERE e.tmdb_id = p.tmdb_id AND e.season = p.season AND e.episode = p.episode)`
+			)
+			.all() as { id: number; user_id: number; tmdb_id: number; season: number; episode: number; watched_at: string }[];
+		const same = db.prepare(
+			"SELECT watched_at FROM plays WHERE user_id = ? AND media_type = 'tv' AND tmdb_id = ? AND season = ? AND episode = ?"
+		);
+		const drop = db.prepare('DELETE FROM plays WHERE id = ?');
+		const move = db.prepare('UPDATE plays SET episode = ? WHERE id = ?');
+		const cutoff = Date.now() - 60 * 24 * 60 * 60 * 1000;
+		for (const p of strays) {
+			const at = Date.parse(p.watched_at);
+			if (!(at < cutoff)) continue;
+			const viewed = (same.all(p.user_id, p.tmdb_id, p.season, p.episode - 1) as { watched_at: string }[]).some(
+				(o) => Math.abs(Date.parse(o.watched_at) - at) <= 12 * 60 * 60 * 1000
+			);
+			if (viewed) drop.run(p.id);
+			else move.run(p.episode - 1, p.id);
+		}
+	}
 ];
 
 /** Open (creating if needed) and migrate a database. ':memory:' for tests. */

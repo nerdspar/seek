@@ -57,3 +57,36 @@ describe('migration v19 (the last of Floppy)', () => {
 		]);
 	});
 });
+
+describe('migration v20 (two-parters TMDB lists as one)', () => {
+	it("moves a play on part 2 to the merged episode, or drops it when that viewing is already there", () => {
+		const db = new Database(':memory:');
+		db.pragma('foreign_keys = ON');
+		for (let v = 0; v < 19; v++) {
+			const m = MIGRATIONS[v];
+			if (typeof m === 'string') db.exec(m);
+			else m(db);
+		}
+		db.pragma('user_version = 19');
+		db.exec("INSERT INTO households (id, name, created_at) VALUES (1, 'Home', 'x')");
+		db.exec("INSERT INTO users (id, household_id, email, name, role, password_hash, created_at) VALUES (1, 1, 'a@x', 'A', 'owner', 'h', 'x')");
+		// Grey's S4 on TMDB ends at 16 ("Freedom", both parts); S3 has no 23.
+		const ep = db.prepare('INSERT INTO episodes (tmdb_id, season, episode) VALUES (1416, ?, ?)');
+		for (const [s, e] of [[4, 15], [4, 16], [3, 22], [3, 24]]) ep.run(s, e);
+		const play = db.prepare("INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, created_at) VALUES (1, 'tv', 1416, ?, ?, ?, 'import', 'x')");
+		play.run(4, 16, '2022-03-20T03:47:00Z');
+		play.run(4, 17, '2022-03-20T03:47:00Z'); // the same viewing: goes
+		play.run(3, 23, '2023-05-01T20:00:00Z'); // no play of S3E22 then: moves there
+		play.run(5, 3, '2023-05-01T20:00:00Z'); // a season TMDB copy doesn't have yet: left alone
+		play.run(3, 25, new Date().toISOString()); // just aired, not fetched yet: left alone
+
+		migrate(db);
+
+		expect(db.prepare('SELECT season, episode FROM plays ORDER BY season, episode').all()).toEqual([
+			{ season: 3, episode: 22 },
+			{ season: 3, episode: 25 },
+			{ season: 4, episode: 16 },
+			{ season: 5, episode: 3 }
+		]);
+	});
+});
