@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import SearchFab from '$lib/components/SearchFab.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import StatsChart from '$lib/components/StatsChart.svelte';
 	import ReadingCard from '$lib/components/ReadingCard.svelte';
@@ -73,35 +74,34 @@
 
 <div class="app">
 	<header>
-		<div class="titlerow">
-			<h1>Profile</h1>
-			<div class="actions">
-				{#if arrManageOn() || data.booksActivity}
-				<button class="gear" onclick={() => goto('/activity')} aria-label="Download activity">
-					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
-				</button>
-				{/if}
-			<button class="gear" onclick={() => goto('/profile/diary')} aria-label="Diary">
-				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v18H5.5A1.5 1.5 0 0 1 4 19.5z" />
-					<path d="M8 3v18M11.5 8.5h4M11.5 12h4" />
-				</svg>
-			</button>
-			<button class="gear" onclick={() => goto('/profile/settings')} aria-label="Settings">
-				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7">
-					<circle cx="12" cy="12" r="3.1" />
-					<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-				</svg>
-			</button>
-			</div>
-		</div>
 		{#if both}
 			<div class="segments" role="tablist">
 				<button role="tab" aria-selected={data.view === 'watching'} class:active={data.view === 'watching'} onclick={() => goto(href(data.range, 'watching'), { noScroll: true, replaceState: true })}>Watching</button>
 				<button role="tab" aria-selected={data.view === 'reading'} class:active={data.view === 'reading'} onclick={() => goto(href(data.range, 'reading'), { noScroll: true, replaceState: true })}>Reading</button>
 			</div>
+		{:else}
+			<h1 class="pagetitle">Profile</h1>
 		{/if}
-		<div class="chips">
+		<div class="actions">
+			{#if arrManageOn() || data.booksActivity}
+				<button onclick={() => goto('/activity')} aria-label="Download activity">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
+				</button>
+			{/if}
+			<button onclick={() => goto('/profile/diary')} aria-label="Diary">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v18H5.5A1.5 1.5 0 0 1 4 19.5z" />
+					<path d="M8 3v18M11.5 8.5h4M11.5 12h4" />
+				</svg>
+			</button>
+			<button onclick={() => goto('/profile/settings')} aria-label="Settings">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7">
+					<circle cx="12" cy="12" r="3.1" />
+					<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+				</svg>
+			</button>
+		</div>
+		<div class="strip chips">
 			{#each RANGES as r (r.id)}
 				<button
 					class:on={data.range === r.id}
@@ -457,14 +457,14 @@
 		<BookSheet book={openBook} onclose={() => (openBook = null)} />
 	{/if}
 
+	<SearchFab />
+
 	<TabBar current="profile" />
 
 </div>
 
 <style>
 	/* Frame from the global `.app` shell (app.css). */
-	/* Watching / Reading: the shared segmented tabs (app.css), with the range chips below. */
-	.segments { margin-bottom: 10px; }
 	.tiles.three { grid-template-columns: repeat(3, 1fr); }
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }

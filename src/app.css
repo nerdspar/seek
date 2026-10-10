@@ -297,33 +297,41 @@ img {
 	}
 }
 
-/* ── Tab pages' header pieces, defined once so the pages can't drift ──────────
-   The title row is 44px — the height of its icon buttons — whether a page has
-   buttons or not, so Discover, Profile, Upcoming and Discover → Books line up.
-   Segmented tabs are 44px with their padding (38px buttons): the tap target,
-   and level with the watchlist's sort and filter buttons beside them. */
-.titlerow {
+/* ── Tab pages' header: one grammar, so Watchlist, Discover, Upcoming, Profile
+   and Books can't drift ────────────────────────────────────────────────────
+   One 44px row. A leading slot holds the page's primary switch (a segmented
+   control) or, where there is none, the page name. Trailing holds the page's
+   actions as a right-flush icon cluster. A segmented control is sized to its
+   labels and hugs the left, so the SAME tabs are the same width on every page
+   and only the gap to the icons changes. An optional second strip (Profile's
+   range) wraps below. */
+.app > header {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+/* The leading slot pushes the actions to the right edge. */
+.app > header > .segments,
+.app > header > .pagetitle {
+	margin-right: auto;
+}
+.pagetitle {
 	min-height: var(--tap);
-	margin-bottom: 10px;
-}
-.titlerow h1 {
+	display: flex;
+	align-items: center;
 	margin: 0;
-	font-size: 26px;
-	font-weight: 700;
-	letter-spacing: -0.02em;
+	font-size: 17px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
 }
-/* The buttons' 44px circles reach into the gutter so the icons sit flush. */
-.titlerow .actions {
+.app > header > .actions {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	margin-right: -10px;
 }
-.titlerow .actions button {
+.app > header > .actions button {
 	flex: none;
 	display: grid;
 	place-items: center;
@@ -332,21 +340,30 @@ img {
 	border-radius: 50%;
 	color: var(--text-dim);
 }
+.app > header > .actions button.on {
+	color: var(--signal-solid);
+}
+/* A secondary control (Profile's time range) on its own line under the bar. */
+.app > header > .strip {
+	flex-basis: 100%;
+	margin-top: 4px;
+}
+/* Segmented control: content-sized, not full-width. */
 .segments {
-	display: flex;
+	display: inline-flex;
 	gap: 2px;
 	padding: 3px;
 	border-radius: 11px;
 	background: var(--surface);
 }
 .segments button {
-	flex: 1;
 	min-height: 38px;
-	padding: 0 12px;
+	padding: 0 16px;
 	border-radius: 9px;
 	font-size: 13px;
 	font-weight: 600;
 	color: var(--text-dim);
+	white-space: nowrap;
 	transition: background 140ms ease, color 140ms ease;
 }
 .segments button.on,

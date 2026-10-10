@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { setSegment } from '$lib/segment';
 	import SearchField from '$lib/components/SearchField.svelte';
+	import SearchFab from '$lib/components/SearchFab.svelte';
 	import NotLinked from '$lib/components/NotLinked.svelte';
 	import { notLinkedOf } from '$lib/notLinked';
 	import { goto } from '$app/navigation';
@@ -279,16 +280,6 @@
 
 <div class="app">
 	<header>
-		<div class="titlerow">
-			<h1>Discover</h1>
-			{#if data.onServer}
-				<div class="actions">
-					<button class="icon" onclick={() => goto(`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`)} aria-label="On the server" title="On the server">
-						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
-					</button>
-				</div>
-			{/if}
-		</div>
 		<div class="segments" role="tablist">
 			{#each [{ id: 'tv' as const, label: 'TV' }, { id: 'movie' as const, label: 'Movies' }].filter((seg) => data.media[seg.id]) as seg (seg.id)}
 				<button
@@ -303,6 +294,13 @@
 				<button role="tab" aria-selected="false" onclick={() => goto('/discover/books', { noScroll: true })}>Books</button>
 			{/if}
 		</div>
+		{#if data.onServer}
+			<div class="actions">
+				<button onclick={() => goto(`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`)} aria-label="On the server">
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+				</button>
+			</div>
+		{/if}
 	</header>
 
 <!-- Every slow path shows the same breathing shelves rather than a line of text,
@@ -326,7 +324,7 @@
 				<div class="moodfield">
 					<SearchField
 						bind:value={freeText}
-						placeholder="Actor, title, genre, mood, service…"
+						placeholder="Mood, genre, actor, service…"
 						onsubmit={submitFreeText}
 						onclear={clearMood}
 					/>
@@ -474,6 +472,8 @@
 			{/await}
 		{/if}
 	</main>
+
+	<SearchFab />
 
 	<TabBar current="discover" onunbuilt={(l) => (note = `${l} — not built yet (build order §13).`)} />
 

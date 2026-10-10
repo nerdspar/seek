@@ -21,11 +21,7 @@
 	import { queuedWrite } from '$lib/queue.svelte';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { SortKey } from '$lib/server/prefs';
-	import SearchField from '$lib/components/SearchField.svelte';
-	import Poster from '$lib/components/Poster.svelte';
-	import { searchLibrary, type LibraryTitle } from '$lib/librarySearch';
-	import { statusLabel } from '$lib/tracking';
-	import { closesOnBlur, closesOnScroll } from '$lib/searchBar';
+	import SearchFab from '$lib/components/SearchFab.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -202,49 +198,6 @@
 	};
 
 	let toast = $state<Pending | null>(null);
-
-	/* ── Search your library ────────────────────────────────────────────────
-	   Hidden until you ask: the magnifier in the header opens a box under it,
-	   keyboard up. It searches everything you track — shows and films, any
-	   status — loaded once, on first use, and filtered as you type. It gets
-	   out of the way by itself: an empty box goes when you scroll or tap away,
-	   and any box goes when you switch tabs (see searchBar.ts). */
-	let query = $state('');
-	let library = $state<LibraryTitle[] | null>(null);
-	let searchOpen = $state(false);
-	let searchInput: HTMLInputElement | undefined = $state();
-	let openedAtY = 0;
-	const searching = $derived(query.trim().length > 0);
-	const found = $derived(library ? searchLibrary(library, query) : []);
-	let libraryLoading: Promise<void> | null = null;
-	function loadLibrary() {
-		libraryLoading ??= fetch('/api/library/titles')
-			.then((r) => (r.ok ? r.json() : { titles: [] }))
-			.then((b: { titles: LibraryTitle[] }) => void (library = b.titles))
-			.catch(() => {
-				libraryLoading = null;
-			});
-	}
-	function openSearch() {
-		// Focus inside the tap, or iOS won't raise the keyboard.
-		searchInput?.focus();
-		searchOpen = true;
-		openedAtY = window.scrollY;
-		loadLibrary();
-	}
-	function closeSearch() {
-		searchOpen = false;
-		query = '';
-		searchInput?.blur();
-	}
-	$effect(() => {
-		if (!searchOpen) return;
-		const onscroll = () => {
-			if (closesOnScroll(searchOpen, query, openedAtY, window.scrollY)) closeSearch();
-		};
-		window.addEventListener('scroll', onscroll, { passive: true });
-		return () => window.removeEventListener('scroll', onscroll);
-	});
 
 	/* Real time: changes made elsewhere (Jellyfin, your partner on a shared show,
 	   another device) arrive on their own — on returning to the app and every 30s
@@ -432,7 +385,6 @@
 		overrides = {};
 		gone = new Set();
 		toast = null;
-		closeSearch();
 		goto(`/?type=${id}`, { noScroll: true });
 	}
 
@@ -530,42 +482,13 @@
 			{/if}
 		</div>
 
-		<!-- pointerdown kept from blurring the box, so a tap here closes it rather
-		     than the blur closing it and the tap opening it again. -->
-		<button
-			class="sort"
-			class:on={searchOpen}
-			aria-label={searchOpen ? 'Close search' : 'Search your library'}
-			aria-expanded={searchOpen}
-			onpointerdown={(e) => searchOpen && e.preventDefault()}
-			onclick={() => (searchOpen ? closeSearch() : openSearch())}
-		>
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>
-		</button>
-
-		<button class="sort" onclick={() => (sortOpen = true)} aria-label="Sort">
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
-				<path d="M4 7h16M6.5 12h11M10 17h4" />
-			</svg>
-		</button>
-
-		<button class="sort" class:on={filtersActive} onclick={() => (filterOpen = true)} aria-label="Filter">
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M3 5h18l-7 8v6l-4 2v-8z" />
-			</svg>
-		</button>
-
-		<!-- Always in the page (collapsed when closed) so the magnifier can focus it
-		     within the tap. -->
-		<div class="libsearch" class:open={searchOpen}>
-			<SearchField
-				bind:value={query}
-				bind:input={searchInput}
-				placeholder="Search your library"
-				oninput={loadLibrary}
-				onclear={() => (query = '')}
-				onblur={() => setTimeout(() => closesOnBlur(searchOpen, query) && closeSearch(), 150)}
-			/>
+		<div class="actions">
+			<button onclick={() => (sortOpen = true)} aria-label="Sort">
+				<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M6.5 12h11M10 17h4" /></svg>
+			</button>
+			<button class:on={filtersActive} onclick={() => (filterOpen = true)} aria-label="Filter">
+				<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+			</button>
 		</div>
 	</header>
 
@@ -610,36 +533,6 @@
 			</svg>
 		</div>
 		<div class="ptr-body" class:settling={pullSettling} style:transform={`translateY(${refreshing ? REFRESH_REST : pullY}px)`}>
-		{#if searching}
-			{#if library === null}
-				<p class="libnote">Searching…</p>
-			{:else}
-				{#if !found.length}<p class="libnote">Nothing on your list matches “{query.trim()}”.</p>{/if}
-				<ul class="libresults">
-					{#each found as t (t.mediaType + t.mediaId)}
-						<li>
-							<a href={t.mediaType === 'movie' ? `/movie/tmdb/${t.mediaId}` : `/show/tmdb/${t.mediaId}`}>
-								<Poster src={t.poster} width={40} height={60} />
-								<span class="libtext">
-									<span class="libtitle">{t.title}</span>
-									<span class="libmeta">{t.mediaType === 'movie' ? 'Film' : 'Show'}{t.year ? ` · ${t.year}` : ''}{statusLabel(t.status) ? ` · ${statusLabel(t.status)}` : ''}</span>
-								</span>
-							</a>
-						</li>
-					{/each}
-					<!-- The same box finds something new: the full search, query carried over. -->
-					<li>
-						<a class="everything" href={`/search?q=${encodeURIComponent(query.trim())}`}>
-							<span class="globe" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></svg></span>
-							<span class="libtext">
-								<span class="libtitle">Search all of TMDB for “{query.trim()}”</span>
-								<span class="libmeta">Shows and films not on your list</span>
-							</span>
-						</a>
-					</li>
-				</ul>
-			{/if}
-		{:else}
 		{#await data.page}
 			<ul class="rows">
 				{#each Array(6) as _, i (i)}
@@ -693,15 +586,10 @@
 				<div class="empty"><h2>Couldn't load your list</h2><p>{err.message}</p></div>
 			{/if}
 		{/await}
-		{/if}
 		</div>
 	</main>
 
-	<button class="fab" onclick={() => goto('/search')} aria-label="Search">
-		<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2">
-			<path d="M12 5v14M5 12h14" stroke-linecap="round" />
-		</svg>
-	</button>
+	<SearchFab hidden={toast !== null} />
 
 	<TabBar current="watchlist" />
 
@@ -756,36 +644,7 @@
 </div>
 
 <style>
-	/* Frame comes from the global `.app` shell (app.css); only the header's own
-	   content layout is page-specific. */
-	header {
-		display: flex;
-		align-items: center;
-	}
-
-	.sort {
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: 38px;
-		height: var(--tap);
-		border-radius: 11px;
-		color: var(--text-dim);
-	}
-	.sort:last-of-type {
-		margin-right: -8px;
-	}
-	/* The accent marks that the list is narrowed — otherwise a filtered
-	   watchlist looks like a short library. */
-	.sort.on {
-		color: var(--signal-solid);
-	}
-
-	/* The shared segmented tabs (app.css), sharing the row with sort and filter. */
-	.segments {
-		flex: 1;
-	}
-
+	/* Frame and header grammar come from the global `.app` shell (app.css). */
 	/* The fixed tab bar and the floating add button both overlay the bottom now
 	   (Model B), so the last row must clear the bar's footprint plus the FAB that
 	   floats above it. */
@@ -824,29 +683,6 @@
 	.ptr-body.settling {
 		transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
-	/* The header row wraps so the box opens on its own line under the tabs. */
-	header { flex-wrap: wrap; }
-	.libsearch {
-		flex: 1 0 100%;
-		max-height: 0; overflow: hidden; opacity: 0;
-		transition: max-height 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease, padding 180ms ease;
-	}
-	.libsearch.open { max-height: 64px; opacity: 1; padding-top: 8px; }
-	.libnote { margin: 4px 2px 12px; font-size: 14px; color: var(--text-dim); }
-	.everything .globe {
-		flex: none; display: grid; place-items: center;
-		width: 40px; height: 40px; border-radius: 10px;
-		background: var(--surface-raised); color: var(--text-dim);
-	}
-	.libresults { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-	.libresults a {
-		display: flex; align-items: center; gap: 12px;
-		padding: 8px 12px 8px 8px; border-radius: var(--radius); background: var(--surface);
-		color: var(--text); text-decoration: none;
-	}
-	.libtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-	.libtitle { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.libmeta { font-size: 12.5px; color: var(--text-dim); }
 
 	.rows {
 		display: flex;
@@ -884,23 +720,6 @@
 		font-weight: 600;
 		text-decoration: underline;
 	}
-	.fab {
-		position: fixed;
-		right: var(--gutter);
-		bottom: calc(var(--tabbar-h) + var(--tabbar-safe-b) + 16px);
-		z-index: 40;
-		display: grid;
-		place-items: center;
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		background: var(--signal);
-		color: #fff;
-		/* Derived from the accent rather than fixed: this was violet, so picking
-		   any other accent left the button glowing the previous one. */
-		box-shadow: 0 8px 24px color-mix(in srgb, var(--signal-solid) 34%, transparent);
-	}
-
 	.note {
 		position: fixed;
 		left: var(--gutter);

@@ -10,23 +10,33 @@
 	import { loadArrStatus } from '$lib/arr.svelte';
 	import { trackedOf, setTitle, confirmTitle, revertTitle } from '$lib/status.svelte';
 	import { confirmShowAdded } from '$lib/together';
+	import { searchLibrary, type LibraryTitle } from '$lib/librarySearch';
+	import { statusLabel } from '$lib/tracking';
 	import type { SearchResult } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
-	onMount(() => void loadArrStatus());
+	let library = $state<LibraryTitle[]>([]);
+	onMount(() => {
+		void loadArrStatus();
+		// Your whole list, once, so matches show instantly as you type.
+		fetch('/api/library/titles')
+			.then((r) => (r.ok ? r.json() : { titles: [] }))
+			.then((b: { titles: LibraryTitle[] }) => (library = b.titles))
+			.catch(() => {});
+	});
 
 	let { data }: { data: PageData } = $props();
 
+	/* All / Shows / Films, with Books when it's on — Books hands off to its own
+	   search, since books add differently (download / request). */
 	type Scope = 'best' | 'tv' | 'movie';
 	const CHIPS: { id: Scope; label: string }[] = [
-		{ id: 'best', label: 'Best Match' },
-		{ id: 'tv', label: 'TV Shows' },
-		{ id: 'movie', label: 'Movies' }
+		{ id: 'best', label: 'All' },
+		{ id: 'tv', label: 'Shows' },
+		{ id: 'movie', label: 'Films' }
 	];
 
-	/* Seeded from ?q= so links into search — tapping an actor on a show page —
-	   arrive with the query already run. */
 	let query = $state(page.url.searchParams.get('q') ?? '');
 	let scope = $state<Scope>('best');
 	let results = $state<SearchResult[]>([]);
@@ -41,9 +51,20 @@
 		input?.focus();
 	});
 
-	/* §6.4: live search, firing 1s after typing stops. The debounce is the
-	   point — every keystroke would hammer TMDB for results the
-	   user is still in the middle of describing. */
+	/* Already on your list, matched locally — the common case, instant. Scoped to
+	   match the chip, and capped so it never buries the "add something new" rows. */
+	const onList = $derived.by(() => {
+		const q = query.trim();
+		if (!q) return [];
+		return searchLibrary(library, q, 20)
+			.filter((t) => scope === 'best' || t.mediaType === scope)
+			.slice(0, 8);
+	});
+	const onListIds = $derived(new Set(onList.map((t) => `${t.mediaType}:${t.mediaId}`)));
+	/* New to you: the TMDB hits you don't already track (those are shown above). */
+	const fresh = $derived(results.filter((r) => !onListIds.has(`${r.mediaType}:${r.mediaId}`)));
+
+	/* §6.4: live search, firing 1s after typing stops. */
 	let seq = 0;
 	$effect(() => {
 		const q = query.trim();
@@ -63,7 +84,6 @@
 				const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&scope=${s}`);
 				if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
 				const body = await res.json();
-				// Ignore a response that a newer keystroke has already superseded.
 				if (mine !== seq) return;
 				results = body.results;
 				failed = null;
@@ -77,6 +97,11 @@
 		return () => clearTimeout(timer);
 	});
 
+	function toBooks() {
+		const q = query.trim();
+		goto(`/books/search${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+	}
+
 	async function toggleAdd(r: SearchResult) {
 		const k = key(r);
 		if (busy.has(k)) return;
@@ -86,7 +111,6 @@
 		const bset = new Set(busy);
 		bset.add(k);
 		busy = bset;
-		// Shared overlay, so the same title flips on Discover and the detail page too.
 		setTitle(r.source, r.mediaId, { tracked: next });
 
 		try {
@@ -110,9 +134,10 @@
 	}
 
 	const isAdded = (r: SearchResult) => trackedOf(r.source, r.mediaId, r.tracked);
+	const detail = (mt: string, src: string, id: string) => `/${mt === 'movie' ? 'movie' : 'show'}/${src}/${id}`;
 </script>
 
-<PageHeader title="Add to library" onback={() => history.back()} />
+<PageHeader title="Search" onback={() => history.back()} />
 
 <main>
 	<div class="field">
@@ -123,7 +148,7 @@
 			bind:this={input}
 			bind:value={query}
 			type="search"
-			placeholder="Search shows and movies"
+			placeholder="Search your library and TMDB"
 			autocapitalize="off"
 			autocorrect="off"
 			spellcheck="false"
@@ -140,6 +165,9 @@
 				{chip.label}
 			</button>
 		{/each}
+		{#if data.books}
+			<button role="tab" aria-selected="false" onclick={toBooks}>Books</button>
+		{/if}
 	</div>
 
 	{#if failed}
@@ -150,19 +178,13 @@
 			<ul class="grid">
 				{#each data.trending as r (r.mediaId)}
 					<li>
-						<button onclick={() => goto(`/${r.mediaType === 'movie' ? 'movie' : 'show'}/${r.source}/${r.mediaId}`)}>
+						<button onclick={() => goto(detail(r.mediaType, r.source, r.mediaId))}>
 							<Poster src={r.poster} width={104} height={156} radius={9} />
 							<span class="cap">{r.title}</span>
 							{#if r.year}<span class="sub tnum">{r.year}</span>{/if}
 						</button>
 						<span class="gridadd">
-							<AddButton
-								mediaType={r.mediaType}
-								source={r.source}
-								mediaId={r.mediaId}
-								title={r.title}
-								onerror={(m) => (failed = m)}
-							/>
+							<AddButton mediaType={r.mediaType} source={r.source} mediaId={r.mediaId} title={r.title} onerror={(m) => (failed = m)} />
 						</span>
 						<span class="gridarradd">
 							<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={30} />
@@ -171,44 +193,62 @@
 				{/each}
 			</ul>
 		{:else}
-			<p class="msg">Search TMDB for any show or film to add.</p>
+			<p class="msg">Search your library, or all of TMDB to add something new.</p>
 		{/if}
-	{:else if searching}
-		<p class="msg">Searching…</p>
-	{:else if !results.length}
-		<p class="msg">Nothing found for “{query.trim()}”.</p>
 	{:else}
-		<ul class="results">
-			{#each results as r (key(r))}
-				<li>
-					<button class="body" onclick={() => goto(`/${r.mediaType === 'movie' ? 'movie' : 'show'}/${r.source}/${r.mediaId}`)}>
-						<Poster src={r.poster} width={46} height={69} radius={7} />
-						<span class="meta">
-							<span class="title">{r.title}</span>
-							<span class="sub tnum">
-								{r.mediaType === 'tv' ? 'TV' : 'Movie'}{r.year ? ` · ${r.year}` : ''}
+		{#if onList.length}
+			<h2 class="eyebrow">On your list</h2>
+			<ul class="results">
+				{#each onList as t (t.mediaType + t.mediaId)}
+					<li>
+						<a class="body" href={detail(t.mediaType, 'tmdb', t.mediaId)}>
+							<Poster src={t.poster} width={46} height={69} radius={7} />
+							<span class="meta">
+								<span class="title">{t.title}</span>
+								<span class="sub tnum">{t.mediaType === 'movie' ? 'Film' : 'Show'}{t.year ? ` · ${t.year}` : ''}{statusLabel(t.status) ? ` · ${statusLabel(t.status)}` : ''}</span>
 							</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		{#if searching && !fresh.length}
+			<p class="msg">Searching…</p>
+		{:else if fresh.length}
+			<h2 class="eyebrow">{onList.length ? 'Add something new' : 'From TMDB'}</h2>
+			<ul class="results">
+				{#each fresh as r (key(r))}
+					<li>
+						<a class="body" href={detail(r.mediaType, r.source, r.mediaId)}>
+							<Poster src={r.poster} width={46} height={69} radius={7} />
+							<span class="meta">
+								<span class="title">{r.title}</span>
+								<span class="sub tnum">{r.mediaType === 'tv' ? 'Show' : 'Film'}{r.year ? ` · ${r.year}` : ''}</span>
+							</span>
+						</a>
+						<button
+							class="add"
+							class:on={isAdded(r)}
+							disabled={busy.has(key(r))}
+							aria-label={isAdded(r) ? `Remove ${r.title}` : `Add ${r.title}`}
+							onclick={() => toggleAdd(r)}
+						>
+							{#if isAdded(r)}
+								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+							{:else}
+								<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+							{/if}
+						</button>
+						<span class="rowarr">
+							<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={34} />
 						</span>
-					</button>
-					<button
-						class="add"
-						class:on={isAdded(r)}
-						disabled={busy.has(key(r))}
-						aria-label={isAdded(r) ? `Remove ${r.title}` : `Add ${r.title}`}
-						onclick={() => toggleAdd(r)}
-					>
-						{#if isAdded(r)}
-							<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-						{:else}
-							<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
-						{/if}
-					</button>
-					<span class="rowarr">
-						<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={34} />
-					</span>
-				</li>
-			{/each}
-		</ul>
+					</li>
+				{/each}
+			</ul>
+		{:else if !onList.length}
+			<p class="msg">Nothing found for “{query.trim()}”.</p>
+		{/if}
 	{/if}
 </main>
 
@@ -238,7 +278,7 @@
 		background: none;
 		color: var(--text);
 		font: inherit;
-		font-size: 16px; /* 16px keeps iOS from zooming the viewport on focus */
+		font-size: 16px;
 		outline: none;
 		-webkit-appearance: none;
 		appearance: none;
@@ -286,9 +326,10 @@
 	}
 
 	.eyebrow {
-		margin: 4px 0 10px; font-size: 12.5px; font-weight: 700;
+		margin: 16px 0 10px; font-size: 12.5px; font-weight: 700;
 		text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim);
 	}
+	.eyebrow:first-child { margin-top: 4px; }
 	.grid {
 		display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
 		gap: 16px 12px; margin: 0; padding: 0; list-style: none;
@@ -331,9 +372,8 @@
 		padding: 8px;
 		min-width: 0;
 		text-align: left;
-	}
-	.body:disabled {
-		cursor: default;
+		color: var(--text);
+		text-decoration: none;
 	}
 	.meta {
 		display: flex;
@@ -347,10 +387,6 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-	.sub {
-		font-size: 12px;
-		color: var(--text-dim);
 	}
 
 	.add {

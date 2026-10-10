@@ -155,12 +155,14 @@
 			{#if data.media.movie}<button role="tab" aria-selected="false" onclick={() => goto('/?type=movie', { noScroll: true })}>Movies</button>{/if}
 			<button role="tab" aria-selected="true" class="active">Books</button>
 		</div>
-		<button class="hbtn" onclick={() => (sortOpen = true)} aria-label="Sort">
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M6.5 12h11M10 17h4" /></svg>
-		</button>
-		<button class="hbtn last" class:on={bookFiltersActive(filters, BACKLOG_FILTERS)} onclick={() => (filterOpen = true)} aria-label="Filter">
-			<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
-		</button>
+		<div class="actions">
+			<button onclick={() => (sortOpen = true)} aria-label="Sort">
+				<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M6.5 12h11M10 17h4" /></svg>
+			</button>
+			<button class:on={bookFiltersActive(filters, BACKLOG_FILTERS)} onclick={() => (filterOpen = true)} aria-label="Filter">
+				<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+			</button>
+		</div>
 	</header>
 
 	<main use:tabReselect={{ tab: 'watchlist' }}>
@@ -312,19 +314,7 @@
 
 <style>
 	/* Frame from the global `.app` shell (app.css); the segments mirror the
-	   watchlist's so Books reads as its third segment. */
-	header { display: flex; align-items: center; }
-	/* The shared segmented tabs (app.css), sharing the row with the icons. */
-	.segments { flex: 1; }
-
-	/* Header icons as on the TV/Movies watchlist. */
-	.hbtn {
-		flex: none; display: grid; place-items: center;
-		width: 38px; height: var(--tap); border-radius: 11px; color: var(--text-dim);
-	}
-	.hbtn.last { margin-right: -8px; }
-	.hbtn.on { color: var(--signal-solid); }
-
+	   watchlist's so Books reads as its third segment (header grammar in app.css). */
 	/* Clear the tab bar and the floating + button. */
 	main { padding: 4px var(--gutter) calc(var(--tabbar-footprint) + 88px); }
 

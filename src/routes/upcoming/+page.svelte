@@ -4,6 +4,7 @@
 	import { afterNavigate, goto } from '$app/navigation';
 	import Poster from '$lib/components/Poster.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import SearchFab from '$lib/components/SearchFab.svelte';
 	import { tabReselect } from '$lib/tabReselect';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { dayKey, dayLabel, epLabel, formatAirDate, relativeWhen } from '$lib/format';
@@ -148,18 +149,20 @@
 
 <div class="app">
 	<header>
-		<div class="titlerow">
-			<h1>Upcoming</h1>
-			{#if offeredKinds.length > 1}<div class="actions"><button class="filter" class:on={offeredKinds.some((o) => !kinds[o.id])} aria-expanded={filterOpen} aria-label="Show TV, movies or books" onclick={() => (filterOpen = !filterOpen)}>
-				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
-			</button></div>{/if}
-		</div>
-		{#if filterOpen}
-			<div class="kinds" role="group" aria-label="Show">
-				{#each offeredKinds as k (k.id)}
-					<button class:on={kinds[k.id]} aria-pressed={kinds[k.id]} onclick={() => toggleKind(k.id)}>{k.label}</button>
-				{/each}
+		<h1 class="pagetitle">Upcoming</h1>
+		{#if offeredKinds.length > 1}
+			<div class="actions">
+				<button class:on={offeredKinds.some((o) => !kinds[o.id])} aria-expanded={filterOpen} aria-label="Show TV, movies or books" onclick={() => (filterOpen = !filterOpen)}>
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+				</button>
 			</div>
+			{#if filterOpen}
+				<div class="strip kinds" role="group" aria-label="Show">
+					{#each offeredKinds as k (k.id)}
+						<button class:on={kinds[k.id]} aria-pressed={kinds[k.id]} onclick={() => toggleKind(k.id)}>{k.label}</button>
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</header>
 
@@ -241,6 +244,8 @@
 		{/await}
 	</main>
 
+	<SearchFab />
+
 	<TabBar current="upcoming" />
 </div>
 
@@ -254,8 +259,6 @@
 <style>
 	/* The filter stays out of the way: one quiet icon, a row of three chips only
 	   when asked for. The accent marks that something is hidden. */
-	/* Sized as the other tab pages' header buttons (app.css). */
-	.filter.on { color: var(--signal-solid); }
 	.kinds { display: flex; gap: 6px; }
 	.kinds button {
 		min-height: 32px; padding: 0 14px; border-radius: 9px;
