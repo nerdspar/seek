@@ -281,7 +281,7 @@
 <div class="app">
 	<header>
 		<div class="segments" role="tablist">
-			{#each [{ id: 'tv' as const, label: 'TV' }, { id: 'movie' as const, label: 'Movies' }].filter((seg) => data.media[seg.id]) as seg (seg.id)}
+			{#each [{ id: 'tv' as const, label: 'TV Shows' }, { id: 'movie' as const, label: 'Movies' }].filter((seg) => data.media[seg.id]) as seg (seg.id)}
 				<button
 					role="tab"
 					aria-selected={data.mediaType === seg.id}

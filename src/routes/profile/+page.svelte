@@ -45,6 +45,11 @@
 
 	const fmt = (n: number) => n.toLocaleString();
 
+	/* Favourite genres and top networks show a share of your watch time; tap either
+	   list to flip the whole thing to hours (rounded) and back. */
+	let statUnit = $state<'pct' | 'hours'>('pct');
+	const statValue = (v: { pct: number; hours: number }) => (statUnit === 'pct' ? `${v.pct}%` : `${v.hours}h`);
+
 	/* Watching and Reading are two views; links keep the range and the view. */
 	const both = $derived((data.media.tv || data.media.movie) && data.media.book);
 	const href = (range: string, view: string) =>
@@ -426,7 +431,7 @@
 						<h2>Favourite genres</h2>
 						<ul class="list">
 							{#each stats.topGenres as g (g.name)}
-								<li><span>{g.name}</span><span class="dim tnum">{g.duration}</span></li>
+								<li><button class="statrow" onclick={() => (statUnit = statUnit === 'pct' ? 'hours' : 'pct')}><span>{g.name}</span><span class="dim tnum">{statValue(g)}</span></button></li>
 							{/each}
 						</ul>
 					</section>
@@ -437,7 +442,7 @@
 						<h2>Top networks</h2>
 						<ul class="list">
 							{#each stats.topStudios as s (s.name)}
-								<li><span>{s.name}</span><span class="dim tnum">{s.watched}</span></li>
+								<li><button class="statrow" onclick={() => (statUnit = statUnit === 'pct' ? 'hours' : 'pct')}><span>{s.name}</span><span class="dim tnum">{statValue(s)}</span></button></li>
 							{/each}
 						</ul>
 					</section>
@@ -467,12 +472,16 @@
 	/* Frame from the global `.app` shell (app.css). */
 	.tiles.three { grid-template-columns: repeat(3, 1fr); }
 
-	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-	.chips button {
-		flex: none; min-height: 32px; padding: 0 12px; border-radius: 9px;
+	/* The range: four equal columns across the frame. */
+	.strip.chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+	.strip.chips button {
+		min-height: 32px; padding: 0 4px; border-radius: 9px; white-space: nowrap;
 		background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--text-dim);
 	}
-	.chips button.on { background: var(--surface-raised); color: var(--text); }
+	.strip.chips button.on { background: var(--surface-raised); color: var(--text); }
+	/* Watching / Reading spans exactly the first two range columns (2 cols + 1 gap). */
+	.segments { display: flex; width: calc(50% - 3px); }
+	.segments button { flex: 1; min-width: 0; padding: 0; }
 
 	main { padding: 10px var(--gutter) calc(var(--tabbar-footprint) + 24px); }
 
@@ -570,6 +579,7 @@
 		border-radius: var(--radius); background: var(--surface); font-size: 14px;
 	}
 	.dim { color: var(--text-dim); font-size: 12.5px; }
+	.statrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; color: inherit; font: inherit; text-align: left; }
 
 	.loading { display: flex; flex-direction: column; gap: 16px; }
 	.sk { border-radius: var(--radius); background: var(--surface); animation: pulse 1.4s ease-in-out infinite; }

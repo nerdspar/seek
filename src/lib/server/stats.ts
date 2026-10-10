@@ -41,11 +41,11 @@ export type Stats = {
 	/** Hours per calendar month for the window, split by type — the Profile chart.
 	 *  `labels` are month names; each series is the same length. */
 	monthly: { labels: string[]; all: number[]; tv: number[]; movie: number[] };
-	topGenres: { name: string; duration: string }[];
+	topGenres: { name: string; pct: number; hours: number }[];
 	topTitles: TopTitle[];
 	/** What you rated highest. Empty until you rate something. */
 	topRated: RatedTitle[];
-	topStudios: { name: string; watched: string; shows: number }[];
+	topStudios: { name: string; pct: number; hours: number; shows: number }[];
 };
 
 /** Named range → its dates. */

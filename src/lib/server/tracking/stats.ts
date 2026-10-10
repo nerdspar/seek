@@ -122,6 +122,8 @@ export function seekStats(userId: number, householdId: number, key: RangeKey, no
 	const inRange = all.filter((p) => (!start || p.day >= start) && (!end || p.day <= end));
 
 	const minutes = inRange.reduce((n, p) => n + p.minutes, 0);
+	// Genres and networks are TV-only, so their share is of TV time, not everything.
+	const tvMinutes = inRange.reduce((n, p) => (p.kind === 'tv' ? n + p.minutes : n), 0);
 	const weekdayMin = Array(7).fill(0);
 	for (const p of inRange) weekdayMin[new Date(p.at).getDay()] += p.minutes;
 	const busiest = weekdayMin.indexOf(Math.max(...weekdayMin));
@@ -197,7 +199,7 @@ export function seekStats(userId: number, householdId: number, key: RangeKey, no
 		mostActiveDayPct: minutes ? Math.round((weekdayMin[busiest] / minutes) * 100) : null,
 		weekday: WEEKDAYS.map((l, i) => ({ label: l, hours: Math.round((weekdayMin[i] / 60) * 100) / 100 })),
 		monthly,
-		topGenres: top(genres, 6).map(([name, g]) => ({ name, duration: duration(g.minutes) })),
+		topGenres: top(genres, 6).map(([name, g]) => ({ name, pct: tvMinutes ? Math.round((g.minutes / tvMinutes) * 100) : 0, hours: Math.round(g.minutes / 60) })),
 		topTitles: top(shows, 5).map(([id, x]) => ({
 			title: info.get(`tv:${id}`)?.title ?? 'Untitled',
 			poster: info.get(`tv:${id}`)?.poster ?? null,
@@ -217,7 +219,7 @@ export function seekStats(userId: number, householdId: number, key: RangeKey, no
 		topStudios: [...networks.entries()]
 			.sort((a, b) => b[1].minutes - a[1].minutes)
 			.slice(0, 5)
-			.map(([name, x]) => ({ name, watched: duration(x.minutes), shows: x.shows.size }))
+			.map(([name, x]) => ({ name, pct: tvMinutes ? Math.round((x.minutes / tvMinutes) * 100) : 0, hours: Math.round(x.minutes / 60), shows: x.shows.size }))
 	};
 }
 

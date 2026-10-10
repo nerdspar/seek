@@ -42,9 +42,9 @@ describe('seekStats', () => {
 	it("adds up this year's plays with their runtimes, split into shows, anime and films", () => {
 		const s = seekStats(1, 1, 'this_year', new Date('2026-10-09T12:00:00Z'));
 		expect(s).toMatchObject({ plays: 3, minutes: 145, counts: { tv: 1, anime: 1, movie: 0, total: 2 }, completed: 1 });
-		expect(s.topGenres).toEqual([{ name: 'Drama', duration: '2h' }, { name: 'Animation', duration: '25min' }]);
+		expect(s.topGenres).toEqual([{ name: 'Drama', pct: 83, hours: 2 }, { name: 'Animation', pct: 17, hours: 0 }]);
 		expect(s.topTitles[0]).toMatchObject({ title: 'Lanterns', plays: 2, duration: '2h' });
-		expect(s.topStudios[0]).toEqual({ name: 'HBO', watched: '2h', shows: 1 });
+		expect(s.topStudios[0]).toEqual({ name: 'HBO', pct: 83, hours: 2, shows: 1 });
 		expect(s.topRated.map((r) => [r.title, r.score])).toEqual([['Lanterns', 9], ['The Matrix', 8]]);
 		expect(s.monthly.all[8]).toBe(2); // 145 min in September
 		expect(s.weekday.find((w) => w.label === 'Fri')?.hours).toBe(1.42);
