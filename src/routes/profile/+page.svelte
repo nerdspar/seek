@@ -48,7 +48,7 @@
 	/* Favourite genres and top networks show a share of your watch time; tap either
 	   list to flip the whole thing to hours (rounded) and back. */
 	let statUnit = $state<'pct' | 'hours'>('pct');
-	const statValue = (v: { pct: number; hours: number }) => (statUnit === 'pct' ? `${v.pct}%` : `${v.hours}h`);
+	const statValue = (v: { pct: number; hours: number }) => (statUnit === 'pct' ? `${v.pct}%` : `${v.hours.toLocaleString()}h`);
 
 	/* Watching and Reading are two views; links keep the range and the view. */
 	const both = $derived((data.media.tv || data.media.movie) && data.media.book);

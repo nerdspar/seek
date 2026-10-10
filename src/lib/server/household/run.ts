@@ -11,7 +11,7 @@ import { getPrefs } from '../prefs';
 import { sendToDevices } from '../push';
 import { backfillShow, mirrorMembers } from './mirror';
 import { share, unshare, type SharedRef } from './shared';
-import { decide, noteShared, scanNewShows, settle, type Added, type Deps, type Settled, type ShowRef } from './newShows';
+import { decide, newShowsMode, noteShared, scanNewShows, settle, type Added, type Deps, type Settled, type ShowRef } from './newShows';
 
 /** Sharing needs at least two people in the household. */
 export const mirroringAvailable = (householdId: number) => mirrorMembers(householdId).length >= 2;
@@ -45,6 +45,15 @@ export function settleAdded(show: ShowRef, choice?: 'together' | 'solo'): Settle
 		if (choice) {
 			decide(me.householdId, me.id, show, choice, newShowDeps);
 			return choice;
+		}
+		/* Added in Seek: the add toast asks "together or alone?", so this show
+		   should not also sit in the Watchlist inbox. On "ask", default it to solo
+		   (changeable from the toast or the show page) rather than leaving it
+		   pending; "together"/"solo" households settle as set. The inbox stays for
+		   shows that appear with no toast — a Jellyfin play, a download. */
+		if (newShowsMode(me.householdId) === 'ask') {
+			noteShared(me.householdId, me.id, show, false);
+			return 'pending';
 		}
 		return settle(me.householdId, me.id, show, newShowDeps);
 	} catch (err) {
