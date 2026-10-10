@@ -5,6 +5,8 @@
 	import { pendingCount } from '$lib/queue.svelte';
 	import { afterNavigate, invalidateAll } from '$app/navigation';
 	import { consumeWatchlist } from '$lib/dirty';
+	import { togetherPick } from '$lib/togetherPick.svelte';
+	import TogetherSheet from '$lib/components/TogetherSheet.svelte';
 	let { children } = $props();
 
 	/* Un-synced writes, waiting for a connection. Silent at zero, which is the
@@ -24,6 +26,10 @@
 
 <NavProgress />
 {@render children()}
+
+{#if togetherPick.show}
+	<TogetherSheet show={togetherPick.show} />
+{/if}
 
 {#if pending > 0}
 	<div class="pending" role="status" aria-label={`${pending} change${pending === 1 ? '' : 's'} waiting to sync`}>

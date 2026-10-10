@@ -1,4 +1,5 @@
 import { notify } from '$lib/notices.svelte';
+import { openTogetherPicker } from '$lib/togetherPick.svelte';
 
 /**
  * After a show is added: if the household asks "together or solo?" for new
@@ -17,16 +18,14 @@ export async function answerTogether(show: Show, choice: 'together' | 'solo'): P
 }
 
 export function confirmShowAdded(show: Show, addResponse: { household?: unknown }, message = `Added ${show.title}`): void {
-	if (addResponse.household !== 'pending') {
+	const h = addResponse.household;
+	// Only when the household shares shows and this one can still be decided.
+	if (h !== 'together' && h !== 'solo' && h !== 'pending') {
 		void notify(message);
 		return;
 	}
-	void notify(message, {
-		label: 'Watching together',
-		run: () =>
-			answerTogether(show, 'together').then(
-				() => notify(`Watching ${show.title} together`),
-				(err) => notify(`Couldn't share ${show.title} — ${err instanceof Error ? err.message : err}`)
-			)
-	});
+	const shared = h === 'together';
+	const label = h === 'pending' ? 'Together or alone?' : shared ? 'Watching together' : 'Watching alone';
+	// Tapping opens the picker so it can be changed either way.
+	void notify(message, { label, run: () => openTogetherPicker({ ...show, shared }) });
 }

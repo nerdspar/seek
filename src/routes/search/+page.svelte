@@ -12,6 +12,7 @@
 	import { confirmShowAdded } from '$lib/together';
 	import { searchLibrary, type LibraryTitle } from '$lib/librarySearch';
 	import { statusLabel } from '$lib/tracking';
+	import type { DiscoveryCard } from '$lib/books';
 	import type { SearchResult } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -28,9 +29,8 @@
 
 	let { data }: { data: PageData } = $props();
 
-	/* All / Shows / Films, with Books when it's on — Books hands off to its own
-	   search, since books add differently (download / request). */
-	type Scope = 'best' | 'tv' | 'movie';
+	/* All / Shows / Films, with Books when it's on. */
+	type Scope = 'best' | 'tv' | 'movie' | 'books';
 	const CHIPS: { id: Scope; label: string }[] = [
 		{ id: 'best', label: 'All' },
 		{ id: 'tv', label: 'Shows' },
@@ -46,6 +46,28 @@
 	let input: HTMLInputElement | undefined = $state();
 
 	const key = (r: SearchResult) => `${r.mediaType}:${r.source}:${r.mediaId}`;
+
+	/* Books come from Hardcover, shown in All and under the Books chip. */
+	let books = $state<DiscoveryCard[]>([]);
+	let bookSearching = $state(false);
+	let addedBooks = $state<Record<number, boolean>>({});
+	const bookAdded = (c: DiscoveryCard) => addedBooks[c.hardcoverId] || Boolean(c.owned || c.mine);
+	async function addBook(c: DiscoveryCard) {
+		if (bookAdded(c)) return;
+		addedBooks = { ...addedBooks, [c.hardcoverId]: true };
+		try {
+			const res = await fetch('/api/books/mine', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ hardcoverId: c.hardcoverId, status: 'want_to_read' })
+			});
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+		} catch (err) {
+			const { [c.hardcoverId]: _drop, ...rest } = addedBooks;
+			addedBooks = rest;
+			failed = err instanceof Error ? err.message : String(err);
+		}
+	}
 
 	$effect(() => {
 		input?.focus();
@@ -70,7 +92,7 @@
 		const q = query.trim();
 		const s = scope;
 
-		if (!q) {
+		if (!q || s === 'books') {
 			results = [];
 			searching = false;
 			failed = null;
@@ -97,10 +119,33 @@
 		return () => clearTimeout(timer);
 	});
 
-	function toBooks() {
+	/* Books, when books are on and the chip allows them (All or Books). */
+	let bookSeq = 0;
+	$effect(() => {
 		const q = query.trim();
-		goto(`/books/search${q ? `?q=${encodeURIComponent(q)}` : ''}`);
-	}
+		const s = scope;
+		if (!data.books || !q || (s !== 'best' && s !== 'books')) {
+			books = [];
+			bookSearching = false;
+			return;
+		}
+		bookSearching = true;
+		const mine = ++bookSeq;
+		const timer = setTimeout(async () => {
+			try {
+				const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}`);
+				if (!res.ok) return;
+				const body = await res.json();
+				if (mine !== bookSeq) return;
+				books = body.results ?? [];
+			} catch {
+				/* a book search miss shouldn't blank the TMDB results */
+			} finally {
+				if (mine === bookSeq) bookSearching = false;
+			}
+		}, 1000);
+		return () => clearTimeout(timer);
+	});
 
 	async function toggleAdd(r: SearchResult) {
 		const k = key(r);
@@ -166,7 +211,7 @@
 			</button>
 		{/each}
 		{#if data.books}
-			<button role="tab" aria-selected="false" onclick={toBooks}>Books</button>
+			<button role="tab" aria-selected={scope === 'books'} class:on={scope === 'books'} onclick={() => (scope = 'books')}>Books</button>
 		{/if}
 	</div>
 
@@ -196,58 +241,94 @@
 			<p class="msg">Search your library, or all of TMDB to add something new.</p>
 		{/if}
 	{:else}
-		{#if onList.length}
-			<h2 class="eyebrow">On your list</h2>
-			<ul class="results">
-				{#each onList as t (t.mediaType + t.mediaId)}
-					<li>
-						<a class="body" href={detail(t.mediaType, 'tmdb', t.mediaId)}>
-							<Poster src={t.poster} width={46} height={69} radius={7} />
-							<span class="meta">
-								<span class="title">{t.title}</span>
-								<span class="sub tnum">{t.mediaType === 'movie' ? 'Film' : 'Show'}{t.year ? ` · ${t.year}` : ''}{statusLabel(t.status) ? ` · ${statusLabel(t.status)}` : ''}</span>
+		{#if scope !== 'books'}
+			{#if onList.length}
+				<h2 class="eyebrow">On your list</h2>
+				<ul class="results">
+					{#each onList as t (t.mediaType + t.mediaId)}
+						<li>
+							<a class="body" href={detail(t.mediaType, 'tmdb', t.mediaId)}>
+								<Poster src={t.poster} width={46} height={69} radius={7} />
+								<span class="meta">
+									<span class="title">{t.title}</span>
+									<span class="sub tnum">{t.mediaType === 'movie' ? 'Film' : 'Show'}{t.year ? ` · ${t.year}` : ''}{statusLabel(t.status) ? ` · ${statusLabel(t.status)}` : ''}</span>
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
+			{#if fresh.length}
+				<h2 class="eyebrow">{onList.length ? 'Add something new' : 'From TMDB'}</h2>
+				<ul class="results">
+					{#each fresh as r (key(r))}
+						<li>
+							<a class="body" href={detail(r.mediaType, r.source, r.mediaId)}>
+								<Poster src={r.poster} width={46} height={69} radius={7} />
+								<span class="meta">
+									<span class="title">{r.title}</span>
+									<span class="sub tnum">{r.mediaType === 'tv' ? 'Show' : 'Film'}{r.year ? ` · ${r.year}` : ''}</span>
+								</span>
+							</a>
+							<button
+								class="add"
+								class:on={isAdded(r)}
+								disabled={busy.has(key(r))}
+								aria-label={isAdded(r) ? `Remove ${r.title}` : `Add ${r.title}`}
+								onclick={() => toggleAdd(r)}
+							>
+								{#if isAdded(r)}
+									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
+								{:else}
+									<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+								{/if}
+							</button>
+							<span class="rowarr">
+								<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={34} />
 							</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{/if}
 
-		{#if searching && !fresh.length}
-			<p class="msg">Searching…</p>
-		{:else if fresh.length}
-			<h2 class="eyebrow">{onList.length ? 'Add something new' : 'From TMDB'}</h2>
+		{#if books.length}
+			<h2 class="eyebrow">{scope === 'books' ? 'Books' : 'From your books shelf'}</h2>
 			<ul class="results">
-				{#each fresh as r (key(r))}
+				{#each books as b (b.hardcoverId)}
 					<li>
-						<a class="body" href={detail(r.mediaType, r.source, r.mediaId)}>
-							<Poster src={r.poster} width={46} height={69} radius={7} />
+						<a class="body" href="/books">
+							<Poster src={b.coverUrl} width={46} height={69} radius={7} />
 							<span class="meta">
-								<span class="title">{r.title}</span>
-								<span class="sub tnum">{r.mediaType === 'tv' ? 'Show' : 'Film'}{r.year ? ` · ${r.year}` : ''}</span>
+								<span class="title">{b.title}</span>
+								<span class="sub">Book{b.author ? ` · ${b.author}` : ''}{b.year ? ` · ${b.year}` : ''}</span>
 							</span>
 						</a>
 						<button
 							class="add"
-							class:on={isAdded(r)}
-							disabled={busy.has(key(r))}
-							aria-label={isAdded(r) ? `Remove ${r.title}` : `Add ${r.title}`}
-							onclick={() => toggleAdd(r)}
+							class:on={bookAdded(b)}
+							disabled={bookAdded(b)}
+							aria-label={bookAdded(b) ? `${b.title} is on your shelf` : `Add ${b.title} to want to read`}
+							onclick={() => addBook(b)}
 						>
-							{#if isAdded(r)}
+							{#if bookAdded(b)}
 								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
 							{:else}
 								<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
 							{/if}
 						</button>
-						<span class="rowarr">
-							<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={34} />
-						</span>
 					</li>
 				{/each}
 			</ul>
-		{:else if !onList.length}
-			<p class="msg">Nothing found for “{query.trim()}”.</p>
+		{/if}
+
+		{#if !onList.length && !fresh.length && !books.length}
+			{#if searching || bookSearching}
+				<p class="msg">Searching…</p>
+			{:else}
+				<p class="msg">Nothing found for “{query.trim()}”.</p>
+			{/if}
 		{/if}
 	{/if}
 </main>
