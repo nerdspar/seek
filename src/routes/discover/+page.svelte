@@ -491,25 +491,6 @@
 
 <style>
 	/* Frame from the global `.app` shell (app.css). */
-	h1 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
-	/* Discover → Books' header: the title with its icons on the right. */
-	.titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-	.titlerow h1 { margin: 0; }
-	/* Negative margins: the 44px target must not make the header taller. */
-	.actions { display: flex; align-items: center; gap: 2px; margin: -10px -10px -10px 0; }
-	.icon {
-		flex: none; display: grid; place-items: center;
-		width: var(--tap); height: var(--tap);
-		border-radius: 50%; color: var(--text-dim);
-	}
-
-	/* Full width, each tab an equal share — the same bar on TV, Movies and Books. */
-	.segments { display: flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
-	.segments button {
-		flex: 1; min-height: 32px; padding: 0 18px; border-radius: 9px;
-		font-size: 13px; font-weight: 600; color: var(--text-dim);
-	}
-	.segments button.on { background: var(--surface-raised); color: var(--text); }
 
 	main { padding: 6px 0 calc(var(--tabbar-footprint) + 24px); }
 

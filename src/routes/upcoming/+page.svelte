@@ -150,9 +150,9 @@
 	<header>
 		<div class="titlerow">
 			<h1>Upcoming</h1>
-			{#if offeredKinds.length > 1}<button class="filter" class:on={offeredKinds.some((o) => !kinds[o.id])} aria-expanded={filterOpen} aria-label="Show TV, movies or books" onclick={() => (filterOpen = !filterOpen)}>
-				<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
-			</button>{/if}
+			{#if offeredKinds.length > 1}<div class="actions"><button class="filter" class:on={offeredKinds.some((o) => !kinds[o.id])} aria-expanded={filterOpen} aria-label="Show TV, movies or books" onclick={() => (filterOpen = !filterOpen)}>
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+			</button></div>{/if}
 		</div>
 		{#if filterOpen}
 			<div class="kinds" role="group" aria-label="Show">
@@ -252,15 +252,11 @@
 {/if}
 
 <style>
-	.titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 	/* The filter stays out of the way: one quiet icon, a row of three chips only
 	   when asked for. The accent marks that something is hidden. */
-	.filter {
-		flex: none; display: grid; place-items: center; width: 38px; height: 38px;
-		margin: -6px -8px -6px 0; border-radius: 11px; color: var(--text-dim);
-	}
+	/* Sized as the other tab pages' header buttons (app.css). */
 	.filter.on { color: var(--signal-solid); }
-	.kinds { display: flex; gap: 6px; margin-top: 10px; }
+	.kinds { display: flex; gap: 6px; }
 	.kinds button {
 		min-height: 32px; padding: 0 14px; border-radius: 9px;
 		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
@@ -270,12 +266,6 @@
 	/* Already-aired days sit above Today; muted so the eye lands on what's next. */
 	section.past {
 		opacity: 0.6;
-	}
-	h1 {
-		margin: 0;
-		font-size: 26px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
 	}
 	main {
 		padding: 4px var(--gutter) calc(var(--tabbar-footprint) + 24px);

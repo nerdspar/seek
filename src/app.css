@@ -296,3 +296,61 @@ img {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* ── Tab pages' header pieces, defined once so the pages can't drift ──────────
+   The title row is 44px — the height of its icon buttons — whether a page has
+   buttons or not, so Discover, Profile, Upcoming and Discover → Books line up.
+   Segmented tabs are 44px with their padding (38px buttons): the tap target,
+   and level with the watchlist's sort and filter buttons beside them. */
+.titlerow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: var(--tap);
+	margin-bottom: 10px;
+}
+.titlerow h1 {
+	margin: 0;
+	font-size: 26px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+/* The buttons' 44px circles reach into the gutter so the icons sit flush. */
+.titlerow .actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	margin-right: -10px;
+}
+.titlerow .actions button {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: var(--tap);
+	height: var(--tap);
+	border-radius: 50%;
+	color: var(--text-dim);
+}
+.segments {
+	display: flex;
+	gap: 2px;
+	padding: 3px;
+	border-radius: 11px;
+	background: var(--surface);
+}
+.segments button {
+	flex: 1;
+	min-height: 38px;
+	padding: 0 12px;
+	border-radius: 9px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-dim);
+	transition: background 140ms ease, color 140ms ease;
+}
+.segments button.on,
+.segments button.active {
+	background: var(--surface-raised);
+	color: var(--text);
+}

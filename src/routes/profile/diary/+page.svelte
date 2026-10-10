@@ -181,9 +181,7 @@
 {/if}
 
 <style>
-	.segments { display: flex; gap: 2px; padding: 3px; margin: 4px 0 14px; border-radius: 11px; background: var(--surface); }
-	.segments button { flex: 1; min-height: 34px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
-	.segments button.active { background: var(--surface-raised); color: var(--text); }
+	.segments { margin: 4px 0 14px; }
 	main { padding: 0 var(--gutter) calc(var(--safe-b) + 32px); }
 	section { margin-bottom: 20px; }
 	h2 {

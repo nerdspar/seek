@@ -734,26 +734,9 @@
 		color: var(--signal-solid);
 	}
 
+	/* The shared segmented tabs (app.css), sharing the row with sort and filter. */
 	.segments {
-		display: flex;
 		flex: 1;
-		gap: 2px;
-		padding: 3px;
-		border-radius: 11px;
-		background: var(--surface);
-	}
-	.segments button {
-		flex: 1;
-		min-height: 38px;
-		border-radius: 9px;
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--text-dim);
-		transition: background 140ms ease, color 140ms ease;
-	}
-	.segments button.active {
-		background: var(--surface-raised);
-		color: var(--text);
 	}
 
 	/* The fixed tab bar and the floating add button both overlay the bottom now

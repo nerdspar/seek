@@ -314,16 +314,8 @@
 	/* Frame from the global `.app` shell (app.css); the segments mirror the
 	   watchlist's so Books reads as its third segment. */
 	header { display: flex; align-items: center; }
-	.segments {
-		display: flex; flex: 1; gap: 2px; padding: 3px;
-		border-radius: 11px; background: var(--surface);
-	}
-	.segments button {
-		flex: 1; min-height: 38px; border-radius: 9px;
-		font-size: 13px; font-weight: 600; color: var(--text-dim);
-		transition: background 140ms ease, color 140ms ease;
-	}
-	.segments button.active { background: var(--surface-raised); color: var(--text); }
+	/* The shared segmented tabs (app.css), sharing the row with the icons. */
+	.segments { flex: 1; }
 
 	/* Header icons as on the TV/Movies watchlist. */
 	.hbtn {

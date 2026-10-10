@@ -463,25 +463,8 @@
 
 <style>
 	/* Frame from the global `.app` shell (app.css). */
-	.titlerow {
-		display: flex; align-items: center; justify-content: space-between; gap: 12px;
-		margin-bottom: 10px;
-	}
-	h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
-	.actions { display: flex; align-items: center; gap: 2px; margin-right: -10px; }
-	.gear {
-		flex: none; display: grid; place-items: center;
-		width: var(--tap); height: var(--tap);
-		border-radius: 50%; color: var(--text-dim);
-	}
-
-	/* Watching / Reading — the watchlist's segmented control. */
-	.segments { display: flex; gap: 2px; padding: 3px; margin-bottom: 10px; border-radius: 11px; background: var(--surface); }
-	.segments button {
-		flex: 1; min-height: 34px; border-radius: 9px;
-		font-size: 13px; font-weight: 600; color: var(--text-dim);
-	}
-	.segments button.active { background: var(--surface-raised); color: var(--text); }
+	/* Watching / Reading: the shared segmented tabs (app.css), with the range chips below. */
+	.segments { margin-bottom: 10px; }
 	.tiles.three { grid-template-columns: repeat(3, 1fr); }
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
