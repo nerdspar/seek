@@ -9,6 +9,8 @@
 	import InteractiveSearchSheet from '$lib/components/InteractiveSearchSheet.svelte';
 	import FileActionsSheet from '$lib/components/FileActionsSheet.svelte';
 	import SeasonManageSheet from '$lib/components/SeasonManageSheet.svelte';
+	import PlaysSheet from '$lib/components/PlaysSheet.svelte';
+	import { longpress } from '$lib/longpress';
 	import { haptic } from '$lib/haptics';
 	import { touchWatchlist } from '$lib/dirty';
 	import { queuedWrite } from '$lib/queue.svelte';
@@ -204,6 +206,8 @@
 	let overrides = $state<Record<number, EpisodeRow>>({});
 	let inFlight = $state<Set<number>>(new Set());
 	let sheetFor = $state<number | null>(null);
+	/** The episode whose long-press menu (rewatches, history) is open. */
+	let playsFor = $state<number | null>(null);
 	let note = $state<string | null>(null);
 	let toast = $state<{ episode: number; label: string; before: EpisodeRow } | null>(null);
 	let undoBusy = $state(false);
@@ -252,8 +256,8 @@
 	}
 
 	/** Tapping the circle toggles. §12.3 makes a second POST a second play, so an
-	 *  already-watched episode is unmarked rather than marked twice; deliberate
-	 *  rewatches go through the sheet's explicit button. */
+	 *  already-watched episode is unmarked (its newest play) rather than marked
+	 *  twice; rewatches go through the long-press menu or the sheet's button. */
 	async function toggle(ep: EpisodeRow, showTitle: string) {
 		if (inFlight.has(ep.episodeNumber)) return;
 		const before = { ...ep };
@@ -261,7 +265,7 @@
 
 		haptic();
 		setFlight(ep.episodeNumber, true);
-		put({ ...ep, plays: marking ? 1 : 0 });
+		put({ ...ep, plays: marking ? 1 : ep.plays - 1 });
 
 		try {
 			await call(marking ? 'POST' : 'DELETE', ep.episodeNumber, showTitle);
@@ -278,6 +282,29 @@
 		} finally {
 			setFlight(ep.episodeNumber, false);
 		}
+	}
+
+	async function rewatchFromSheet(ep: EpisodeRow, showTitle: string) {
+		if (ep.plays === 0) return toggle(ep, showTitle);
+		if (inFlight.has(ep.episodeNumber)) return;
+		haptic();
+		setFlight(ep.episodeNumber, true);
+		put({ ...ep, plays: ep.plays + 1 });
+		try {
+			await call('POST', ep.episodeNumber, showTitle);
+			void notify(`${epLabel(ep.seasonNumber, ep.episodeNumber)} watched again`);
+		} catch (err) {
+			put(ep);
+			note = `Couldn't update ${epLabel(ep.seasonNumber, ep.episodeNumber)} — ${err instanceof Error ? err.message : err}`;
+		} finally {
+			setFlight(ep.episodeNumber, false);
+		}
+	}
+
+	/** After a change in the long-press menu: the episode's play count, from its history. */
+	function played(ep: EpisodeRow, plays: unknown[]) {
+		touchWatchlist();
+		put({ ...ep, plays: plays.length });
 	}
 
 	async function undo(showTitle: string) {
@@ -348,7 +375,7 @@
 
 		<ul class="episodes">
 			{#each episodes as ep (ep.episodeNumber)}
-				<li>
+				<li use:longpress={() => (playsFor = ep.episodeNumber)}>
 					<button class="body" onclick={() => (sheetFor = ep.episodeNumber)}>
 						<span class="line1">
 							<span class="num tnum">{epLabel(ep.seasonNumber, ep.episodeNumber)}</span>
@@ -385,6 +412,22 @@
 		</ul>
 	</main>
 
+	{#if playsFor !== null}
+		{@const held = episodes.find((e) => e.episodeNumber === playsFor)}
+		{#if held}
+			<PlaysSheet
+				title={`${epLabel(held.seasonNumber, held.episodeNumber)} · ${held.title}`}
+				showTitle={season.showTitle}
+				source={data.source}
+				mediaId={data.mediaId}
+				season={held.seasonNumber}
+				episode={held.episodeNumber}
+				onchanged={(plays) => played(held, plays)}
+				onclose={() => (playsFor = null)}
+			/>
+		{/if}
+	{/if}
+
 	{#if sheetFor !== null}
 		{@const open = episodes.find((e) => e.episodeNumber === sheetFor)}
 		{#if open}
@@ -397,7 +440,9 @@
 				marking={inFlight.has(open.episodeNumber)}
 				onmark={() => {
 					sheetFor = null;
-					toggle(open.plays > 0 ? { ...open, plays: 0 } : open, season.showTitle ?? '');
+					/* The sheet's button is "Mark watched again" on a watched episode:
+					   always a new play, never the toggle's unmark. */
+					rewatchFromSheet(open, season.showTitle ?? '');
 				}}
 				arrState={manageOn && arrReady ? stateOf(open) : undefined}
 				arrFile={arrOf(open.episodeNumber)?.file ?? null}
@@ -508,6 +553,8 @@
 		display: grid; grid-template-columns: 1fr auto 52px;
 		align-items: center; min-height: 60px;
 		border-radius: var(--radius); background: var(--surface);
+		/* Holding a row opens its rewatch menu, not the browser's text/link menu. */
+		-webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
 	}
 
 	.manage {

@@ -9,6 +9,7 @@ import type { User } from '$lib/server/users';
 import { POST, DELETE } from './+server';
 import { POST as fillSeason, DELETE as clearSeason } from '../season/+server';
 import { POST as add, DELETE as remove } from '../library/+server';
+import { GET as history, DELETE as removeOne } from '../plays/+server';
 
 const me: User = { id: 1, householdId: 1, email: 'a@x', name: 'A', role: 'owner', sessionVersion: 1, emailVerified: true };
 const call = (handler: (e: never) => Response | Promise<Response>, body: unknown, key?: string) =>
@@ -84,5 +85,30 @@ describe('adding and removing', () => {
 		await call(remove, { mediaId: '10' });
 		expect(db().prepare('SELECT COUNT(*) AS n FROM tracked').get()).toEqual({ n: 0 });
 		expect(playsOf(1)).toEqual([]);
+	});
+});
+
+describe('rewatches', () => {
+	const get = (q: string) => runAs(me, async () => (await history({ url: new URL(`http://x/api/plays?${q}`) } as never)).json());
+
+	it('lists the history, removes one play, and rewatches a whole season on a given day', async () => {
+		await call(POST, { mediaId: '10', season: 1, episode: 1, at: '2026-02-01T20:00:00Z' });
+		await call(POST, { mediaId: '10', season: 1, episode: 1, at: '2026-09-01T20:00:00Z' });
+		const { plays } = await get('mediaId=10&season=1&episode=1');
+		expect(plays.map((p: { watchedAt: string }) => p.watchedAt)).toEqual(['2026-09-01T20:00:00.000Z', '2026-02-01T20:00:00.000Z']);
+
+		await call(removeOne, { id: plays[1].id });
+		expect(playsOf(1)).toEqual(['S1E1']);
+
+		expect(await (await call(fillSeason, { mediaId: '10', season: 1, rewatch: true, at: '2026-10-01T20:00:00Z' })).json()).toMatchObject({ marked: 3 });
+		expect(playsOf(1)).toEqual(['S1E1', 'S1E1', 'S1E2', 'S1E3']);
+		expect((await get('mediaId=10&season=1')).plays).toHaveLength(4);
+	});
+
+	it('refuses a season date in the future, and someone else\'s play', async () => {
+		await expect(call(fillSeason, { mediaId: '10', season: 1, rewatch: true, at: '2999-01-01' })).rejects.toMatchObject({ status: 400 });
+		db().exec("INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, created_at) VALUES (2, 'tv', 10, 1, 1, 'x', 'seek', 'x')");
+		const theirs = (db().prepare('SELECT id FROM plays WHERE user_id = 2').get() as { id: number }).id;
+		await expect(call(removeOne, { id: theirs })).rejects.toMatchObject({ status: 404 });
 	});
 });

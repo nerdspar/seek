@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { openDatabase, useDatabase, db } from '../db';
-import { afterUnplay, clearSeason, fillSeason, recordPlay, removeNewestPlay, settleCompletion, setTracked, Status, untrack } from './write';
+import { afterUnplay, clearSeason, fillSeason, playsOf, recordPlay, removeNewestPlay, removePlay, rewatchSeason, settleCompletion, setTracked, Status, untrack } from './write';
 
 const plays = (where = '1=1') =>
 	db().prepare(`SELECT season, episode, source, external_key FROM plays WHERE ${where} ORDER BY season, episode, id`).all();
@@ -95,5 +95,41 @@ describe('status follows what you watch', () => {
 		removeNewestPlay(1, 'movie', 603, null, null);
 		afterUnplay(1, 'movie', 603, null, null);
 		expect(status(603)).toBe(Status.Planning);
+	});
+});
+
+describe('rewatches', () => {
+	beforeEach(() => {
+		db().exec("INSERT INTO users (id, household_id, email, name, role, password_hash, created_at) VALUES (2, 1, 'b@x', 'B', 'member', 'h', 'x')");
+		const ins = db().prepare('INSERT INTO episodes (tmdb_id, season, episode, air_date) VALUES (10, 1, ?, ?)');
+		ins.run(1, '2026-01-01');
+		ins.run(2, '2026-01-08');
+		ins.run(3, '2099-01-01'); // not aired
+	});
+
+	it('the history lists every play of an episode or season, newest first', () => {
+		recordPlay(1, 'tv', 10, 1, 1, '2026-02-01T20:00:00Z');
+		recordPlay(1, 'tv', 10, 1, 1, '2026-09-01T20:00:00Z');
+		recordPlay(1, 'tv', 10, 1, 2, '2026-02-02T20:00:00Z');
+		expect(playsOf(1, 'tv', 10, 1, 1).map((p) => p.watchedAt)).toEqual(['2026-09-01T20:00:00Z', '2026-02-01T20:00:00Z']);
+		expect(playsOf(1, 'tv', 10, 1, null)).toHaveLength(3);
+		expect(playsOf(2, 'tv', 10, 1, null)).toEqual([]);
+	});
+
+	it('watching a season again adds a play of every aired episode, watched or not', () => {
+		recordPlay(1, 'tv', 10, 1, 1, '2026-02-01T20:00:00Z');
+		expect(rewatchSeason(1, 10, 1, '2026-10-01T20:00:00Z', Date.parse('2026-10-09T00:00:00Z'))).toBe(2);
+		expect(playsOf(1, 'tv', 10, 1, 1)).toHaveLength(2);
+		expect(playsOf(1, 'tv', 10, 1, 2).map((p) => p.watchedAt)).toEqual(['2026-10-01T20:00:00Z']);
+	});
+
+	it('one play can be removed — only your own — and a Completed show reopens when nothing is left', () => {
+		recordPlay(1, 'tv', 10, 1, 1, '2026-02-01T20:00:00Z');
+		setTracked(1, 'tv', 10, { status: Status.Completed });
+		const [p] = playsOf(1, 'tv', 10, 1, 1);
+		expect(removePlay(2, p.id)).toBeNull();
+		expect(removePlay(1, p.id)).toEqual({ kind: 'tv', tmdbId: 10, season: 1, episode: 1 });
+		expect(playsOf(1, 'tv', 10, 1, 1)).toEqual([]);
+		expect(status(10)).toBe(Status.Watching);
 	});
 });

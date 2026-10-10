@@ -9,6 +9,8 @@
 	import StatusSheet from '$lib/components/StatusSheet.svelte';
 	import RatingSheet from '$lib/components/RatingSheet.svelte';
 	import ItemMenu from '$lib/components/ItemMenu.svelte';
+	import PlaysSheet, { type Play } from '$lib/components/PlaysSheet.svelte';
+	import { longpress } from '$lib/longpress';
 	import ArrButton from '$lib/components/ArrButton.svelte';
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
 	import SeriesManageSheet from '$lib/components/SeriesManageSheet.svelte';
@@ -104,6 +106,15 @@
 	/** Optimistic season toggles, layered over whatever the streamed show holds. */
 	let overrides = $state<Record<number, SeasonSummary>>({});
 	let busy = $state<Set<number>>(new Set());
+	/** The season whose long-press menu (rewatches, history) is open. */
+	let playsSeason = $state<SeasonSummary | null>(null);
+
+	/** After a change in that menu: the season's progress, from its plays. */
+	function seasonPlayed(season: SeasonSummary, plays: Play[]) {
+		touchWatchlist();
+		const progress = new Set(plays.map((p) => p.episode)).size;
+		overrides = { ...overrides, [season.seasonNumber]: { ...season, progress, tracked: true } };
+	}
 	let note = $state<string | null>(null);
 
 	const seasonsOf = (show: ShowDetail) =>
@@ -559,6 +570,19 @@
 				/>
 			{/if}
 
+			{#if playsSeason}
+				{@const held = playsSeason}
+				<PlaysSheet
+					title={held.seasonNumber === 0 ? 'Specials' : `Season ${held.seasonNumber}`}
+					showTitle={show.title}
+					source={data.source}
+					mediaId={data.mediaId}
+					season={held.seasonNumber}
+					onchanged={(plays) => seasonPlayed(held, plays)}
+					onclose={() => (playsSeason = null)}
+				/>
+			{/if}
+
 			{#if menuOpen && tracked}
 				{#await data.anime then serverAnime}
 					<ItemMenu
@@ -589,7 +613,7 @@
 			<h2>Seasons</h2>
 			<ul class="seasons">
 				{#each seasonsOf(show) as s (s.seasonNumber)}
-					<li>
+					<li use:longpress={() => (playsSeason = s)}>
 						<!-- Outside the <a> so tapping it toggles rather than navigates. -->
 						<button
 							class="check"
@@ -782,6 +806,8 @@
 	.seasons li {
 		display: grid; grid-template-columns: var(--tap) 1fr;
 		align-items: center; border-radius: var(--radius); background: var(--surface);
+		/* Holding a row opens its rewatch menu, not the browser's link preview. */
+		-webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
 	}
 	.seasons a {
 		display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;

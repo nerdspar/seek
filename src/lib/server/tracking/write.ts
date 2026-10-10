@@ -107,7 +107,7 @@ export function removeNewestPlay(userId: number, kind: Kind, tmdbId: number, sea
  * Episodes come from Seek's TMDB copy; if it doesn't have the season yet,
  * nothing is recorded (the nightly copy fills it in).
  */
-export function fillSeason(userId: number, tmdbId: number, season: number, count: number, now = Date.now()): number {
+export function fillSeason(userId: number, tmdbId: number, season: number, count: number, now = Date.now(), at?: string): number {
 	const d = db();
 	const eps = d
 		.prepare('SELECT episode, air_date AS airDate, air_at AS airAt FROM episodes WHERE tmdb_id = ? AND season = ? ORDER BY episode')
@@ -118,8 +118,8 @@ export function fillSeason(userId: number, tmdbId: number, season: number, count
 		}[]).map((r) => r.episode)
 	);
 	const todo = eps.filter((e) => !played.has(e.episode) && aired(e, now)).slice(0, count);
-	const at = new Date(now).toISOString();
-	for (const e of todo) recordPlay(userId, 'tv', tmdbId, season, e.episode, at);
+	const when = at ?? new Date(now).toISOString();
+	for (const e of todo) recordPlay(userId, 'tv', tmdbId, season, e.episode, when);
 	return todo.length;
 }
 
@@ -197,4 +197,44 @@ export function afterUnplay(userId: number, kind: Kind, tmdbId: number, season: 
 		tmdbId,
 		Status.Completed
 	);
+}
+
+export type PlayEntry = { id: number; season: number | null; episode: number | null; watchedAt: string; source: string };
+
+/** This person's plays of an episode, a whole season (`episode` null) or a film
+ *  (both null), newest first — the play history in the long-press menu. */
+export function playsOf(userId: number, kind: Kind, tmdbId: number, season: number | null, episode: number | null): PlayEntry[] {
+	const where =
+		kind === 'movie' ? '' : episode === null ? 'AND season = ?' : 'AND season = ? AND episode = ?';
+	const args = kind === 'movie' ? [] : episode === null ? [season] : [season, episode];
+	return (
+		db()
+			.prepare(
+				`SELECT id, season, episode, watched_at, source FROM plays WHERE user_id = ? AND media_type = ? AND tmdb_id = ? ${where}
+				ORDER BY watched_at DESC, id DESC`
+			)
+			.all(userId, kind, tmdbId, ...args) as { id: number; season: number | null; episode: number | null; watched_at: string; source: string }[]
+	).map((r) => ({ id: r.id, season: r.season, episode: r.episode, watchedAt: r.watched_at, source: r.source }));
+}
+
+/** Remove one play by id — only one of this person's own. Returns what it was. */
+export function removePlay(userId: number, playId: number): { kind: Kind; tmdbId: number; season: number | null; episode: number | null } | null {
+	const r = db().prepare('SELECT media_type, tmdb_id, season, episode FROM plays WHERE id = ? AND user_id = ?').get(playId, userId) as
+		| { media_type: Kind; tmdb_id: number; season: number | null; episode: number | null }
+		| undefined;
+	if (!r) return null;
+	db().prepare('DELETE FROM plays WHERE id = ?').run(playId);
+	afterUnplay(userId, r.media_type, r.tmdb_id, r.season, r.episode);
+	return { kind: r.media_type, tmdbId: r.tmdb_id, season: r.season, episode: r.episode };
+}
+
+/** Watched a whole season again: one more play of every aired episode in it,
+ *  watched or not, at `at`. Returns how many. */
+export function rewatchSeason(userId: number, tmdbId: number, season: number, at = nowIso(), now = Date.now()): number {
+	const eps = db()
+		.prepare('SELECT episode, air_date AS airDate, air_at AS airAt FROM episodes WHERE tmdb_id = ? AND season = ? ORDER BY episode')
+		.all(tmdbId, season) as { episode: number; airDate: string | null; airAt: string | null }[];
+	const todo = eps.filter((e) => aired(e, now));
+	for (const e of todo) recordPlay(userId, 'tv', tmdbId, season, e.episode, at);
+	return todo.length;
 }
