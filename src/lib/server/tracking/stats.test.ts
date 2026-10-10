@@ -18,7 +18,7 @@ beforeEach(() => {
 		(1, 'tv', 1, 1, 9, 'x', '2026-01-01T00:00:00Z'), (1, 'tv', 2, 3, NULL, 'x', '2026-03-01T00:00:00Z'), (1, 'movie', 3, 3, 8, 'x', '2025-06-01T00:00:00Z')`);
 	const p = d.prepare("INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, created_at) VALUES (1, ?, ?, ?, ?, ?, 'import', 'x')");
 	p.run('tv', 1, 1, 1, '2026-09-03T20:00:00Z'); // Thursday, 60 min (episode runtime)
-	p.run('tv', 1, 1, 2, '2026-09-04T20:00:00Z'); // Friday, 50 min (show runtime)
+	p.run('tv', 1, 1, 2, '2026-09-04T20:00:00Z'); // Friday, 60 min (no runtime: its season's average)
 	p.run('tv', 2, 1, 1, '2026-09-04T22:00:00Z'); // 25 min
 	p.run('movie', 3, null, null, '2025-06-01T20:00:00Z'); // last year
 });
@@ -41,14 +41,30 @@ describe('duration and streaks', () => {
 describe('seekStats', () => {
 	it("adds up this year's plays with their runtimes, split into shows, anime and films", () => {
 		const s = seekStats(1, 1, 'this_year', new Date('2026-10-09T12:00:00Z'));
-		expect(s).toMatchObject({ plays: 3, minutes: 135, counts: { tv: 1, anime: 1, movie: 0, total: 2 }, completed: 1 });
-		expect(s.topGenres).toEqual([{ name: 'Drama', duration: '1h 50min' }, { name: 'Animation', duration: '25min' }]);
-		expect(s.topTitles[0]).toMatchObject({ title: 'Lanterns', plays: 2, duration: '1h 50min' });
-		expect(s.topStudios[0]).toEqual({ name: 'HBO', watched: '1h 50min', shows: 1 });
+		expect(s).toMatchObject({ plays: 3, minutes: 145, counts: { tv: 1, anime: 1, movie: 0, total: 2 }, completed: 1 });
+		expect(s.topGenres).toEqual([{ name: 'Drama', duration: '2h' }, { name: 'Animation', duration: '25min' }]);
+		expect(s.topTitles[0]).toMatchObject({ title: 'Lanterns', plays: 2, duration: '2h' });
+		expect(s.topStudios[0]).toEqual({ name: 'HBO', watched: '2h', shows: 1 });
 		expect(s.topRated.map((r) => [r.title, r.score])).toEqual([['Lanterns', 9], ['The Matrix', 8]]);
-		expect(s.monthly.all[8]).toBe(2); // 135 min in September
-		expect(s.weekday.find((w) => w.label === 'Fri')?.hours).toBe(1.25);
+		expect(s.monthly.all[8]).toBe(2); // 145 min in September
+		expect(s.weekday.find((w) => w.label === 'Fri')?.hours).toBe(1.42);
 	});
+	it('an episode with no runtime takes its season’s average, then the show’s, before the listed runtime', () => {
+		db().exec("INSERT INTO episodes (tmdb_id, season, episode, runtime, air_date) VALUES (1, 2, 1, NULL, '2026-09-01')");
+		db().exec("INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, created_at) VALUES (1, 'tv', 1, 2, 1, '2026-09-10T20:00:00Z', 'seek', 'x')");
+		// Season 2 has no runtimes at all: the show's average over its episodes (60), not its listed 50.
+		expect(seekStats(1, 1, 'this_year', new Date('2026-10-09T12:00:00Z')).minutes).toBe(205);
+	});
+
+	it('completed counts what you finished in the period: by its last play, not when its record last changed', () => {
+		// Re:ZERO (Completed) was last played this September; touching its record changes nothing.
+		db().exec("UPDATE tracked SET updated_at = '2026-10-01T00:00:00Z' WHERE tmdb_id = 3");
+		const year = seekStats(1, 1, 'this_year', new Date('2026-10-09T12:00:00Z'));
+		expect(year.completed).toBe(1); // Re:ZERO; The Matrix was finished last year
+		expect(seekStats(1, 1, 'last_year', new Date('2026-10-09T12:00:00Z')).completed).toBe(1);
+		expect(seekStats(1, 1, 'all_time', new Date('2026-10-09T12:00:00Z')).completed).toBe(2);
+	});
+
 	it('all time includes last year’s film', () => {
 		expect(seekStats(1, 1, 'all_time', new Date('2026-10-09T12:00:00Z')).counts.movie).toBe(1);
 	});

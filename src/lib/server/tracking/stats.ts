@@ -41,13 +41,24 @@ type Play = {
 	minutes: number;
 };
 
-/** This person's plays with runtimes (episode runtime, else the show's). */
+/**
+ * This person's plays with runtimes. An episode TMDB has no runtime for takes
+ * the average of its season's other episodes, then of the show's, and only
+ * then the show's listed runtime — which is often an old figure (Below Deck
+ * Med lists 60 minutes for 43-minute episodes).
+ */
 function plays(userId: number): Play[] {
 	return (
 		db()
 			.prepare(
 				`SELECT p.media_type AS kind, p.tmdb_id, p.season, p.episode, p.watched_at,
-					COALESCE(e.runtime, t.runtime, 0) AS minutes
+					COALESCE(
+						e.runtime,
+						(SELECT ROUND(AVG(runtime)) FROM episodes WHERE tmdb_id = p.tmdb_id AND season = p.season AND runtime > 0),
+						(SELECT ROUND(AVG(runtime)) FROM episodes WHERE tmdb_id = p.tmdb_id AND season > 0 AND runtime > 0),
+						t.runtime,
+						0
+					) AS minutes
 				FROM plays p
 				LEFT JOIN episodes e ON e.tmdb_id = p.tmdb_id AND e.season = p.season AND e.episode = p.episode AND p.media_type = 'tv'
 				LEFT JOIN titles t ON t.media_type = p.media_type AND t.tmdb_id = p.tmdb_id
@@ -153,11 +164,21 @@ export function seekStats(userId: number, householdId: number, key: RangeKey, no
 		}
 	}
 
+	/* Finished in this period: Completed, and its last play falls in the range
+	   (when you finished it). A show set Completed without plays dates from that change. */
 	const completed = (
 		db()
-			.prepare('SELECT COUNT(*) AS n FROM tracked WHERE user_id = ? AND status = 3 AND (? IS NULL OR substr(updated_at, 1, 10) >= ?) AND (? IS NULL OR substr(updated_at, 1, 10) <= ?)')
-			.get(userId, start ?? null, start ?? null, end ?? null, end ?? null) as { n: number }
-	).n;
+			.prepare(
+				`SELECT COALESCE(
+					(SELECT MAX(watched_at) FROM plays WHERE user_id = k.user_id AND media_type = k.media_type AND tmdb_id = k.tmdb_id),
+					k.updated_at
+				) AS at FROM tracked k WHERE k.user_id = ? AND k.status = 3`
+			)
+			.all(userId) as { at: string }[]
+	).filter((r) => {
+		const day = localDay(r.at);
+		return (!start || day >= start) && (!end || day <= end);
+	}).length;
 	const s = streaks(new Set(inRange.map((p) => p.day)), localDay(now.toISOString()));
 	const rated = db()
 		.prepare('SELECT media_type, tmdb_id, score FROM tracked WHERE user_id = ? AND score IS NOT NULL ORDER BY score DESC, updated_at DESC LIMIT 8')
