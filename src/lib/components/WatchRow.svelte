@@ -10,10 +10,11 @@
 		/** Marking optimistically removes the row from this list (the in-progress
 		 *  backlog): the row slides out and does not return — the parent removes it
 		 *  (onremoved), and re-inserts it only if the server reports another aired
-		 *  episode. */
+		 *  episode. If the server has already said so when the slide ends,
+		 *  onremoved returns false and the row slides back instead. */
 		finishing?: boolean;
 		onmark: (row: WatchlistRow) => void;
-		onremoved?: (row: WatchlistRow) => void;
+		onremoved?: (row: WatchlistRow) => boolean | void;
 		onepisode: (row: WatchlistRow) => void;
 		onshow: (row: WatchlistRow) => void;
 	};
@@ -207,7 +208,15 @@
 		if (finishing) {
 			// Last episode: the row has nothing to come back for, so it leaves and
 			// the parent drops it from the list (the gap closes via the list's flip).
-			timers = [setTimeout(() => onremoved?.(row), EXIT_MS)];
+			timers = [
+				setTimeout(() => {
+					if (onremoved?.(row) !== false) return;
+					// The server already said there's another episode: come back with it.
+					phase = 'returning';
+					dx = 0;
+					timers = [setTimeout(() => (phase = 'idle'), RETURN_MS)];
+				}, EXIT_MS)
+			];
 			return;
 		}
 		timers = [

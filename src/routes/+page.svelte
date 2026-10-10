@@ -1,6 +1,7 @@
 <script lang="ts">
 	import NewShows from '$lib/components/NewShows.svelte';
 	import { setSegment } from '$lib/segment';
+	import { finishing } from '$lib/finishing';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { flip } from 'svelte/animate';
 	import { prefersReducedMotion } from 'svelte/motion';
@@ -226,10 +227,15 @@
 	/* The row finished its slide-off for a last-episode mark (WatchRow decides,
 	   filter-aware via its `finishing` prop). Drop it so the gap closes — the undo
 	   toast, which lives outside the list, still reverses the play. */
-	function onremoved(row: WatchlistRow) {
+	const slideOff = finishing();
+	function onremoved(row: WatchlistRow): boolean {
+		// The server may already have said there's another episode (Seek answers
+		// in milliseconds, before the slide ends): then the row stays.
+		if (slideOff.slid(key(row)) === 'keep') return false;
 		const next = new Set(gone);
 		next.add(key(row));
 		gone = next;
+		return true;
 	}
 
 	async function onmark(row: WatchlistRow) {
@@ -293,7 +299,9 @@
 				// Slid out optimistically. Bring it back only if there is genuinely
 				// another aired episode to watch; a caught-up show (no next) stays
 				// gone. If the re-read failed we can't tell, so err toward keeping it.
-				if (!body.row || body.row.next) {
+				const stays = !body.row || Boolean(body.row.next);
+				slideOff.answered(k, stays);
+				if (stays) {
 					gone = new Set([...gone].filter((x) => x !== k));
 					if (body.row) setRow(k, body.row);
 					reorderAfterMark(k);
@@ -308,6 +316,8 @@
 		} catch (err) {
 			// Roll the row back to exactly what it was; nothing was recorded, or we
 			// cannot prove it was, and the user needs to see the truth either way.
+			slideOff.answered(k, true);
+			gone = new Set([...gone].filter((x) => x !== k));
 			setRow(k, snapshot);
 			note = `Could not mark ${row.title} ${label} — ${err instanceof Error ? err.message : err}`;
 		} finally {
