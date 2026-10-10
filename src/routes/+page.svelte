@@ -21,6 +21,11 @@
 	import { queuedWrite } from '$lib/queue.svelte';
 	import type { MediaType, WatchlistRow } from '$lib/types';
 	import type { SortKey } from '$lib/server/prefs';
+	import SearchField from '$lib/components/SearchField.svelte';
+	import Poster from '$lib/components/Poster.svelte';
+	import { searchLibrary, type LibraryTitle } from '$lib/librarySearch';
+	import { statusLabel } from '$lib/tracking';
+	import { onMount, tick } from 'svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -197,6 +202,34 @@
 	};
 
 	let toast = $state<Pending | null>(null);
+
+	/* ── Search your library ────────────────────────────────────────────────
+	   The box sits above the list, scrolled just out of sight when the
+	   watchlist opens; scrolling up reveals it, and pulling past it still
+	   refreshes (that gesture only arms at the very top). It searches
+	   everything you track — shows and films, any status — loaded once, on
+	   first use, and filtered as you type. */
+	let query = $state('');
+	let library = $state<LibraryTitle[] | null>(null);
+	let searchEl: HTMLElement | undefined = $state();
+	const searching = $derived(query.trim().length > 0);
+	const found = $derived(library ? searchLibrary(library, query) : []);
+	let libraryLoading: Promise<void> | null = null;
+	function loadLibrary() {
+		libraryLoading ??= fetch('/api/library/titles')
+			.then((r) => (r.ok ? r.json() : { titles: [] }))
+			.then((b: { titles: LibraryTitle[] }) => void (library = b.titles))
+			.catch(() => {
+				libraryLoading = null;
+			});
+	}
+	onMount(async () => {
+		await tick();
+		// Tuck the box away on arrival, unless you were already scrolled.
+		if ((document.scrollingElement?.scrollTop ?? 0) === 0 && searchEl) {
+			window.scrollTo(0, searchEl.offsetHeight);
+		}
+	});
 
 	/* Real time: changes made elsewhere (Jellyfin, your partner on a shared show,
 	   another device) arrive on their own — on returning to the app and every 30s
@@ -536,6 +569,30 @@
 			</svg>
 		</div>
 		<div class="ptr-body" class:settling={pullSettling} style:transform={`translateY(${refreshing ? REFRESH_REST : pullY}px)`}>
+		<div class="libsearch" bind:this={searchEl}>
+			<SearchField bind:value={query} placeholder="Search your library" oninput={loadLibrary} onclear={() => (query = '')} />
+		</div>
+		{#if searching}
+			{#if library === null}
+				<p class="libnote">Searching…</p>
+			{:else if !found.length}
+				<p class="libnote">Nothing on your list matches “{query.trim()}”. <a href={`/search?q=${encodeURIComponent(query.trim())}`}>Search everything</a></p>
+			{:else}
+				<ul class="libresults">
+					{#each found as t (t.mediaType + t.mediaId)}
+						<li>
+							<a href={t.mediaType === 'movie' ? `/movie/tmdb/${t.mediaId}` : `/show/tmdb/${t.mediaId}`}>
+								<Poster src={t.poster} width={40} height={60} />
+								<span class="libtext">
+									<span class="libtitle">{t.title}</span>
+									<span class="libmeta">{t.mediaType === 'movie' ? 'Film' : 'Show'}{t.year ? ` · ${t.year}` : ''}{statusLabel(t.status) ? ` · ${statusLabel(t.status)}` : ''}</span>
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{:else}
 		{#await data.page}
 			<ul class="rows">
 				{#each Array(6) as _, i (i)}
@@ -589,6 +646,7 @@
 				<div class="empty"><h2>Couldn't load your list</h2><p>{err.message}</p></div>
 			{/if}
 		{/await}
+		{/if}
 		</div>
 	</main>
 
@@ -736,6 +794,21 @@
 	.ptr-body.settling {
 		transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
+	/* Tall enough to scroll the search box out of sight even with a short list. */
+	.ptr-body { min-height: calc(100dvh + 52px); }
+
+	.libsearch { padding: 2px 0 10px; }
+	.libnote { margin: 16px 2px; font-size: 14px; color: var(--text-dim); }
+	.libnote a { color: var(--signal); }
+	.libresults { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+	.libresults a {
+		display: flex; align-items: center; gap: 12px;
+		padding: 8px 12px 8px 8px; border-radius: var(--radius); background: var(--surface);
+		color: var(--text); text-decoration: none;
+	}
+	.libtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+	.libtitle { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.libmeta { font-size: 12.5px; color: var(--text-dim); }
 
 	.rows {
 		display: flex;
