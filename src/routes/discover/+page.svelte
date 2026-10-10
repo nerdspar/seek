@@ -503,9 +503,10 @@
 		border-radius: 50%; color: var(--text-dim);
 	}
 
-	.segments { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
+	/* Full width, each tab an equal share — the same bar on TV, Movies and Books. */
+	.segments { display: flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); }
 	.segments button {
-		min-height: 32px; padding: 0 18px; border-radius: 9px;
+		flex: 1; min-height: 32px; padding: 0 18px; border-radius: 9px;
 		font-size: 13px; font-weight: 600; color: var(--text-dim);
 	}
 	.segments button.on { background: var(--surface-raised); color: var(--text); }
