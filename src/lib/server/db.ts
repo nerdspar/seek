@@ -367,6 +367,12 @@ export const MIGRATIONS: Migration[] = [
 	`
 	ALTER TABLE users ADD COLUMN feed_token TEXT;
 	CREATE UNIQUE INDEX users_feed_token ON users (feed_token) WHERE feed_token IS NOT NULL;
+	`,
+	// v18 — the Jellyfin webhook's recent activity, not just what it couldn't
+	// match: what arrived and what Seek did with it, so a play that didn't land
+	// can be traced (Bake Off S17E03). The table keeps its old name.
+	`
+	ALTER TABLE webhook_unmatched ADD COLUMN outcome TEXT NOT NULL DEFAULT 'unmatched';
 	`
 ];
 

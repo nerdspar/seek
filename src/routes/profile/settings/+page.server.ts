@@ -4,7 +4,7 @@ import { getPrefs } from '$lib/server/prefs';
 import { TMDB_API_KEY } from '$lib/server/env';
 import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
 import { feedToken, householdName, jellyfinToken, linkedStatus, listMembers, listPendingInvites } from '$lib/server/users';
-import { recentUnmatched } from '$lib/server/tracking/jellyfin';
+import { recentWebhook } from '$lib/server/tracking/jellyfin';
 import { mailConfigured } from '$lib/server/mail';
 import { settingsForDisplay } from '$lib/server/services';
 import { bookorbitConfigured } from '$lib/server/books/bookorbit';
@@ -38,7 +38,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			// Seek's Jellyfin webhook: your private URL.
 			jellyfin: {
 				url: `${url.origin}/webhook/jellyfin/${jellyfinToken(me.id)}`,
-				unmatched: recentUnmatched(me.id)
+				recent: recentWebhook(me.id)
 			},
 			// Your private Upcoming feed (MagicMirror).
 			feedUrl: `${url.origin}/feed/${feedToken(me.id)}/upcoming.json`

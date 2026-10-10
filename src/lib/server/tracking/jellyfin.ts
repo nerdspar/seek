@@ -52,18 +52,30 @@ async function episodeExists(tmdbId: number, season: number, episode: number): P
 	return Boolean(db().prepare('SELECT 1 FROM episodes WHERE tmdb_id = ? AND season = ? AND episode = ?').get(tmdbId, season, episode));
 }
 
-function unmatched(userId: number, event: string, title: string, detail: string): void {
-	db()
-		.prepare('INSERT INTO webhook_unmatched (user_id, at, event, title, detail) VALUES (?, ?, ?, ?, ?)')
-		.run(userId, nowIso(), event, title, detail);
+export type WebhookOutcome = 'recorded' | 'duplicate' | 'removed' | 'unmatched' | 'ignored';
+
+/** Keep what a webhook call did, for Settings and the container log. The last 50 per person. */
+function note(userId: number, outcome: WebhookOutcome, event: string, title: string, detail: string): void {
+	console.log(`[webhook] user ${userId}: ${event} ${title} → ${outcome}${detail ? ` (${detail})` : ''}`);
+	const d = db();
+	d.prepare('INSERT INTO webhook_unmatched (user_id, at, event, title, detail, outcome) VALUES (?, ?, ?, ?, ?, ?)').run(userId, nowIso(), event, title, detail, outcome);
+	d.prepare(
+		'DELETE FROM webhook_unmatched WHERE user_id = ? AND id NOT IN (SELECT id FROM webhook_unmatched WHERE user_id = ? ORDER BY id DESC LIMIT 50)'
+	).run(userId, userId);
 }
+
+const where = (t: Target) => (t.kind === 'movie' ? `TMDB film ${t.tmdbId}` : `TMDB ${t.tmdbId} S${t.season}E${t.episode}`);
 
 export type WebhookResult = { ok: true; did: 'ignored' | 'recorded' | 'duplicate' | 'removed' | 'unmatched'; detail?: string };
 
 /** Handle one Jellyfin webhook call, as `user` (inside runAs). */
 export async function handleJellyfin(user: User, payload: unknown): Promise<WebhookResult> {
 	const ev = readJellyfin(payload);
-	if (ev.action === 'ignore') return { ok: true, did: 'ignored', detail: ev.reason };
+	if (ev.action === 'ignore') {
+		// Progress ticks and play/pause arrive constantly; only the telling ones are kept.
+		if (ev.notable) note(user.id, 'ignored', ev.notable.event, ev.notable.title, ev.reason);
+		return { ok: true, did: 'ignored', detail: ev.reason };
+	}
 
 	// Episode: its own ids first (standard numbering whatever order Jellyfin shows);
 	// else the show from the TMDB link with Jellyfin's numbers, only if that episode exists.
@@ -73,7 +85,7 @@ export async function handleJellyfin(user: User, payload: unknown): Promise<Webh
 		if (await episodeExists(ev.tmdbId, ev.season, ev.episode)) target = { kind: 'tv', tmdbId: ev.tmdbId, season: ev.season, episode: ev.episode };
 	}
 	if (!target) {
-		unmatched(user.id, ev.event, ev.title, `ids: tmdb ${ev.tmdbId ?? '–'}, imdb ${ev.imdbId ?? '–'}, tvdb ${ev.tvdbId ?? '–'}`);
+		note(user.id, 'unmatched', ev.event, ev.title, `ids: tmdb ${ev.tmdbId ?? '–'}, imdb ${ev.imdbId ?? '–'}, tvdb ${ev.tvdbId ?? '–'}`);
 		return { ok: true, did: 'unmatched' };
 	}
 
@@ -86,16 +98,21 @@ export async function handleJellyfin(user: User, payload: unknown): Promise<Webh
 		removeNewestPlay(user.id, kind, tmdbId, season, episode);
 		afterUnplay(user.id, kind, tmdbId, season, episode);
 		bust(kind, mediaId, season);
+		note(user.id, 'removed', ev.event, ev.title, where(target));
 		return { ok: true, did: 'removed' };
 	}
 
 	const at = ev.playedAt && Number.isFinite(Date.parse(ev.playedAt)) ? new Date(ev.playedAt).toISOString() : nowIso();
-	if (playedNear(user.id, kind, tmdbId, season, episode, at, SAME_VIEWING_MS)) return { ok: true, did: 'duplicate' };
+	if (playedNear(user.id, kind, tmdbId, season, episode, at, SAME_VIEWING_MS)) {
+		note(user.id, 'duplicate', ev.event, ev.title, `${where(target)}, already recorded`);
+		return { ok: true, did: 'duplicate' };
+	}
 	for (const id of watchers(user, 'tmdb', mediaId, kind)) {
 		recordPlay(id, kind, tmdbId, season, episode, at, 'jellyfin');
 		if (kind === 'tv') settleCompletion(id, tmdbId);
 	}
 	bust(kind, mediaId, season);
+	note(user.id, 'recorded', ev.event, ev.title, where(target));
 	return { ok: true, did: 'recorded' };
 }
 
@@ -114,9 +131,9 @@ function bust(kind: Kind, mediaId: string, season: number | null): void {
 	}
 }
 
-/** What the webhook couldn't match lately (Settings). */
-export function recentUnmatched(userId: number, limit = 10): { at: string; event: string; title: string; detail: string }[] {
+/** What the webhook did lately, newest first (Settings → Your accounts). */
+export function recentWebhook(userId: number, limit = 15): { at: string; event: string; title: string; detail: string; outcome: WebhookOutcome }[] {
 	return db()
-		.prepare('SELECT at, event, title, detail FROM webhook_unmatched WHERE user_id = ? ORDER BY at DESC LIMIT ?')
-		.all(userId, limit) as { at: string; event: string; title: string; detail: string }[];
+		.prepare('SELECT at, event, title, detail, outcome FROM webhook_unmatched WHERE user_id = ? ORDER BY id DESC LIMIT ?')
+		.all(userId, limit) as { at: string; event: string; title: string; detail: string; outcome: WebhookOutcome }[];
 }

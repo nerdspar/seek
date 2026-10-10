@@ -35,7 +35,11 @@ describe('readJellyfin', () => {
 
 	it('counts playback stopped past 80% as a play, and earlier stops as nothing', () => {
 		expect(readJellyfin(reZero('Stop', { PlaybackPositionTicks: 12_000_000_000 }))).toMatchObject({ action: 'play' });
-		expect(readJellyfin(reZero('Stop', { PlaybackPositionTicks: 6_000_000_000 }))).toEqual({ action: 'ignore', reason: 'stopped before the end' });
+		expect(readJellyfin(reZero('Stop', { PlaybackPositionTicks: 6_000_000_000 }))).toMatchObject({
+			action: 'ignore',
+			reason: 'stopped before the end (at 41%)',
+			notable: { event: 'Stop', title: 'Re:ZERO -Starting Life in Another World- S4E17' }
+		});
 		expect(readJellyfin(reZero('Play'))).toMatchObject({ action: 'ignore' });
 	});
 

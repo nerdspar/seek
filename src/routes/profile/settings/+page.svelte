@@ -104,6 +104,13 @@
 		notifications: 'Notifications'
 	};
 	/* Old links used #accounts / #services anchors on the one long page. */
+	const OUTCOME: Record<string, string> = {
+		recorded: 'Marked watched',
+		removed: 'Unmarked',
+		duplicate: 'Already marked',
+		unmatched: "Couldn't match",
+		ignored: 'Not counted'
+	};
 	let copied = $state<string | null>(null);
 	async function copyWebhook(text: string) {
 		try {
@@ -455,13 +462,18 @@
 			<code>{data.account.jellyfin.url}</code>
 			<button class="copy" onclick={() => copyWebhook(data.account.jellyfin.url)}>{copied === data.account.jellyfin.url ? 'Copied' : 'Copy'}</button>
 		</div>
-		{#if data.account.jellyfin.unmatched.length}
-			<p class="hint jf">Plays Seek couldn't match (they weren't recorded):</p>
+		{#if data.account.jellyfin.recent.length}
+			<p class="hint jf">Lately from Jellyfin:</p>
 			<ul class="unmatched">
-				{#each data.account.jellyfin.unmatched as u (u.at + u.title)}
-					<li><span class="label">{u.title}</span><span class="hint">{new Date(u.at).toLocaleString()} · {u.detail}</span></li>
+				{#each data.account.jellyfin.recent as u (u.at + u.title + u.outcome)}
+					<li class:miss={u.outcome === 'unmatched' || u.outcome === 'ignored'}>
+						<span class="label">{u.title} <span class="outcome">{OUTCOME[u.outcome] ?? u.outcome}</span></span>
+						<span class="hint">{new Date(u.at).toLocaleString()} · {u.event}{u.detail ? ` · ${u.detail}` : ''}</span>
+					</li>
 				{/each}
 			</ul>
+		{:else}
+			<p class="hint jf">Nothing from Jellyfin yet.</p>
 		{/if}
 	</section>
 	<section>
@@ -846,6 +858,8 @@
 	.copy { flex: none; min-height: 32px; padding: 0 12px; border-radius: 8px; background: var(--surface-raised); font-size: 13px; font-weight: 600; color: var(--text); }
 	.unmatched { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 	.unmatched li { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: var(--radius); background: var(--surface); }
+	.outcome { margin-left: 6px; font-size: 12px; color: var(--text-dim); }
+	.miss .outcome { color: #ff8a8a; }
 	.sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 	.sechead h3 { flex: 1; }
 	.disclose { flex: none; font-size: 13px; font-weight: 600; color: var(--signal-solid); }

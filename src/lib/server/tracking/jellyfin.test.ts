@@ -7,7 +7,7 @@ let members: { id: number }[] = [];
 vi.mock('../household/mirror', () => ({ mirrorMembers: () => members }));
 
 import { openDatabase, useDatabase, db } from '../db';
-import { handleJellyfin, recentUnmatched } from './jellyfin';
+import { handleJellyfin, recentWebhook } from './jellyfin';
 import type { User } from '../users';
 
 const me = { id: 1, householdId: 1 } as User;
@@ -53,7 +53,7 @@ describe('handleJellyfin', () => {
 		find.mockResolvedValue({});
 		expect(await handleJellyfin(me, reZero('MarkPlayed'))).toEqual({ ok: true, did: 'unmatched' });
 		expect(plays()).toEqual([]);
-		expect(recentUnmatched(1)[0]).toMatchObject({ event: 'MarkPlayed', title: 'Re:ZERO S4E17' });
+		expect(recentWebhook(1)[0]).toMatchObject({ event: 'MarkPlayed', title: 'Re:ZERO S4E17', outcome: 'unmatched' });
 	});
 
 	it("falls back to the show's TMDB link and Jellyfin's numbers when the episode exists in Seek's copy", async () => {
@@ -73,8 +73,23 @@ describe('handleJellyfin', () => {
 		await handleJellyfin(me, { Event: 'MarkPlayed', Item: { Type: 'Movie', Name: 'The Matrix', ProviderIds: { Tmdb: '603' } } });
 	});
 
-	it('does nothing for progress events', async () => {
+	it('does nothing for progress events, and keeps them out of the activity list', async () => {
 		expect(await handleJellyfin(me, reZero('Play'))).toMatchObject({ did: 'ignored' });
 		expect(plays()).toEqual([]);
+		expect(recentWebhook(1)).toEqual([]);
+	});
+
+	it('keeps what each telling call did, newest first: so a play that did not land can be traced', async () => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		await handleJellyfin(me, reZero('MarkPlayed'));
+		await handleJellyfin(me, reZero('MarkPlayed'));
+		const stop = reZero('Stop');
+		await handleJellyfin(me, { ...stop, PlaybackPositionTicks: 6_000_000_000, Item: { ...stop.Item, RunTimeTicks: 12_000_000_000 } });
+		expect(recentWebhook(1).map((r) => [r.outcome, r.detail])).toEqual([
+			['ignored', 'stopped before the end (at 50%)'],
+			['duplicate', 'TMDB 65942 S1E83, already recorded'],
+			['recorded', 'TMDB 65942 S1E83']
+		]);
+		expect(recentWebhook(2)).toEqual([]);
 	});
 });

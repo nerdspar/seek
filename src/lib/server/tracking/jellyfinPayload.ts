@@ -13,7 +13,7 @@ const int = (v: unknown) => {
 };
 
 export type JellyfinEvent =
-	| { action: 'ignore'; reason: string }
+	| { action: 'ignore'; reason: string; /** Worth showing in the activity list (not a progress tick). */ notable?: { event: string; title: string } }
 	| {
 			action: 'play' | 'unplay';
 			kind: 'tv' | 'movie';
@@ -54,6 +54,10 @@ export function readJellyfin(payload: unknown): JellyfinEvent {
 	let event = str(p.Event) ?? '';
 	const item = rec(p.Item);
 	const userData = rec(item.UserData);
+	const label = () => {
+		const series = str(item.SeriesName);
+		return series ? `${series} S${int(item.ParentIndexNumber) ?? '?'}E${int(item.IndexNumber) ?? '?'}` : (str(item.Name) ?? 'Untitled');
+	};
 
 	// The checkmark in Jellyfin arrives as UserDataSaved with SaveReason TogglePlayed.
 	if (event === 'UserDataSaved') {
@@ -68,12 +72,15 @@ export function readJellyfin(payload: unknown): JellyfinEvent {
 		const pos = seconds(p.PlaybackPositionTicks ?? item.PlaybackPositionTicks);
 		const dur = seconds(item.RunTimeTicks);
 		const finished = userData.Played === true || (pos !== null && dur !== null && dur > 0 && pos * 5 >= dur * 4);
-		if (!finished) return { action: 'ignore', reason: 'stopped before the end' };
+		if (!finished) {
+			const at = pos !== null && dur ? ` (at ${Math.round((pos / dur) * 100)}%)` : ' (no position sent)';
+			return { action: 'ignore', reason: `stopped before the end${at}`, notable: { event, title: label() } };
+		}
 		action = 'play';
 	} else return { action: 'ignore', reason: `event ${event || 'none'}` };
 
 	const type = str(item.Type);
-	if (type !== 'Episode' && type !== 'Movie') return { action: 'ignore', reason: `item type ${type ?? 'none'}` };
+	if (type !== 'Episode' && type !== 'Movie') return { action: 'ignore', reason: `item type ${type ?? 'none'}`, notable: { event, title: label() } };
 	const kind = type === 'Movie' ? 'movie' : 'tv';
 	const ids = rec(item.ProviderIds);
 	const urls = tmdbFromUrls(item);
