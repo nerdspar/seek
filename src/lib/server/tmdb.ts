@@ -118,6 +118,8 @@ export type DiscoverParams = {
 	excludeNoise?: boolean;
 	/** Exclude anything not yet released (date after today). */
 	notFuture?: boolean;
+	/** Only titles first released between tomorrow and this many days out. */
+	upcomingDays?: number;
 	/** TMDB result page (1-based); default 1. */
 	page?: number;
 };
@@ -149,6 +151,11 @@ export async function tmdbDiscover(p: DiscoverParams): Promise<TmdbResult[]> {
 	}
 	if (p.excludeNoise) params.without_genres = NOISE_GENRE_IDS.join(',');
 	if (p.yearGte) params[`${dateField}.gte`] = `${p.yearGte}-01-01`;
+	if (p.upcomingDays) {
+		const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+		params[`${dateField}.gte`] = day(1);
+		params[`${dateField}.lte`] = day(p.upcomingDays);
+	}
 	if (sort === 'newest' || p.notFuture)
 		params[`${dateField}.lte`] = new Date().toISOString().slice(0, 10);
 	if (p.page && p.page > 1) params.page = p.page;

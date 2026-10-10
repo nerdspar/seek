@@ -4,7 +4,7 @@
  * info from Seek's TMDB copy, next-up computed fresh.
  */
 import { db } from '../db';
-import { serviceNames } from '../watchlist';
+import { serviceNames } from '../serviceNames';
 import { animeOverrides } from '../anime-sync';
 import { animeByCatalog } from './anime';
 import { nextUp, type Ep, type Played } from './nextUp';

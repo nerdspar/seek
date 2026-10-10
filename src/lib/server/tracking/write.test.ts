@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { openDatabase, useDatabase, db } from '../db';
-import { clearSeason, fillSeason, recordPlay, removeNewestPlay, setTracked, Status, untrack } from './write';
-import { syncImportedPlays } from './store';
+import { afterUnplay, clearSeason, fillSeason, recordPlay, removeNewestPlay, settleCompletion, setTracked, Status, untrack } from './write';
+import { addImportedPlays } from './store';
 
 const plays = (where = '1=1') =>
 	db().prepare(`SELECT season, episode, source, external_key FROM plays WHERE ${where} ORDER BY season, episode, id`).all();
@@ -45,29 +45,79 @@ describe("Seek's own record of each change", () => {
 	});
 });
 
-describe('the nightly copy and plays Seek recorded itself', () => {
+describe('catching up from Floppy alongside plays Seek recorded itself', () => {
 	const floppyPlay = (key: string, e: number, at: string) => ({ mediaType: 'tv' as const, tmdbId: 10, season: 1, episode: e, watchedAt: at, externalKey: key });
 
 	it("links a mark made in Seek to Floppy's copy of the same viewing instead of copying it twice", () => {
 		recordPlay(1, 'tv', 10, 1, 1, '2026-10-09T20:00:00Z');
-		const r = syncImportedPlays(1, 'tv', [floppyPlay('floppy:episode:1', 1, '2026-10-09T20:00:03Z')], '2099-01-01T00:00:00Z');
-		expect(r).toEqual({ added: 0, removed: 0, linked: 1 });
+		const r = addImportedPlays(1, 'tv', [floppyPlay('floppy:episode:1', 1, '2026-10-09T20:00:03Z')]);
+		expect(r).toEqual({ added: 0, linked: 1 });
 		expect(plays()).toEqual([{ season: 1, episode: 1, source: 'seek', external_key: 'floppy:episode:1' }]);
 	});
 
-	it("drops a Seek play Floppy never got, but keeps one recorded during the run", () => {
+	it('never removes a play, whatever Floppy has', () => {
 		recordPlay(1, 'tv', 10, 1, 1, '2026-10-01T00:00:00Z');
-		const runStart = new Date(Date.now() + 1000).toISOString();
-		const r = syncImportedPlays(1, 'tv', [], runStart);
-		expect(r.removed).toBe(1);
-		recordPlay(1, 'tv', 10, 1, 2);
-		syncImportedPlays(1, 'tv', [], '2000-01-01T00:00:00Z');
-		expect((plays() as { episode: number }[]).map((p) => p.episode)).toEqual([2]);
+		addImportedPlays(1, 'tv', []);
+		expect(plays()).toHaveLength(1);
 	});
 
-	it('a linked play unmarked in Floppy goes on the next copy', () => {
-		recordPlay(1, 'tv', 10, 1, 1, '2026-10-09T20:00:00Z');
-		syncImportedPlays(1, 'tv', [floppyPlay('floppy:episode:1', 1, '2026-10-09T20:00:00Z')], '2099-01-01T00:00:00Z');
-		expect(syncImportedPlays(1, 'tv', [], '2099-01-01T00:00:00Z').removed).toBe(1);
+	it('adds a viewing only Floppy has, once', () => {
+		const p = floppyPlay('floppy:episode:2', 2, '2026-10-09T20:00:00Z');
+		expect(addImportedPlays(1, 'tv', [p]).added).toBe(1);
+		expect(addImportedPlays(1, 'tv', [p]).added).toBe(0);
+	});
+});
+
+describe('status follows what you watch', () => {
+	const NOW = Date.parse('2026-10-09T00:00:00Z');
+	beforeEach(() => {
+		db().exec("INSERT INTO titles (media_type, tmdb_id, title, status, refresh_after) VALUES ('tv', 10, 'Done', 'Ended', 'x'), ('tv', 11, 'Running', 'Returning Series', 'x')");
+		const ins = db().prepare('INSERT INTO episodes (tmdb_id, season, episode, air_date) VALUES (?, ?, ?, ?)');
+		for (const id of [10, 11]) {
+			ins.run(id, 0, 1, '2025-01-01'); // a special: never needed
+			ins.run(id, 1, 1, '2026-01-01');
+			ins.run(id, 1, 2, '2026-01-08');
+		}
+	});
+
+	it('an ended show becomes Completed once every aired episode is watched', () => {
+		recordPlay(1, 'tv', 10, 1, 1);
+		settleCompletion(1, 10, NOW);
+		expect(status(10)).toBe(Status.Watching);
+		recordPlay(1, 'tv', 10, 1, 2);
+		settleCompletion(1, 10, NOW);
+		expect(status(10)).toBe(Status.Completed);
+	});
+
+	it('a show still running stays Watching when caught up; Paused or Dropped is left alone', () => {
+		recordPlay(1, 'tv', 11, 1, 1);
+		recordPlay(1, 'tv', 11, 1, 2);
+		settleCompletion(1, 11, NOW);
+		expect(status(11)).toBe(Status.Watching);
+		setTracked(1, 'tv', 10, { status: Status.Dropped });
+		recordPlay(1, 'tv', 10, 1, 1);
+		recordPlay(1, 'tv', 10, 1, 2);
+		settleCompletion(1, 10, NOW);
+		expect(status(10)).toBe(Status.Dropped);
+	});
+
+	it('unmarking reopens a Completed show, but not over one remaining play of a rewatch', () => {
+		recordPlay(1, 'tv', 10, 1, 1);
+		recordPlay(1, 'tv', 10, 1, 2);
+		recordPlay(1, 'tv', 10, 1, 2);
+		setTracked(1, 'tv', 10, { status: Status.Completed });
+		removeNewestPlay(1, 'tv', 10, 1, 2);
+		afterUnplay(1, 'tv', 10, 1, 2);
+		expect(status(10)).toBe(Status.Completed);
+		removeNewestPlay(1, 'tv', 10, 1, 2);
+		afterUnplay(1, 'tv', 10, 1, 2);
+		expect(status(10)).toBe(Status.Watching);
+	});
+
+	it('a film with no plays left goes back to Planning', () => {
+		recordPlay(1, 'movie', 603, null, null);
+		removeNewestPlay(1, 'movie', 603, null, null);
+		afterUnplay(1, 'movie', 603, null, null);
+		expect(status(603)).toBe(Status.Planning);
 	});
 });

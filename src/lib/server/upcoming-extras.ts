@@ -5,7 +5,8 @@
  *
  * Its own stream, separate from the calendar, so episodes never wait on it.
  */
-import { floppy } from './floppy';
+import { db } from './db';
+import { currentUser } from './userctx';
 import { TMDB_API_KEY } from './env';
 import { TTLCache } from './cache';
 import { memo } from './memo';
@@ -57,17 +58,21 @@ async function usReleaseDates(tmdbId: string): Promise<ReleaseDate[]> {
 	return us;
 }
 
-type FloppyList = { results?: { item?: Record<string, unknown> }[] };
-
 /** Theater and digital dates for the films in your library you haven't watched. */
 async function filmItems(now: number): Promise<UpcomingItem[]> {
-	if (!TMDB_API_KEY()) return [];
-	const res = await floppy<FloppyList>('/api/v1/media/movie/', {
-		query: { status: ['planning', 'in_progress', 'paused'], limit: 100 },
-		timeoutMs: 30_000
-	});
+	const me = currentUser();
+	if (!TMDB_API_KEY() || !me) return [];
+	// Planning, Watching or Paused: not yet seen, still wanted.
+	const films = (
+		db()
+			.prepare(
+				`SELECT k.tmdb_id, t.title, t.poster FROM tracked k
+				LEFT JOIN titles t ON t.media_type = 'movie' AND t.tmdb_id = k.tmdb_id
+				WHERE k.user_id = ? AND k.media_type = 'movie' AND k.status IN (0, 1, 2)`
+			)
+			.all(me.id) as { tmdb_id: number; title: string | null; poster: string | null }[]
+	).map((f) => ({ media_id: String(f.tmdb_id), title: f.title, image: f.poster }));
 	const { from, to } = windowAround(now);
-	const films = (res.results ?? []).map((r) => r.item ?? {}).filter((i) => i.source === 'tmdb' && i.media_id);
 	const out: UpcomingItem[] = [];
 	await Promise.all(
 		films.map(async (f) => {

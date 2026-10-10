@@ -563,7 +563,7 @@
 					<ItemMenu
 						title={show.title}
 						sourceUrl={show.sourceUrl}
-						floppyUrl={data.floppyBase && t.floppyPath ? `${data.floppyBase}${t.floppyPath}` : null}
+						floppyUrl={null}
 						busy={trackBusy}
 						anime={animeEdit ?? serverAnime}
 						onanime={(next) => setAnime(next, show.title)}

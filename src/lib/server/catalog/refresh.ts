@@ -2,12 +2,12 @@
  * Keeps Seek's copy of show and movie info fresh (docs/own-tracking-plan.md,
  * step 1). Every title anyone tracks is known; each refresh fetches TMDB details,
  * the seasons that may have changed, and — for shows still airing — TVmaze's air
- * times. Nothing reads this yet; step 3 switches the screens over.
+ * times. Every screen about shows and films reads it.
  */
 import { applyAirTimes, mapMovie, mapSeason, mapShow, refreshAfter, seasonsToFetch, type EpisodeRow, type MediaType } from './map';
 import { dueTitles, ensureTitle, noteFailure, saveTitle, storedSeasonCounts, storedTvmazeId } from './store';
 import { tmdbMovie, tmdbSeason, tmdbShow, tvmazeEpisodes, tvmazeId } from './sources';
-import { getWatchlist } from '../watchlist';
+import { db } from '../db';
 
 const HOUR = 60 * 60 * 1000;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -68,14 +68,8 @@ export async function refreshDue(limit = 80, gapMs = 250): Promise<{ refreshed: 
  * person by the scheduler; only TMDB-sourced items, since Seek keys on TMDB.
  */
 export async function seedTrackedTitles(): Promise<number> {
+	const rows = db().prepare('SELECT DISTINCT media_type, tmdb_id FROM tracked').all() as { media_type: MediaType; tmdb_id: number }[];
 	let added = 0;
-	for (const mediaType of ['tv', 'movie'] as const) {
-		const page = await getWatchlist(mediaType, { statuses: ['all'], sort: 'title', direction: 'asc', all: true, enrich: false });
-		for (const row of page.rows) {
-			const id = Number(row.mediaId);
-			if (row.source !== 'tmdb' || !Number.isInteger(id) || id <= 0) continue;
-			if (ensureTitle(mediaType, id)) added++;
-		}
-	}
+	for (const r of rows) if (ensureTitle(r.media_type, r.tmdb_id)) added++;
 	return added;
 }

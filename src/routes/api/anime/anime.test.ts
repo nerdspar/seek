@@ -1,36 +1,28 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const setAnimeOverride = vi.fn();
-const classifyShow = vi.fn(async (..._a: unknown[]) => true);
-vi.mock('$lib/server/anime-sync', () => ({
-	setAnimeOverride: (...a: unknown[]) => setAnimeOverride(...a),
-	classifyShow: (...a: unknown[]) => classifyShow(...a)
-}));
-vi.mock('$lib/server/household/mirror', () => ({ mirrorMembers: () => [{ id: 1 }, { id: 2 }] }));
-const ranAs: number[] = [];
-vi.mock('$lib/server/userctx', () => ({ runAs: (u: { id: number }, fn: () => unknown) => (ranAs.push(u.id), fn()) }));
-
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { openDatabase, useDatabase } from '$lib/server/db';
+import { animeOverrides } from '$lib/server/anime-sync';
 import { PUT } from './+server';
 
 const put = (body: unknown) =>
-	PUT({ locals: { user: { id: 1, householdId: 5 } }, request: new Request('http://x', { method: 'PUT', body: JSON.stringify(body) }) } as never);
+	PUT({ locals: { user: { id: 1, householdId: 1 } }, request: new Request('http://x', { method: 'PUT', body: JSON.stringify(body) }) } as never);
 
 beforeEach(() => {
-	vi.clearAllMocks();
-	ranAs.length = 0;
+	const d = openDatabase(':memory:');
+	d.exec("INSERT INTO households (id, name, created_at) VALUES (1, 'Home', 'x')");
+	d.exec("INSERT INTO users (id, household_id, email, name, role, password_hash, created_at) VALUES (1, 1, 'a@x', 'A', 'owner', 'h', 'x')");
+	useDatabase(d);
 });
+afterEach(() => useDatabase(null));
 
 describe('PUT /api/anime', () => {
-	it("records the household's answer and re-files the show for everyone", async () => {
+	it("records the household's answer", async () => {
 		const res = await put({ mediaId: '42', anime: true });
 		expect(await res.json()).toEqual({ anime: true });
-		expect(setAnimeOverride).toHaveBeenCalledWith(5, 1, '42', true);
-		expect(classifyShow).toHaveBeenCalledTimes(2); // you, then the other member
-		expect(ranAs).toEqual([2]);
+		expect(animeOverrides(1).get('42')).toBe(true);
 	});
 
 	it('refuses a request without a show or an answer', async () => {
 		await expect(put({ mediaId: '42' })).rejects.toMatchObject({ status: 400 });
-		expect(setAnimeOverride).not.toHaveBeenCalled();
+		expect(animeOverrides(1).size).toBe(0);
 	});
 });

@@ -1,19 +1,16 @@
 /**
  * Seek's own Jellyfin webhook (own-tracking plan, step 4). A play from Jellyfin
- * lands in Seek first, for everyone it counts for, then is passed on to Floppy
- * so Floppy stays complete until the switch. Anything that can't be matched is
- * kept in a list shown in Settings — never silently dropped.
+ * lands in Seek for everyone it counts for (a shared show). Anything that can't
+ * be matched is kept in a list shown in Settings — never silently dropped.
  */
 import { db, nowIso } from '../db';
 import { tmdb } from '../tmdb';
-import { floppy } from '../floppy';
-import { markEpisodeWatched, markMovieWatched, watchMoviePath } from '../api';
 import { expire, invalidate } from '../memo';
 import { ensureTitle } from '../catalog/store';
 import { refreshTitle } from '../catalog/refresh';
 import type { User } from '../users';
 import { readJellyfin } from './jellyfinPayload';
-import { playedNear, recordPlay, removeNewestPlay, watchers, type Kind } from './write';
+import { afterUnplay, playedNear, recordPlay, removeNewestPlay, settleCompletion, watchers, type Kind } from './write';
 
 /** One viewing often arrives twice (a finished Stop and a "played" save). */
 const SAME_VIEWING_MS = 30 * 60 * 1000;
@@ -82,37 +79,33 @@ export async function handleJellyfin(user: User, payload: unknown): Promise<Webh
 
 	const { kind, tmdbId, season, episode } = target;
 	const mediaId = String(tmdbId);
-	ensureTitle(kind, tmdbId);
+	// Something new to Seek: its info now, so it shows with its episodes at once.
+	if (ensureTitle(kind, tmdbId)) await refreshTitle(kind, tmdbId, 0).catch(() => {});
 
 	if (ev.action === 'unplay') {
 		removeNewestPlay(user.id, kind, tmdbId, season, episode);
-		await floppy(kind === 'movie' ? watchMoviePath('tmdb', mediaId) : `/api/v1/media/tv/tmdb/${mediaId}/${season}/episodes/${episode}/watch/`, {
-			method: 'DELETE'
-		}).catch((err) => console.warn('[webhook] passing an unplay on to Floppy failed:', err));
+		afterUnplay(user.id, kind, tmdbId, season, episode);
 		bust(kind, mediaId, season);
 		return { ok: true, did: 'removed' };
 	}
 
 	const at = ev.playedAt && Number.isFinite(Date.parse(ev.playedAt)) ? new Date(ev.playedAt).toISOString() : nowIso();
 	if (playedNear(user.id, kind, tmdbId, season, episode, at, SAME_VIEWING_MS)) return { ok: true, did: 'duplicate' };
-	for (const id of watchers(user, 'tmdb', mediaId, kind)) recordPlay(id, kind, tmdbId, season, episode, at, 'jellyfin');
-
-	// Floppy stays complete until the switch (its own household mirror carries shared plays).
-	try {
-		if (kind === 'movie') await markMovieWatched('tmdb', mediaId);
-		else await markEpisodeWatched('tmdb', mediaId, season as number, episode as number);
-	} catch (err) {
-		console.warn('[webhook] passing a play on to Floppy failed (kept in Seek):', err);
+	for (const id of watchers(user, 'tmdb', mediaId, kind)) {
+		recordPlay(id, kind, tmdbId, season, episode, at, 'jellyfin');
+		if (kind === 'tv') settleCompletion(id, tmdbId);
 	}
 	bust(kind, mediaId, season);
 	return { ok: true, did: 'recorded' };
 }
 
-/** The screens still read Floppy: let them see the change. */
+/** Let every screen see the change. */
 function bust(kind: Kind, mediaId: string, season: number | null): void {
 	expire('watchlist:');
 	expire('library:');
 	expire('stats:');
+	expire('collection:');
+	expire('upcoming');
 	invalidate(`tracking:${kind}:tmdb:${mediaId}`);
 	if (kind === 'movie') invalidate(`movie:tmdb:${mediaId}`);
 	else {

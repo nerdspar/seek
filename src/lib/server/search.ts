@@ -1,87 +1,41 @@
 /**
- * Provider search and adding to the library (§6.4). Server-only.
- *
- * `GET /api/v1/search/{media_type}/` searches the PROVIDER, not the local
- * library, and its results carry no indication of whether something is already
- * tracked — the shape is just
- * `{media_id, source, media_type, title, original_title, localized_title, image, year}`.
- *
- * Showing "Add" next to a show the user already has would be a bug, so each
- * search is paired with one local list query using the same term, and results
- * are matched on media_id. That is one extra call per search, not one per row.
+ * Search (§6.4): TMDB's own search, each result marked when it's already on
+ * your list (Seek's `tracked` table). Server-only.
  */
-import { floppy } from './floppy';
-import { memo } from './memo';
-import { getWatchlist } from './watchlist';
+import { db } from './db';
+import { tmdb } from './tmdb';
+import { currentUser } from './userctx';
 import type { MediaType, SearchResult } from '$lib/types';
 
-type Rec = Record<string, unknown>;
-const rec = (v: unknown): Rec => (v && typeof v === 'object' ? (v as Rec) : {});
-
-type SearchResponse = { pagination?: { total: number }; results?: Rec[] };
-type ListResponse = { results?: { item?: Rec }[] };
-
-/** media_ids already in the library for this type, narrowed by the same query. */
-async function trackedIds(mediaType: MediaType, query: string): Promise<Set<string>> {
-	try {
-		const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-			query: { status: ['all'], search: query, limit: 100 }
-		});
-		return new Set(
-			(res.results ?? [])
-				.map((r) => String(rec(r.item).media_id ?? ''))
-				.filter(Boolean)
-		);
-	} catch {
-		/* A failed cross-reference must not fail the search. Worst case a row
-		   offers "Add" for something already tracked — which the add route now
-		   treats as success, so the user still ends up in the right place. */
-		return new Set();
-	}
+/** Every TMDB id on your list for a type. Microseconds: no cache needed. */
+export async function allTrackedIds(mediaType: MediaType): Promise<Set<string>> {
+	const me = currentUser();
+	if (!me) return new Set();
+	const kind = mediaType === 'movie' ? 'movie' : 'tv';
+	return new Set(
+		(db().prepare('SELECT tmdb_id FROM tracked WHERE user_id = ? AND media_type = ?').all(me.id, kind) as { tmdb_id: number }[]).map((r) =>
+			String(r.tmdb_id)
+		)
+	);
 }
 
-/**
- * Every tracked media_id for a type, for surfaces with no search term to narrow
- * by — Discover in particular, whose rows are recommendations that can perfectly
- * well include something already in the library.
- *
- * Reuses the collection view's cache key, which the boot warmup already fills,
- * so this is normally free rather than another full pass over the library.
- */
-export function allTrackedIds(mediaType: MediaType): Promise<Set<string>> {
-	return memo(`tracked:${mediaType}`, 5 * 60 * 1000, async () => {
-		try {
-			const page = await getWatchlist(mediaType, {
-				statuses: ['all'],
-				sort: 'title',
-				direction: 'asc',
-				all: true,
-				enrich: false
-			});
-			return new Set(page.rows.map((r) => r.mediaId).filter(Boolean));
-		} catch {
-			return new Set<string>();
-		}
-	});
-}
+type TmdbSearch = {
+	results?: { id: number; name?: string; title?: string; poster_path?: string | null; first_air_date?: string; release_date?: string }[];
+};
 
 async function searchOne(mediaType: MediaType, query: string, limit: number): Promise<SearchResult[]> {
-	const [res, tracked] = await Promise.all([
-		floppy<SearchResponse>(`/api/v1/search/${mediaType}/`, {
-			query: { search: query, source: 'tmdb', limit }
-		}),
-		trackedIds(mediaType, query)
-	]);
-
-	return (res.results ?? []).map((r): SearchResult => {
-		const mediaId = String(r.media_id ?? '');
+	const kind = mediaType === 'movie' ? 'movie' : 'tv';
+	const [res, tracked] = await Promise.all([tmdb<TmdbSearch>(`/search/${kind}`, { query, include_adult: 'false' }), allTrackedIds(kind)]);
+	return (res.results ?? []).slice(0, limit).map((r): SearchResult => {
+		const mediaId = String(r.id);
+		const date = r.first_air_date || r.release_date || '';
 		return {
 			mediaId,
-			source: String(r.source ?? 'tmdb'),
-			mediaType,
-			title: String(r.title ?? 'Untitled'),
-			poster: typeof r.image === 'string' && r.image ? r.image : null,
-			year: typeof r.year === 'number' ? r.year : null,
+			source: 'tmdb',
+			mediaType: kind,
+			title: r.name || r.title || 'Untitled',
+			poster: r.poster_path ? `https://image.tmdb.org/t/p/w500${r.poster_path}` : null,
+			year: date.length >= 4 ? Number(date.slice(0, 4)) : null,
 			tracked: tracked.has(mediaId)
 		};
 	});
@@ -89,11 +43,8 @@ async function searchOne(mediaType: MediaType, query: string, limit: number): Pr
 
 export type SearchScope = 'best' | 'tv' | 'movie';
 
-/**
- * Anime is deliberately not a scope. Floppy resolves an anime+tmdb search to
- * `tmdb.search(tv)` and relabels the results, so an Anime chip returns exactly
- * the same rows as TV Shows — a filter that appears to narrow and does not.
- */
+/** Anime is deliberately not a scope: on TMDB it's TV, so an Anime chip would
+ *  return exactly the TV rows. */
 export async function search(scope: SearchScope, query: string, limit = 20): Promise<SearchResult[]> {
 	const q = query.trim();
 	if (!q) return [];
@@ -115,30 +66,11 @@ export async function search(scope: SearchScope, query: string, limit = 20): Pro
 }
 
 /**
- * Start tracking. Verified minimal body: `{source, media_id}` returns 201 with
- * status 0 (Planning), which is what "add to library" should mean — §3 notes an
- * omitted status defaults to Planning.
- */
-export function addMedia(mediaType: MediaType, source: string, mediaId: string) {
-	return floppy(`/api/v1/media/${mediaType}/`, {
-		method: 'POST',
-		body: { source, media_id: mediaId }
-	});
-}
-
-/** Untrack — used to reverse an accidental add. */
-export function removeMedia(mediaType: MediaType, source: string, mediaId: string) {
-	return floppy(`/api/v1/media/${mediaType}/${source}/${encodeURIComponent(mediaId)}/`, {
-		method: 'DELETE'
-	});
-}
-
-/**
  * Drop anything already in the library from a list of suggestions.
  *
  * Browsing surfaces — moods, a service's trending row, the universal search —
  * are for finding something new. A title you already track is not a find, and
- * its add button would only earn a 409 from Floppy. The Search *tab* is
+ * its add button would do nothing. The Search *tab* is
  * deliberately excluded: there you are checking whether you already have a
  * specific thing, so it marks rather than hides.
  */

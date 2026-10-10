@@ -260,6 +260,12 @@ export function seekDiary(userId: number, householdId: number, offset = 0, limit
 	return { days, hasMore: offset + limit < dayKeys.length, total: dayKeys.length };
 }
 
+/** The diary offset whose page starts at `date`: the day itself if you watched
+ *  anything then, else the nearest earlier day you did. */
+export function seekDiaryOffset(userId: number, date: string): number {
+	return new Set(plays(userId).map((p) => p.day).filter((d) => d > date)).size;
+}
+
 /**
  * Upcoming: episodes of the shows you track (not dropped) and the films you
  * track, from 30 days back to a year ahead. A real air time where TVmaze had one;

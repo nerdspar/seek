@@ -1,14 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const setShared = vi.fn();
-const syncJointTags = vi.fn(async (..._a: unknown[]) => {});
-vi.mock('$lib/server/household/run', () => ({
-	setShared: (...a: unknown[]) => setShared(...a),
-	syncJointTags: (...a: unknown[]) => syncJointTags(...a)
-}));
+vi.mock('$lib/server/household/run', () => ({ setShared: (...a: unknown[]) => setShared(...a) }));
+vi.mock('$lib/server/memo', () => ({ expire: vi.fn() }));
 vi.mock('$lib/server/household/shared', () => ({ listShared: () => [] }));
 vi.mock('$lib/server/household/mirror', () => ({ mirrorMembers: () => [] }));
-vi.mock('$lib/server/users', () => ({ listMembers: () => [] }));
 
 import { DELETE } from './+server';
 
@@ -24,7 +20,6 @@ describe('DELETE /api/household/shared (Stop sharing)', () => {
 		expect(setShared).toHaveBeenLastCalledWith(7, 1, { source: 'tmdb', mediaId: '1204680', mediaType: 'movie' }, false);
 		await del({ source: 'tmdb', mediaId: '1204680' });
 		expect(setShared).toHaveBeenLastCalledWith(7, 1, { source: 'tmdb', mediaId: '1204680', mediaType: 'tv' }, false);
-		expect(syncJointTags).toHaveBeenCalledTimes(2);
 	});
 
 	it('needs a source and id', async () => {

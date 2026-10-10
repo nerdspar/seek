@@ -50,19 +50,31 @@ describe('copyFromFloppy', () => {
 		// Show info isn't fetched yet in this test, so the episode check waits rather than flagging.
 		expect(s.pendingCatalog).toBe(450);
 		expect(s.matches).toBe(true);
-		expect(lastRun(1)?.added).toBe(451);
+		expect(lastRun(1)?.added).toBe(454); // 3 titles + 451 plays
 		expect((db().prepare("SELECT status FROM tracked WHERE tmdb_id = 95350").get() as { status: number }).status).toBe(3);
 	});
 
-	it('is safe to re-run: nothing is added twice, and a play unmarked in Floppy goes', async () => {
+	it('is add-only: nothing twice, and what Seek changed since stays as Seek has it', async () => {
 		await copyFromFloppy();
+		db().exec('UPDATE tracked SET status = 2 WHERE tmdb_id = 95350');
+		db().exec('DELETE FROM plays WHERE id = (SELECT MIN(id) FROM plays)');
 		history.tv = history.tv.slice(1);
 		lists['/api/v1/media/tv/'] = [listRow(65942)];
 		const s = await copyFromFloppy();
-		expect(s.added).toBe(0);
-		expect(s.removed).toBe(1);
-		expect(s.tracked.tv).toBe(1);
-		expect(s.plays.tv).toEqual({ floppy: 449, seek: 449, skipped: 0 });
+		expect([s.added, s.removed]).toEqual([0, 0]);
+		expect((db().prepare('SELECT status FROM tracked WHERE tmdb_id = 95350').get() as { status: number }).status).toBe(2);
+		expect((db().prepare("SELECT COUNT(*) AS n FROM plays WHERE media_type = 'tv'").get() as { n: number }).n).toBe(449);
+	});
+
+	it('a catch-up reads only back to `since`, and links a viewing Seek already has', async () => {
+		const newest = { ...ep(1001, 95350, 1, 2), played_at_local: '2026-10-09T21:00:00-04:00' };
+		history.tv = [newest, ...history.tv.map((p) => ({ ...(p as object), played_at_local: '2026-01-01T20:00:00-04:00' }))];
+		db().exec("INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, created_at) VALUES (1, 'tv', 95350, 1, 2, '2026-10-10T01:05:00Z', 'jellyfin', 'x')");
+		const s = await copyFromFloppy('2026-10-01T00:00:00Z');
+		expect(s.added).toBe(3); // the three tracked titles; the play was linked
+		expect((db().prepare("SELECT external_key FROM plays WHERE source = 'jellyfin'").get() as { external_key: string }).external_key).toMatch(/^floppy:/);
+		expect((db().prepare("SELECT COUNT(*) AS n FROM plays WHERE media_type = 'tv'").get() as { n: number }).n).toBe(1);
+		expect(s.matches).toBe(false);
 	});
 
 	it('lists what it could not take, and flags a play on an episode TMDB doesn’t have', async () => {

@@ -6,7 +6,6 @@
  */
 import { FLOPPY_URL, BOOKORBIT_URL } from './env';
 import { invalidate } from './memo';
-import { forgetUpcoming } from './upcoming';
 import { refreshCredentials } from './userctx';
 import { dropBooksCache } from './books/bookorbit';
 
@@ -104,6 +103,5 @@ export async function checkBookOrbitLogin(username: string, password: string): P
 export function forgetCurrentUserData(): void {
 	refreshCredentials();
 	invalidate(''); // every memo key in this user's namespace
-	forgetUpcoming();
 	dropBooksCache({ session: true });
 }

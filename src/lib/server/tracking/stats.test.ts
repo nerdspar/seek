@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { openDatabase, useDatabase, db } from '../db';
-import { duration, seekCollectionCounts, seekDiary, seekStats, seekUpcoming, streaks } from './stats';
+import { duration, seekCollectionCounts, seekDiary, seekDiaryOffset, seekStats, seekUpcoming, streaks } from './stats';
 
 beforeEach(() => {
 	const d = openDatabase(':memory:');
@@ -63,6 +63,12 @@ describe('collection, diary and upcoming', () => {
 		expect(d.total).toBe(3);
 		expect(d.hasMore).toBe(true);
 		expect(d.days[0].entries.map((e) => `${e.showTitle} ${e.code} ${e.episodeTitle}`)).toEqual(['Re:ZERO S01E01 Start', 'Lanterns S01E02 Two']);
+	});
+	it('jumps to a date: that day, or the nearest earlier day with plays', () => {
+		expect(seekDiaryOffset(1, '2027-01-01')).toBe(0);
+		expect(seekDiaryOffset(1, '2026-09-04')).toBe(0);
+		expect(seekDiaryOffset(1, '2026-09-03')).toBe(1);
+		expect(seekDiaryOffset(1, '2026-01-01')).toBe(2);
 	});
 	it('upcoming: tracked shows’ episodes in the window, date-only marked as such', () => {
 		const up = seekUpcoming(1, Date.parse('2026-10-09T12:00:00Z'));

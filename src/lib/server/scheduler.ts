@@ -9,7 +9,6 @@
 import { getPrefs } from './prefs';
 import { subscriptionCount } from './push';
 import { sendDailyDigest, sendAtTimeNotifications } from './digest';
-import { syncAnimeTags } from './anime-sync';
 import { listUsers, type User } from './users';
 import { runAs, NotLinkedError } from './userctx';
 import { startMirroring } from './household/run';
@@ -53,13 +52,9 @@ let started = false;
 
 export function startScheduler(): void {
 	if (started) return;
-	// Shared-show mirroring is independent of push; with fewer than
-	// two linked people (or nothing shared) each pass is a couple of DB reads.
+	// The new-show inbox: a couple of DB reads per household.
 	startMirroring();
 	started = true;
-	/* Always scheduled: the anime tags follow Floppy's genres, and push is
-	   always available (Seek generates its own keys). */
-	startAnimeSync();
 	startCatalog();
 	startFloppyCopy();
 
@@ -86,37 +81,6 @@ export function startScheduler(): void {
 }
 
 /**
- * Reconcile everyone's Floppy `anime` tag to what's anime (anime-sync.ts) — a
- * few minutes after boot (let warmup settle) and every six hours after.
- * Idempotent and diff-only, so a restart or a missed run costs nothing; a show
- * Floppy has no genres for yet keeps its tag.
- */
-function startAnimeSync(): void {
-	let running = false;
-	const sync = async () => {
-		if (running) return;
-		running = true;
-		try {
-			// Each person's Floppy carries its own anime tags; Floppy's "Anime"
-			// genre (and the household's overrides) decide for all of them.
-			await forEachUser(async (user) => {
-				const r = await syncAnimeTags();
-				if (r.added || r.removed) {
-					console.log(`[anime-sync] user ${user.id}: +${r.added} −${r.removed} (anime: ${r.anime})`);
-				}
-			});
-		} catch (err) {
-			console.warn('[anime-sync] failed; keeping existing tags:', err);
-		} finally {
-			running = false;
-		}
-	};
-	setInterval(() => void sync(), 6 * 60 * 60 * 1000);
-	setTimeout(() => void sync(), 60 * 1000);
-}
-
-
-/**
  * Seek's own copy of show and movie info (docs/own-tracking-plan.md, step 1).
  * Every 6 hours, add any title someone tracks; every 10 minutes, refresh what's
  * due (airing shows hourly, the rest daily or weekly — see catalog/map.ts).
@@ -135,10 +99,8 @@ function startCatalog(): void {
 		}
 	};
 	const seed = async () => {
-		await forEachUser(async (user) => {
-			const added = await seedTrackedTitles();
-			if (added) console.log(`[catalog] user ${user.id}: ${added} new titles`);
-		});
+		const added = await seedTrackedTitles();
+		if (added) console.log(`[catalog] ${added} new titles`);
 		void refresh();
 	};
 	setTimeout(() => void seed(), 2 * 60 * 1000);
@@ -147,33 +109,31 @@ function startCatalog(): void {
 }
 
 /**
- * The copy out of Floppy (own-tracking plan, step 2): once ~10 minutes after
- * boot for anyone not copied in the last 20 hours, then nightly at 4 AM. A full
- * copy is ~11 minutes of Floppy's time per person (it rebuilds the history for
- * every page), so it runs one person at a time and never on demand.
+ * Catching up from Floppy (own-tracking plan): while someone still has Floppy
+ * linked, add what reached Floppy alone — Jellyfin marks sent to Floppy's
+ * webhook before Jellyfin points at Seek. ~10 minutes after boot, then nightly
+ * at 4 AM; each reads back only to a day before the last run (usually one page
+ * of Floppy's history). Unlinking Floppy in Settings stops it.
  */
+const DAY = 24 * 60 * 60 * 1000;
 function startFloppyCopy(): void {
 	let running = false;
-	const copyStale = async () => {
+	const catchUp = async () => {
 		if (running) return;
 		running = true;
 		try {
 			await forEachUser(async (user) => {
 				const last = lastRun(user.id);
-				if (last && Date.now() - Date.parse(last.ranAt) < 20 * 60 * 60 * 1000) return;
-				const s = await copyFromFloppy();
-				console.log(
-					`[copy] user ${user.id}: ${s.plays.tv.seek}/${s.plays.tv.floppy} episode plays, ` +
-						`${s.plays.movie.seek}/${s.plays.movie.floppy} film plays, +${s.added} -${s.removed}, ` +
-						`${s.review} to review, ${s.pendingCatalog} awaiting show info — ${s.matches ? 'matches' : 'not yet'}`
-				);
+				const since = last ? new Date(Date.parse(last.ranAt) - DAY).toISOString() : undefined;
+				const s = await copyFromFloppy(since);
+				if (s.added) console.log(`[copy] user ${user.id}: caught up ${s.added} from Floppy`);
 			});
 		} finally {
 			running = false;
 		}
 	};
-	setTimeout(() => void copyStale(), 10 * 60 * 1000);
+	setTimeout(() => void catchUp(), 10 * 60 * 1000);
 	setInterval(() => {
-		if (new Date().getHours() === 4) void copyStale();
-	}, 30 * 60 * 1000);
+		if (new Date().getHours() === 4) void catchUp();
+	}, 60 * 60 * 1000);
 }

@@ -1,9 +1,7 @@
 /**
- * Seek's own record of each change you make (own-tracking plan, step 3: writes
- * first). While Floppy is still primary, every successful Floppy write is
- * mirrored here, so Seek's copy is always the freshest; the nightly copy then
- * makes Seek match Floppy exactly (linking these plays to Floppy's, dropping
- * any Floppy doesn't have). Best-effort: a failure here never fails your action.
+ * Every change to what you track and have watched — Seek is the record
+ * (own-tracking plan). Marks on a shared show or film land for the whole
+ * household at once (`watchers`).
  */
 import { db, nowIso } from '../db';
 import { aired } from './nextUp';
@@ -146,4 +144,58 @@ export function playedNear(userId: number, kind: Kind, tmdbId: number, season: n
 		.all(userId, kind, tmdbId, season, episode) as { watched_at: string }[];
 	const t = Date.parse(at);
 	return rows.some((r) => Math.abs(Date.parse(r.watched_at) - t) <= windowMs);
+}
+
+/**
+ * After a play: a show that has ended and is now fully watched becomes
+ * Completed. A show still running stays Watching — caught up, it simply drops
+ * out of the backlog until the next episode airs.
+ */
+export function settleCompletion(userId: number, tmdbId: number, now = Date.now()): void {
+	const d = db();
+	const t = d.prepare("SELECT status FROM titles WHERE media_type = 'tv' AND tmdb_id = ?").get(tmdbId) as { status: string | null } | undefined;
+	if (t?.status !== 'Ended' && t?.status !== 'Canceled') return;
+	const eps = d.prepare('SELECT season, episode, air_date AS airDate, air_at AS airAt FROM episodes WHERE tmdb_id = ? AND season > 0').all(tmdbId) as {
+		season: number;
+		episode: number;
+		airDate: string | null;
+		airAt: string | null;
+	}[];
+	if (!eps.length || eps.some((e) => !aired(e, now))) return;
+	const played = new Set(
+		(d.prepare("SELECT DISTINCT season, episode FROM plays WHERE user_id = ? AND media_type = 'tv' AND tmdb_id = ?").all(userId, tmdbId) as {
+			season: number;
+			episode: number;
+		}[]).map((p) => `${p.season}:${p.episode}`)
+	);
+	if (eps.some((e) => !played.has(`${e.season}:${e.episode}`))) return;
+	d.prepare(
+		"UPDATE tracked SET status = ?, updated_at = ? WHERE user_id = ? AND media_type = 'tv' AND tmdb_id = ? AND status IN (?, ?)"
+	).run(Status.Completed, nowIso(), userId, tmdbId, Status.Planning, Status.Watching);
+}
+
+/**
+ * After an unmark: a Completed show with a gap in it again is back to
+ * Watching; a Completed film with no plays left is back to Planning. Only
+ * from Completed — Paused or Dropped was set deliberately — and only when
+ * nothing of it is left watched (removing one play of a rewatch changes nothing).
+ * `episode` null means the whole season.
+ */
+export function afterUnplay(userId: number, kind: Kind, tmdbId: number, season: number | null, episode: number | null): void {
+	const d = db();
+	const left =
+		kind === 'movie'
+			? d.prepare("SELECT 1 FROM plays WHERE user_id = ? AND media_type = 'movie' AND tmdb_id = ?").get(userId, tmdbId)
+			: episode === null
+				? d.prepare("SELECT 1 FROM plays WHERE user_id = ? AND media_type = 'tv' AND tmdb_id = ? AND season = ?").get(userId, tmdbId, season)
+				: d.prepare("SELECT 1 FROM plays WHERE user_id = ? AND media_type = 'tv' AND tmdb_id = ? AND season = ? AND episode = ?").get(userId, tmdbId, season, episode);
+	if (left) return;
+	d.prepare('UPDATE tracked SET status = ?, updated_at = ? WHERE user_id = ? AND media_type = ? AND tmdb_id = ? AND status = ?').run(
+		kind === 'movie' ? Status.Planning : Status.Watching,
+		nowIso(),
+		userId,
+		kind,
+		tmdbId,
+		Status.Completed
+	);
 }

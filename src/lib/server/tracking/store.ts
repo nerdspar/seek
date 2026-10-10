@@ -2,53 +2,38 @@
 import { db, nowIso } from '../db';
 import type { MediaType, PlayRow, Review, TrackedRow } from './importMap';
 
-/** Make Seek's tracked titles for one person and media type match `rows` exactly. */
-export function replaceTracked(userId: number, mediaType: MediaType, rows: TrackedRow[]): { kept: number; removed: number } {
-	const d = db();
-	let removed = 0;
-	d.transaction(() => {
-		const up = d.prepare(
-			`INSERT INTO tracked (user_id, media_type, tmdb_id, status, score, notes, added_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT (user_id, media_type, tmdb_id) DO UPDATE SET status = excluded.status, score = excluded.score,
-				notes = excluded.notes, added_at = excluded.added_at, updated_at = excluded.updated_at`
-		);
-		for (const r of rows) up.run(userId, mediaType, r.tmdbId, r.status, r.score, r.notes, r.addedAt, r.updatedAt);
-		const keep = new Set(rows.map((r) => r.tmdbId));
-		const have = d.prepare('SELECT tmdb_id FROM tracked WHERE user_id = ? AND media_type = ?').all(userId, mediaType) as { tmdb_id: number }[];
-		const del = d.prepare('DELETE FROM tracked WHERE user_id = ? AND media_type = ? AND tmdb_id = ?');
-		for (const h of have) if (!keep.has(h.tmdb_id)) (del.run(userId, mediaType, h.tmdb_id), removed++);
+/** Add the titles Seek doesn't track yet for this person. What Seek already
+ *  tracks keeps Seek's status and rating: Seek is the record now. */
+export function addTracked(userId: number, mediaType: MediaType, rows: TrackedRow[]): number {
+	const ins = db().prepare(
+		`INSERT INTO tracked (user_id, media_type, tmdb_id, status, score, notes, added_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, media_type, tmdb_id) DO NOTHING`
+	);
+	let added = 0;
+	db().transaction(() => {
+		for (const r of rows) added += ins.run(userId, mediaType, r.tmdbId, r.status, r.score, r.notes, r.addedAt, r.updatedAt).changes;
 	})();
-	return { kept: rows.length, removed };
+	return added;
 }
 
 /** A Seek-recorded play and Floppy's copy of it are the same viewing when this close. */
 export const SAME_VIEWING_MS = 12 * 60 * 60 * 1000;
 
 /**
- * Make Seek's plays for one person and media type match Floppy's `plays`:
- * - a play Seek recorded itself (a mark in Seek) is linked to Floppy's copy of
- *   the same viewing rather than copied twice;
- * - new Floppy plays are added; plays Floppy no longer has (unmarked) go;
- * - a mark made in Seek before this run that Floppy never got is dropped —
- *   Floppy is the record until the switch. Plays recorded during the run stay,
- *   and so do Jellyfin's: Seek receives those first, so Seek is their record.
+ * Add Floppy's plays that Seek doesn't have. A play Seek already holds for the
+ * same viewing (within SAME_VIEWING_MS: a mark in Seek, or Jellyfin's) is linked
+ * to Floppy's copy rather than added twice. Never removes anything: Seek is the
+ * record, and this only catches up what reached Floppy alone.
  */
-export function syncImportedPlays(
-	userId: number,
-	mediaType: MediaType,
-	plays: PlayRow[],
-	runStart: string = nowIso()
-): { added: number; removed: number; linked: number } {
+export function addImportedPlays(userId: number, mediaType: MediaType, plays: PlayRow[]): { added: number; linked: number } {
 	const d = db();
 	let added = 0;
-	let removed = 0;
 	let linked = 0;
 	d.transaction(() => {
 		const exists = d.prepare('SELECT 1 FROM plays WHERE user_id = ? AND external_key = ?');
 		const local = d.prepare(
 			`SELECT id, watched_at FROM plays WHERE user_id = ? AND media_type = ? AND tmdb_id = ? AND season IS ? AND episode IS ?
-			AND external_key IS NULL AND source IN ('seek', 'jellyfin')`
+			AND external_key IS NULL`
 		);
 		const link = d.prepare('UPDATE plays SET external_key = ? WHERE id = ?');
 		const ins = d.prepare(
@@ -59,11 +44,10 @@ export function syncImportedPlays(
 		for (const p of plays) {
 			if (exists.get(userId, p.externalKey)) continue;
 			const at = Date.parse(p.watchedAt);
-			const candidates = local.all(userId, mediaType, p.tmdbId, p.season, p.episode) as { id: number; watched_at: string }[];
-			const match = candidates
+			const match = (local.all(userId, mediaType, p.tmdbId, p.season, p.episode) as { id: number; watched_at: string }[])
 				.map((c) => ({ id: c.id, gap: Math.abs(Date.parse(c.watched_at) - at) }))
 				.filter((c) => c.gap <= SAME_VIEWING_MS)
-				.sort((a, b) => a.gap - b.gap)[0];
+				.sort((x, y) => x.gap - y.gap)[0];
 			if (match) {
 				link.run(p.externalKey, match.id);
 				linked++;
@@ -72,20 +56,8 @@ export function syncImportedPlays(
 				added++;
 			}
 		}
-		const keep = new Set(plays.map((p) => p.externalKey));
-		const del = d.prepare('DELETE FROM plays WHERE id = ?');
-		const backed = d
-			.prepare("SELECT id, external_key FROM plays WHERE user_id = ? AND media_type = ? AND external_key LIKE 'floppy:%'")
-			.all(userId, mediaType) as { id: number; external_key: string }[];
-		for (const h of backed) if (!keep.has(h.external_key)) (del.run(h.id), removed++);
-		removed += d
-			.prepare(
-				`DELETE FROM plays WHERE user_id = ? AND media_type = ? AND external_key IS NULL
-				AND source = 'seek' AND created_at < ?`
-			)
-			.run(userId, mediaType, runStart).changes;
 	})();
-	return { added, removed, linked };
+	return { added, linked };
 }
 
 /** Plays Seek holds that are backed by Floppy (copied or linked). */

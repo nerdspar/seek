@@ -1,382 +1,15 @@
 /**
- * Builds the watchlist rows (spec §4.1) from Floppy's list response.
- *
- * Field notes, all verified live against v26.8.20 rather than assumed:
- *
- * - `max_progress` is NOT on the list response. The show's total episode count
- *   arrives as `item.number_of_pages` — an overloaded field name (it means what
- *   it says for books), but it agrees exactly with `max_progress` on the show
- *   detail endpoint. Using it avoids an N+1 call per row.
- *
- * - `next_episode.title` is NOT reliably the episode title. It is sometimes the
- *   SHOW title (Outer Banks S05E01 reports "Outer Banks", not "The Crossing").
- *   §4.1 wants the real episode title on the pill, so it comes from the episode
- *   detail endpoint and is cached — episode titles never change once aired.
- *
- * - `next_episode` is ONLY on the list endpoint. Show detail does not carry it,
- *   and neither does the watch POST response — see getRow().
- *
- * - §12.4: season/episode numbering comes from `next_episode` and is never
- *   computed. Absolute-numbered shows (Re:ZERO) only work because of this.
- *
- * - `sort` is a closed enum and Floppy 400s on anything outside it. There is no
- *   `progressed_at` despite the field existing on the response; `updated` is
- *   what backs §4.5's "Recently watched".
+ * The watchlist and library lists (spec §4.1), from Seek's own data (own-tracking
+ * plan): what you track and have watched lives in Seek's tables, show info in
+ * Seek's TMDB copy. Same exports and shapes the screens have always used.
  */
-import { floppy } from './floppy';
-import { TTLCache } from './cache';
-import { scopeKey } from './userctx';
-import { companyQuery, type Company } from './tags';
-import type { MediaType, TrackedMedia, WatchlistRow } from '$lib/types';
+import { db } from './db';
+import { currentUser } from './userctx';
+import { seekList, seekRows } from './tracking/read';
+import { normaliseService, serviceNames } from './serviceNames';
+import type { MediaType, WatchlistRow } from '$lib/types';
 
-type ListResponse = {
-	pagination: { total: number; limit: number; offset: number; next: string | null };
-	results: TrackedMedia[];
-};
-
-/** Episode titles are immutable once aired; a long TTL is safe. */
-const titleCache = new TTLCache<string | null>(24 * 60 * 60 * 1000, 5000);
-
-/** Episode totals do change as shows air, so this expires far sooner. */
-const maxProgressCache = new TTLCache<number | null>(6 * 60 * 60 * 1000, 2000);
-
-/**
- * Recover a show's episode total when the list row omits it.
- *
- * Shows tracked with season-scoped progress come back with
- * `item.number_of_pages: null` — 25 of 88 rows in this library (Big Sky,
- * Peacemaker, Shameless…). They are ordinary shows with a valid `next_episode`,
- * not season fragments and not duplicates of anything else in the list, so they
- * must not be filtered out. Without a total they would render an empty progress
- * bar and no "N left", which is most of what the row is for.
- *
- * Show detail carries `max_progress` for every one of them, so this fills the
- * gap. It is an extra call per affected row on first load only, then cached.
- */
-async function maxProgressFor(
-	mediaType: MediaType,
-	source: string,
-	mediaId: string
-): Promise<number | null> {
-	/* A film is one thing; there is nothing to look up. This is not just an
-	   optimisation — the lookup below is hardcoded to the tv path, so asking it
-	   about a movie fetched whatever series happens to share that TMDB id and
-	   returned its episode count. Plan 9 from Outer Space came back as "0/24". */
-	if (mediaType === 'movie') return 1;
-
-	const key = `${source}:${mediaId}`;
-	const hit = maxProgressCache.get(key);
-	if (hit !== undefined) return hit;
-
-	try {
-		const detail = await floppy<{ max_progress: number | null }>(
-			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/`
-		);
-		const max = typeof detail?.max_progress === 'number' ? detail.max_progress : null;
-		maxProgressCache.set(key, max);
-		return max;
-	} catch {
-		return null;
-	}
-}
-
-export async function episodeTitle(
-	source: string,
-	mediaId: string,
-	season: number,
-	episode: number
-): Promise<string | null> {
-	const key = `${source}:${mediaId}:${season}:${episode}`;
-	const hit = titleCache.get(key);
-	if (hit !== undefined) return hit;
-
-	try {
-		const ep = await floppy<{ title: string | null }>(
-			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${season}/${episode}/`
-		);
-		const title = ep?.title ?? null;
-		titleCache.set(key, title);
-		return title;
-	} catch {
-		// A missing title must never fail the row — the pill degrades to "S05E01".
-		return null;
-	}
-}
-
-/**
- * Streaming services a title is on, from TMDB data Floppy already carries.
- *
- * Floppy's own `platform[]` filter is a no-op — passing any value returns the
- * whole library — and `item.platforms` is empty on every row here. The real
- * provider data lives under `item.watch_providers`, keyed by region, so service
- * filtering happens in Seek rather than on the server.
- */
-/**
- * TMDB lists the same service many times over: resale channels ("HBO Max Amazon
- * Channel"), ad tiers ("Netflix Standard with Ads") and plan tiers ("Paramount
- * Plus Premium", "Paramount Plus Essential"). Untouched that is 43 entries of
- * near-duplicates, which is unusable as a filter. Collapsing them to the service
- * you actually subscribe to gets it to roughly 20.
- */
-const RESELLER = /\s+(?:Amazon Channel|Apple TV Channel|Roku Premium Channel|Channel)$/i;
-const AD_TIER = /\s+(?:Standard |Basic )?with Ads$/i;
-const PLAN_TIER = /\s+(?:Premium\+|Premium Plus|Premium|Essential|Standard|Basic|Plus)$/i;
-
-export function normaliseService(name: string): string {
-	let out = name.replace(RESELLER, '').replace(AD_TIER, '').trim();
-	// "Paramount Plus" and "Paramount+" are the same thing; settle on the symbol
-	// before stripping tiers, so "Paramount Plus Premium" does not become
-	// "Paramount".
-	out = out.replace(/\bPlus\b/g, '+').replace(/\s+\+/g, '+');
-	out = out.replace(PLAN_TIER, '').trim();
-	out = out.replace(/\+\s*\+/g, '+');
-	return out;
-}
-
-/** Case-insensitive canonical form, so "BritBox" and "Britbox" are one entry. */
-const canonical = new Map<string, string>();
-function dedupeKey(name: string): string {
-	const key = name.toLowerCase().replace(/[^a-z0-9+]/g, '');
-	const seen = canonical.get(key);
-	if (seen) return seen;
-	canonical.set(key, name);
-	return name;
-}
-
-function servicesOf(item: Record<string, unknown>): string[] {
-	const providers = item.watch_providers;
-	if (!providers || typeof providers !== 'object') return [];
-	const us = (providers as Record<string, unknown>).US;
-	if (!us || typeof us !== 'object') return [];
-	// `flatrate` is subscription streaming; rent/buy are not "on a service I pay for".
-	const names = (((us as Record<string, unknown>).flatrate as unknown[]) ?? [])
-		.map((entry) => (entry as Record<string, unknown>)?.provider_name)
-		.filter((n): n is string => typeof n === 'string');
-	return serviceNames(names);
-}
-
-/** TMDB provider names tidied into the watchlist's service chips (Seek's own
- *  data uses this too, so the chips read the same either way). */
-export function serviceNames(raw: string[]): string[] {
-	return [...new Set(raw.map((name) => dedupeKey(normaliseService(name))))];
-}
-
-function mapRow(r: TrackedMedia, mediaType: MediaType): WatchlistRow {
-	const item = (r.item ?? {}) as Record<string, unknown>;
-	const ne = r.next_episode;
-	const max = typeof item.number_of_pages === 'number' ? item.number_of_pages : null;
-	const progress = r.progress ?? 0;
-
-	return {
-		mediaId: String(item.media_id ?? ''),
-		source: String(item.source ?? 'tmdb'),
-		mediaType,
-		title: String(item.title ?? 'Untitled'),
-		poster: (item.image as string) ?? null,
-		services: servicesOf(item),
-		next:
-			ne && ne.season_number !== null
-				? { season: ne.season_number, episode: ne.episode_number, airDate: ne.air_date }
-				: null,
-		progress,
-		maxProgress: max,
-		left: max === null ? null : Math.max(0, max - progress)
-	};
-}
-
-/* Where you actually are in a show you started in the middle.
- *
- * `next_episode` is the LOWEST unwatched episode, which is only "next up" when
- * what you have watched is an unbroken run from the start. Pick a show up at
- * its current season — Below Deck Mediterranean, 31 episodes in across seasons
- * 10 and 11 — and Floppy points at S01E01 forever, however recently you
- * watched. Hobi did the same thing, so the row sat at the top of "recently
- * watched" describing an episode from 2016.
- *
- * Correcting this costs two requests, so it runs only for rows that are
- * provably wrong: 31 episodes watched and still "next: S01E01" cannot both be
- * true. A show genuinely at its first episode has progress 0 and is untouched.
- * The narrower case — a season skipped in the middle, where Floppy points at
- * the gap rather than the start — is left alone, since there the gap is a
- * defensible answer.
- */
-type NextUp = { season: number; episode: number; airDate: string | null };
-/* 'done' is not the same as null. Null means "no correction available, keep
-   what Floppy said"; 'done' means the seasons you actually watch are finished,
-   which is a real answer and renders as Caught up. */
-type Correction = NextUp | 'done';
-const nextUpCache = new TTLCache<Correction | null>(10 * 60 * 1000, 500);
-
-function seasonNumberOf(entry: Record<string, unknown>): number | null {
-	const item = (entry.item ?? {}) as Record<string, unknown>;
-	const n = item.season_number;
-	return typeof n === 'number' ? n : null;
-}
-
-async function nextUpFor(source: string, mediaId: string): Promise<Correction | null> {
-	// Per user: a correction is derived from *this person's* plays.
-	const key = scopeKey(`${source}:${mediaId}`);
-	const hit = nextUpCache.get(key);
-	if (hit !== undefined) return hit;
-
-	try {
-		const detail = await floppy<{ related?: { seasons?: Record<string, unknown>[] } }>(
-			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/`
-		);
-
-		/* The season you are actually watching: the most recently progressed one
-		   that has any plays. Not the highest-numbered — a dip back into an old
-		   season should not move next-up there. */
-		const watched = (detail?.related?.seasons ?? []).filter(
-			(sn) => typeof sn.progress === 'number' && sn.progress > 0
-		);
-		const current = watched.sort((a, b) =>
-			String(b.progressed_at ?? '').localeCompare(String(a.progressed_at ?? ''))
-		)[0];
-		const seasons = (detail?.related?.seasons ?? []).filter((sn) => {
-			const n = seasonNumberOf(sn);
-			return n !== null && n > 0;
-		});
-		const seasonNumber = current ? seasonNumberOf(current) : null;
-		if (seasonNumber === null) {
-			nextUpCache.set(key, null);
-			return null;
-		}
-
-		const season = await floppy<{ related?: { episodes?: Record<string, unknown>[] } }>(
-			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${seasonNumber}/`
-		);
-		const episodes = (season?.related?.episodes ?? [])
-			.map((e) => {
-				const item = (e.item ?? {}) as Record<string, unknown>;
-				return {
-					number: typeof item.episode_number === 'number' ? item.episode_number : null,
-					airDate: typeof item.release_datetime === 'string' ? item.release_datetime : null,
-					played: typeof e.progress === 'number' && e.progress > 0
-				};
-			})
-			.filter((e): e is { number: number; airDate: string | null; played: boolean } => e.number !== null)
-			.sort((a, b) => a.number - b.number);
-
-		/* After the last one you watched, not the first one you skipped. An
-		   episode passed over mid-season is a decision, not a bookmark. */
-		const lastPlayed = episodes.filter((e) => e.played).at(-1);
-		const next = lastPlayed ? episodes.find((e) => e.number > lastPlayed.number && !e.played) : null;
-
-		let out: Correction | null = next
-			? { season: seasonNumber, episode: next.number, airDate: next.airDate }
-			: null;
-
-		/* Season finished. Roll into the next one you have not started; if there
-		   is none, the show is done until it returns — which is the honest answer
-		   even with old seasons unwatched, since those are a choice, not a
-		   backlog. */
-		if (!out && lastPlayed) {
-			const upcoming = seasons
-				.map((sn) => ({ number: seasonNumberOf(sn) as number, progress: Number(sn.progress ?? 0) }))
-				.filter((sn) => sn.number > seasonNumber && sn.progress === 0)
-				.sort((a, b) => a.number - b.number)[0];
-			out = upcoming ? { season: upcoming.number, episode: 1, airDate: null } : 'done';
-		}
-
-		nextUpCache.set(key, out);
-		return out;
-	} catch {
-		// Never fail a row over this; the uncorrected value still renders.
-		return null;
-	}
-}
-
-/* A show you have not started whose premiere just aired can still read "no
- * next episode": Floppy's show-level metadata was cached before the premiere
- * (Avatar: Seven Havens — E1–3 out at 8 PM, the show still said "first airs
- * tomorrow"), while its episode list is current. Read next-up from the list:
- * the first aired, unplayed episode of the first real season. */
-const firstAiredCache = new TTLCache<NextUp | null>(10 * 60 * 1000, 500);
-
-export async function firstAiredFor(source: string, mediaId: string, now = Date.now()): Promise<NextUp | null> {
-	const key = scopeKey(`first:${source}:${mediaId}`);
-	const hit = firstAiredCache.get(key);
-	if (hit !== undefined) return hit;
-	try {
-		const detail = await floppy<{ related?: { seasons?: Record<string, unknown>[] } }>(
-			`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/`
-		);
-		const first = (detail?.related?.seasons ?? [])
-			.map(seasonNumberOf)
-			.filter((n): n is number => n !== null && n > 0)
-			.sort((a, b) => a - b)[0];
-		let out: NextUp | null = null;
-		if (first !== undefined) {
-			const season = await floppy<{ related?: { episodes?: Record<string, unknown>[] } }>(
-				`/api/v1/media/tv/${source}/${encodeURIComponent(mediaId)}/${first}/`
-			);
-			const ep = (season?.related?.episodes ?? [])
-				.map((e) => {
-					const item = (e.item ?? {}) as Record<string, unknown>;
-					return {
-						number: typeof item.episode_number === 'number' ? item.episode_number : null,
-						airDate: typeof item.release_datetime === 'string' ? item.release_datetime : null,
-						played: typeof e.progress === 'number' && e.progress > 0
-					};
-				})
-				.filter((e) => e.number !== null && !e.played && e.airDate !== null && Date.parse(e.airDate) <= now)
-				.sort((a, b) => (a.number as number) - (b.number as number))[0];
-			if (ep) out = { season: first, episode: ep.number as number, airDate: ep.airDate };
-		}
-		firstAiredCache.set(key, out);
-		return out;
-	} catch {
-		return null;
-	}
-}
-
-/** Fills in whatever the list row could not supply: episode title, and the
- *  episode total for season-scoped shows. Both lookups run concurrently. */
-async function enrich(row: WatchlistRow): Promise<WatchlistRow> {
-	if (!row.mediaId) return row;
-
-	/* Floppy's next-up is the lowest unwatched episode, so a show picked up
-	   mid-run reports S01E01 no matter how far in you are. Resolved before the
-	   title lookup below, which would otherwise fetch the title of the wrong
-	   episode. */
-	if (row.mediaType !== 'movie' && row.progress > 0 && row.next?.season === 1 && row.next.episode === 1) {
-		const corrected = await nextUpFor(row.source, row.mediaId);
-		if (corrected === 'done') row = { ...row, next: null };
-		else if (corrected) row = { ...row, next: corrected };
-	}
-
-	// Not started, and Floppy says nothing's next — its show metadata may predate the premiere.
-	if (row.mediaType !== 'movie' && row.progress === 0 && !row.next) {
-		const first = await firstAiredFor(row.source, row.mediaId);
-		if (first) row = { ...row, next: first };
-	}
-
-	/* Caught up on what's out: the next episode — corrected or Floppy's own — has
-	   a future air date, so there is nothing to watch yet. Null it; the backlog
-	   then drops the show (see getWatchlist) until an episode actually lands. A
-	   streaming drop with no clock time (airDate at date-only) counts as aired. */
-	if (row.next?.airDate && Date.parse(row.next.airDate) > Date.now()) {
-		row = { ...row, next: null };
-	}
-
-	const [title, max] = await Promise.all([
-		row.next
-			? episodeTitle(row.source, row.mediaId, row.next.season, row.next.episode)
-			: Promise.resolve(null),
-		row.maxProgress === null
-			? maxProgressFor(row.mediaType, row.source, row.mediaId)
-			: Promise.resolve(row.maxProgress)
-	]);
-
-	const out: WatchlistRow = { ...row };
-	if (title && out.next) out.next = { ...out.next, title };
-	if (max !== null && out.maxProgress === null) {
-		out.maxProgress = max;
-		out.left = Math.max(0, max - out.progress);
-	}
-	return out;
-}
+export { normaliseService, serviceNames };
 
 export type WatchlistPage = { rows: WatchlistRow[]; total: number; hasMore: boolean };
 
@@ -385,148 +18,76 @@ export type WatchlistOptions = {
 	direction?: 'asc' | 'desc';
 	limit?: number;
 	offset?: number;
-	/** User tracking status; defaults to the in-progress backlog (§4.1). */
+	/** Tracking status; defaults to the in-progress backlog (§4.1). */
 	statuses?: string[];
 	/** Solo / Joint / All (§11). */
-	company?: Company;
-	/** Filter by an arbitrary Floppy tag name (e.g. the `anime` tag driving the
-	 *  Shows/Anime split). Takes precedence over `company`. `tagMode: 'not'`
-	 *  inverts it — the shows WITHOUT the tag. */
+	company?: 'all' | 'joint' | 'solo';
+	/** 'anime' or 'joint'; `tagMode: 'not'` inverts it. Takes precedence over `company`. */
 	tag?: string;
 	tagMode?: 'not';
-	/** Subscription services to keep. Applied in Seek — see servicesOf. */
+	/** Subscription services to keep. */
 	services?: string[];
-	/** Page past Floppy's 200-row ceiling to fetch the whole list. */
+	/** The whole list rather than one page. */
 	all?: boolean;
-	/** Resolve next-episode titles and missing episode counts. The library grid
-	 *  shows neither, and skipping it avoids one lookup per row. */
+	/** Kept for callers; Seek always has next-up titles and counts to hand. */
 	enrich?: boolean;
 };
 
+const empty: WatchlistPage = { rows: [], total: 0, hasMore: false };
+
 export async function getWatchlist(
 	mediaType: MediaType,
-	{
-		sort = 'updated',
-		direction = 'desc',
-		limit = 200,
-		offset = 0,
-		statuses = ['in_progress'],
-		company = 'all',
-		tag,
-		tagMode,
-		services = [],
-		all = false,
-		enrich: shouldEnrich = true
-	}: WatchlistOptions = {}
+	{ sort = 'updated', direction = 'desc', limit = 200, offset = 0, statuses = ['in_progress'], company = 'all', tag, tagMode, services = [], all = false }: WatchlistOptions = {}
 ): Promise<WatchlistPage> {
-	// `not_caught_up` only makes sense for the in-progress backlog; asking for
-	// Completed and then filtering to "has an unwatched episode" returns nothing.
-	const onlyInProgress = statuses.length === 1 && statuses[0] === 'in_progress';
-
-	const page = (o: number) =>
-		floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-			query: {
-				status: statuses,
-				progress: onlyInProgress ? 'not_caught_up' : undefined,
-				sort,
-				direction,
-				limit,
-				offset: o,
-				...(tag ? { tag, tag_mode: tagMode } : companyQuery(company))
-			},
-			// ~1.2s warm, but slower while Floppy is serving a statistics query.
-			timeoutMs: 45_000
-		});
-
-	const res = await page(offset);
-	const collected = [...(res.results ?? [])];
-
-	// Floppy caps `limit` at 200, so a larger library needs paging — otherwise the
-	// header reports 370 titles above a grid of 200.
-	if (all) {
-		const total = res.pagination?.total ?? collected.length;
-		for (let o = offset + limit; collected.length < total && o < total; o += limit) {
-			const next = await page(o);
-			const rows = next.results ?? [];
-			if (!rows.length) break;
-			collected.push(...rows);
-		}
-	}
-
-	/* Enrichment is the expensive part of a rebuild — up to 88 episode lookups.
-	   Run in bounded batches rather than all at once so a rebuild leaves Floppy
-	   slots free for whatever the user is doing at the same time. With
-	   stale-while-revalidate nobody waits on this, so the extra wall time is
-	   spent off the request path. */
-	let rows: WatchlistRow[];
-	if (shouldEnrich) {
-		rows = [];
-		const BATCH = 8;
-		for (let i = 0; i < collected.length; i += BATCH) {
-			rows.push(
-				...(await Promise.all(
-					collected.slice(i, i + BATCH).map((r) => enrich(mapRow(r, mediaType)))
-				))
-			);
-		}
-	} else {
-		rows = collected.map((r) => mapRow(r, mediaType));
-	}
-
-	if (services.length) {
-		const wanted = new Set(services);
-		rows = rows.filter((row) => row.services.some((s) => wanted.has(s)));
-	}
-
-	/* The in-progress backlog is "what can I watch now", so a show that is caught
-	   up on its aired episodes (next-up nulled during enrichment) leaves it — and
-	   returns on its own when a new episode airs. Only here: the library's
-	   all-status views still list every title, caught up or not. Films never have
-	   a next-up and must never be dropped by this. */
-	const droppedCaughtUp = onlyInProgress && shouldEnrich;
-	if (droppedCaughtUp) {
-		rows = rows.filter((row) => row.mediaType === 'movie' || row.next !== null);
-	}
-
-	const p = res.pagination;
-	return {
-		rows,
-		total: services.length || all || droppedCaughtUp ? rows.length : (p?.total ?? rows.length),
-		hasMore: !all && Boolean(p?.next)
-	};
+	const me = currentUser();
+	if (!me) return empty;
+	// "Anime" as a type is shows with the anime flag.
+	const animeType = mediaType === 'anime' && !tag;
+	const page = seekList(me.id, me.householdId, mediaType === 'movie' ? 'movie' : 'tv', {
+		statuses,
+		sort,
+		direction,
+		company,
+		tag: animeType ? 'anime' : tag,
+		tagMode: animeType ? undefined : tagMode,
+		services
+	});
+	if (all) return page;
+	const rows = page.rows.slice(offset, offset + limit);
+	return { rows, total: page.total, hasMore: offset + limit < page.total };
 }
 
-/** Every subscription service seen across the library, for the filter and the
- *  settings picker. Cached — provider data moves slowly. */
-const servicesCache = new TTLCache<string[]>(6 * 60 * 60 * 1000, 4);
+/** One row, for re-rendering it after a change. */
+export async function getRow(mediaType: MediaType, _source: string, mediaId: string, _title?: string): Promise<WatchlistRow | null> {
+	const me = currentUser();
+	if (!me) return null;
+	return seekRows(me.id, me.householdId, mediaType === 'movie' ? 'movie' : 'tv').find((r) => r.mediaId === String(mediaId)) ?? null;
+}
 
+/** An episode's title, from Seek's TMDB copy. */
+export async function episodeTitle(_source: string, mediaId: string, season: number, episode: number): Promise<string | null> {
+	const r = db().prepare('SELECT title FROM episodes WHERE tmdb_id = ? AND season = ? AND episode = ?').get(Number(mediaId), season, episode) as
+		| { title: string | null }
+		| undefined;
+	return r?.title ?? null;
+}
+
+/** Every subscription service across what you track, for the filter. */
 export async function knownServices(): Promise<string[]> {
-	// Per user: the services seen across *this person's* library.
-	const servicesKey = scopeKey('all');
-	const hit = servicesCache.get(servicesKey);
-	if (hit) return hit;
-
-	const found = new Map<string, number>();
-	for (const mediaType of ['tv', 'movie'] as const) {
+	const me = currentUser();
+	if (!me) return [];
+	const raw = (
+		db()
+			.prepare('SELECT t.services FROM tracked k JOIN titles t ON t.media_type = k.media_type AND t.tmdb_id = k.tmdb_id WHERE k.user_id = ?')
+			.all(me.id) as { services: string }[]
+	).flatMap((r) => {
 		try {
-			const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-				query: { status: ['all'], limit: 200 },
-				timeoutMs: 60_000
-			});
-			for (const r of res.results ?? []) {
-				for (const name of servicesOf((r.item ?? {}) as Record<string, unknown>)) {
-					found.set(name, (found.get(name) ?? 0) + 1);
-				}
-			}
+			return JSON.parse(r.services) as string[];
 		} catch {
-			// A partial list is better than none.
+			return [];
 		}
-	}
-
-	// Commonest first — the household's actual services float to the top.
-	const names = [...found.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
-	servicesCache.set(servicesKey, names);
-	return names;
+	});
+	return serviceNames(raw).sort((a, b) => a.localeCompare(b));
 }
 
 export type RecentAddition = {
@@ -535,85 +96,21 @@ export type RecentAddition = {
 	mediaId: string;
 	title: string;
 	poster: string | null;
-	/** Floppy's `created_at` — when the title entered the library. */
+	/** When it was added to your list. */
 	addedAt: string;
 };
 
-/**
- * The most recently added library titles across TV and movies, newest first.
- *
- * Floppy carries `created_at` per tracked item but won't sort by it — the sort
- * enum is closed and 400s on anything else. So this pulls a page of each in
- * recent-activity order (`updated desc`; an add sets both `created_at` and
- * `updated`, so a new title is always near the top) and sorts locally by
- * `created_at`. Unenriched: it needs only poster + title, not the next-up
- * fan-out, so it is cheap. Captures every add, not just Seek's.
- */
+/** The titles you added most recently, shows and films together. */
 export async function getRecentlyAdded(limit = 12): Promise<RecentAddition[]> {
-	const forType = async (mediaType: MediaType): Promise<RecentAddition[]> => {
-		try {
-			const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-				query: { status: ['all'], sort: 'updated', direction: 'desc', limit: 100 },
-				timeoutMs: 45_000
-			});
-			return (res.results ?? []).flatMap((r) => {
-				const item = (r.item ?? {}) as Record<string, unknown>;
-				const mediaId = String(item.media_id ?? '');
-				const addedAt = typeof r.created_at === 'string' ? r.created_at : null;
-				if (!mediaId || !addedAt) return [];
-				return [
-					{
-						mediaType,
-						source: String(item.source ?? 'tmdb'),
-						mediaId,
-						title: String(item.title ?? 'Untitled'),
-						poster: (item.image as string) ?? null,
-						addedAt
-					}
-				];
-			});
-		} catch {
-			// One type failing shouldn't blank the whole rail.
-			return [];
-		}
-	};
-
-	const [tv, movie] = await Promise.all([forType('tv'), forType('movie')]);
-	return [...tv, ...movie].sort((a, b) => b.addedAt.localeCompare(a.addedAt)).slice(0, limit);
-}
-
-/**
- * Re-read one show's row after a write (§4.2's background row refresh).
- *
- * This exists because there is no single-item route that returns `next_episode`:
- * show detail omits it, and the watch POST responds about the EPISODE it just
- * recorded (`item_media_type: "episode"`, `progress: 1` meaning one play of that
- * episode) — not about the show. The list endpoint is the only source.
- *
- * The list has no id filter, so it is narrowed by `search` and then matched on
- * media_id: `search` is a title substring match and genuinely returns several
- * shows ("Below Deck" matches three), so taking the first hit would silently
- * write the wrong show's state into the row.
- *
- * `progress: 'all'` matters — once the show is caught up it drops out of a
- * `not_caught_up` query, and an absent row is indistinguishable from an error.
- */
-export async function getRow(
-	mediaType: MediaType,
-	source: string,
-	mediaId: string,
-	title: string
-): Promise<WatchlistRow | null> {
-	const res = await floppy<ListResponse>(`/api/v1/media/${mediaType}/`, {
-		query: { status: ['all'], progress: 'all', search: title, limit: 100 }
-	});
-
-	const hit = (res.results ?? []).find(
-		(r) =>
-			String((r.item as Record<string, unknown>)?.media_id ?? '') === String(mediaId) &&
-			String((r.item as Record<string, unknown>)?.source ?? '') === source
-	);
-	if (!hit) return null;
-
-	return enrich(mapRow(hit, mediaType));
+	const me = currentUser();
+	if (!me) return [];
+	return (
+		db()
+			.prepare(
+				`SELECT k.media_type, k.tmdb_id, k.added_at, t.title, t.poster FROM tracked k
+				LEFT JOIN titles t ON t.media_type = k.media_type AND t.tmdb_id = k.tmdb_id
+				WHERE k.user_id = ? ORDER BY k.added_at DESC LIMIT ?`
+			)
+			.all(me.id, limit) as { media_type: MediaType; tmdb_id: number; added_at: string; title: string | null; poster: string | null }[]
+	).map((r) => ({ mediaType: r.media_type, source: 'tmdb', mediaId: String(r.tmdb_id), title: r.title || 'Untitled', poster: r.poster, addedAt: r.added_at }));
 }

@@ -8,11 +8,10 @@ import {
 	type Service
 } from '$lib/server/arr';
 import { getPrefs } from '$lib/server/prefs';
-import { addMedia } from '$lib/server/search';
-import { FloppyError } from '$lib/server/floppy';
+import { addTitle as track } from '$lib/server/tracking/add';
+import { currentUser } from '$lib/server/userctx';
 import { expire, invalidate } from '$lib/server/memo';
 import { settleAdded } from '$lib/server/household/run';
-import { classifyShow } from '$lib/server/anime-sync';
 import type { RequestHandler } from './$types';
 
 type Body = {
@@ -38,10 +37,13 @@ type Body = {
  * still works before anyone visits Settings.
  */
 async function addToLibrary(mediaType: 'tv' | 'movie', tmdbId: string): Promise<boolean> {
+	const me = currentUser();
+	const id = Number(tmdbId);
+	if (!me || !Number.isInteger(id) || id <= 0) return false;
 	try {
-		await addMedia(mediaType, 'tmdb', tmdbId);
-	} catch (err) {
-		if (!(err instanceof FloppyError && err.status === 409)) return false;
+		await track(me.id, mediaType, id);
+	} catch {
+		return false;
 	}
 	// The same caches /api/library refreshes when you add from Seek.
 	expire('watchlist:');
@@ -89,8 +91,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			search: Boolean(body.search)
 		});
 		/* Downloading something means you mean to watch it: it goes into your
-		   Floppy library too (Planning), like a book download goes on your list.
-		   Already there is fine; a Floppy hiccup never fails the download. */
+		   list too (Planning), like a book download goes on your list.
+		   Already there is fine; a hiccup here never fails the download. */
 		const tracked = await addToLibrary(body.mediaType === 'movie' ? 'movie' : 'tv', tmdbId);
 		const household =
 			tracked && body.mediaType !== 'movie'
@@ -99,7 +101,6 @@ export const POST: RequestHandler = async ({ request }) => {
 						typeof body.together === 'boolean' ? (body.together ? 'together' : 'solo') : undefined
 					)
 				: null;
-		if (tracked && body.mediaType !== 'movie') void classifyShow(tmdbId);
 		return json({ ...result, tracked, household });
 	} catch (err) {
 		if (err instanceof ArrUnreachable) error(503, `${service} is unreachable; nothing was added.`);

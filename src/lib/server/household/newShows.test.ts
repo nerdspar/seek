@@ -143,7 +143,7 @@ describe('finding shows added outside Seek', () => {
 		expect(pendingShows(H())).toEqual([]);
 	});
 
-	it('one person’s Floppy being down does not stop the other', async () => {
+	it('one person’s list failing to read does not stop the other', async () => {
 		const { d } = deps({ [wife.id]: [added('2', 'Two', START + 1)] });
 		d.recentAdds = vi.fn(async (u: users.User) => {
 			if (u.id === owner.id) throw new Error('down');

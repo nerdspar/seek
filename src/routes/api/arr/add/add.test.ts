@@ -9,21 +9,12 @@ vi.mock('$lib/server/arr', () => ({
 	ArrUnreachable: class extends Error {}
 }));
 vi.mock('$lib/server/prefs', () => ({ getPrefs: async () => ({ sonarr: null, radarr: null }) }));
-const addMedia = vi.fn();
-vi.mock('$lib/server/search', () => ({ addMedia: (...a: unknown[]) => addMedia(...a) }));
-const { FloppyError } = vi.hoisted(() => ({
-	FloppyError: class extends Error {
-		constructor(readonly status: number) {
-			super('floppy');
-		}
-	}
-}));
-vi.mock('$lib/server/floppy', () => ({ FloppyError }));
+const track = vi.fn(async (..._a: unknown[]) => ({ already: false }));
+vi.mock('$lib/server/tracking/add', () => ({ addTitle: (...a: unknown[]) => track(...a) }));
+vi.mock('$lib/server/userctx', () => ({ currentUser: () => ({ id: 1, householdId: 1 }) }));
 vi.mock('$lib/server/memo', () => ({ expire: vi.fn(), invalidate: vi.fn() }));
 const settleAdded = vi.fn((..._a: unknown[]) => 'pending');
 vi.mock('$lib/server/household/run', () => ({ settleAdded: (...a: unknown[]) => settleAdded(...a) }));
-const classifyShow = vi.fn(async (..._a: unknown[]) => null);
-vi.mock('$lib/server/anime-sync', () => ({ classifyShow: (...a: unknown[]) => classifyShow(...a) }));
 
 import { POST } from './+server';
 
@@ -32,34 +23,27 @@ const add = async (body: unknown) =>
 
 beforeEach(() => {
 	addTitle.mockReset().mockResolvedValue({ ok: true });
-	addMedia.mockReset();
+	track.mockClear();
 	settleAdded.mockClear();
-	classifyShow.mockClear();
 });
 
 describe('downloading a show or film', () => {
-	it('also puts it in your Floppy library', async () => {
-		addMedia.mockResolvedValue({});
+	it('also puts it on your list', async () => {
 		expect(await add({ mediaType: 'movie', tmdbId: 603 })).toMatchObject({ ok: true, tracked: true });
-		expect(addMedia).toHaveBeenCalledWith('movie', 'tmdb', '603');
+		expect(track).toHaveBeenCalledWith(1, 'movie', 603);
 	});
 
-	it('is fine when it was already tracked, and never fails the download over Floppy', async () => {
-		addMedia.mockRejectedValueOnce(new FloppyError(409));
-		expect((await add({ mediaType: 'tv', tmdbId: 1 })).tracked).toBe(true);
-		addMedia.mockRejectedValueOnce(new Error('Floppy down'));
+	it('never fails the download over the list', async () => {
+		track.mockRejectedValueOnce(new Error('disk full'));
 		expect(await add({ mediaType: 'tv', tmdbId: 2 })).toMatchObject({ ok: true, tracked: false });
 	});
 
 	it("settles together or solo for a show: the form's answer, else the household setting", async () => {
-		addMedia.mockResolvedValue({});
 		expect(await add({ mediaType: 'tv', tmdbId: 1, title: 'Lanterns', together: true })).toMatchObject({ household: 'pending' });
 		expect(settleAdded).toHaveBeenLastCalledWith({ source: 'tmdb', mediaId: '1', title: 'Lanterns' }, 'together');
 		await add({ mediaType: 'tv', tmdbId: 2 });
 		expect(settleAdded).toHaveBeenLastCalledWith({ source: 'tmdb', mediaId: '2', title: null }, undefined);
 		await add({ mediaType: 'movie', tmdbId: 3 });
 		expect(settleAdded).toHaveBeenCalledTimes(2);
-		// Shows are filed under Shows or Anime straight away; films aren't.
-		expect(classifyShow.mock.calls.map((c) => c[0])).toEqual(['1', '2']);
 	});
 });

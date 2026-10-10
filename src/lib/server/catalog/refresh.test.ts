@@ -12,9 +12,6 @@ vi.mock('./sources', () => ({
 	tvmazeId: (tvdb: number | null, imdb: string | null) => mazeId(tvdb, imdb),
 	tvmazeEpisodes: (id: number) => mazeEps(id)
 }));
-let rows: { source: string; mediaId: string }[] = [];
-vi.mock('../watchlist', () => ({ getWatchlist: async () => ({ rows, total: rows.length, hasMore: false }) }));
-
 import { openDatabase, useDatabase, db } from '../db';
 import { refreshDue, refreshTitle, seedTrackedTitles } from './refresh';
 import { catalogStatus, ensureTitle } from './store';
@@ -33,7 +30,6 @@ const seasonJson = { episodes: [{ episode_number: 1, name: 'On the Horizon', air
 beforeEach(() => {
 	useDatabase(openDatabase(':memory:'));
 	for (const f of [show, season, movie, mazeId, mazeEps]) f.mockReset();
-	rows = [];
 });
 afterEach(() => useDatabase(null));
 
@@ -79,9 +75,14 @@ describe('refreshTitle', () => {
 });
 
 describe('seeding and refreshing what is due', () => {
-	it('adds what you track (TMDB items only), then fills them on the next refresh', async () => {
-		rows = [{ source: 'tmdb', mediaId: '284833' }, { source: 'tvdb', mediaId: '5' }];
-		expect(await seedTrackedTitles()).toBe(2); // the show once as tv and once as movie list (mock returns the same rows)
+	it('adds what anyone tracks, once, then fills them on the next refresh', async () => {
+		const track = db().prepare("INSERT INTO tracked (user_id, media_type, tmdb_id, status, added_at, updated_at) VALUES (?, ?, ?, 1, 'x', 'x')");
+		db().exec("INSERT INTO households (id, name, created_at) VALUES (1, 'Home', 'x')");
+		for (const u of [1, 2]) db().prepare("INSERT INTO users (id, household_id, email, name, role, password_hash, created_at) VALUES (?, 1, ?, 'A', 'owner', 'h', 'x')").run(u, `${u}@x`);
+		track.run(1, 'tv', 284833);
+		track.run(2, 'tv', 284833); // shared: one title
+		track.run(1, 'movie', 284833);
+		expect(await seedTrackedTitles()).toBe(2);
 		expect(await seedTrackedTitles()).toBe(0);
 		show.mockResolvedValue(showJson());
 		season.mockResolvedValue(seasonJson);

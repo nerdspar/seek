@@ -1,17 +1,10 @@
 /**
- * Profile statistics (§7.1). **Seek computes nothing.** Every number here is
- * read from Floppy's overview endpoint; the only local arithmetic is turning a
- * named range into the start/end dates the endpoint wants.
- *
- * §7.1 expected binge rhythm, streaks and finish rate to be missing. They are
- * not — Floppy reports current_streak, longest_streak, most_active_day and a
- * by-weekday hours chart, so all of it ships.
- *
- * Range note: `range=` and `period=` are silently ignored; only explicit
- * `start_date`/`end_date` narrow the window.
+ * Profile statistics (§7.1), the collection counts (§7.2) and the diary (§7.3),
+ * worked out from your plays in Seek (tracking/stats.ts). Same exports the
+ * Profile has always used.
  */
-import { floppy } from './floppy';
-import { ANIME_TAG } from './tags';
+import { currentUser } from './userctx';
+import { seekCollectionCounts, seekDiary, seekStats } from './tracking/stats';
 
 export type RangeKey = 'this_month' | 'this_year' | 'last_year' | 'all_time';
 
@@ -55,22 +48,7 @@ export type Stats = {
 	topStudios: { name: string; watched: string; shows: number }[];
 };
 
-type Rec = Record<string, unknown>;
-const rec = (v: unknown): Rec => (v && typeof v === 'object' ? (v as Rec) : {});
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
-const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
-const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-
-/** Floppy formats durations as "5357h 28min". Four-plus digit hour counts are
- *  hard to read without separators, and these are exactly the numbers that get
- *  large — a favourite genre easily runs to thousands of hours. */
-function groupHours(duration: string): string {
-	return duration.replace(/\b(\d{4,})h\b/g, (_, digits: string) =>
-		`${Number(digits).toLocaleString()}h`
-	);
-}
-
-/** Named range → the explicit dates the endpoint actually honours. */
+/** Named range → its dates. */
 export function rangeDates(key: RangeKey, now = new Date()): { start?: string; end?: string; label: string } {
 	const iso = (d: Date) => d.toISOString().slice(0, 10);
 	const y = now.getFullYear();
@@ -92,122 +70,9 @@ export function rangeDates(key: RangeKey, now = new Date()): { start?: string; e
 }
 
 export async function getStats(key: RangeKey): Promise<Stats> {
-	const { start, end, label } = rangeDates(key);
-	const res = rec(
-		await floppy('/api/v1/statistics/overview/', {
-			query: { start_date: start, end_date: end },
-			// This endpoint genuinely takes ~9.4s for an all-time range and returns
-			// ~500 KB. The 15s default is not enough headroom when Floppy is also
-			// serving something else, and a timeout here renders as a broken tab.
-			timeoutMs: 90_000
-		})
-	);
-
-	const st = rec(res.statistics);
-	const summary = rec(rec(st.summary_stats_by_type).all);
-	const consumption = rec(rec(st.consumption_stats_by_type).all);
-	const counts = rec(st.media_count);
-	const tv = rec(st.tv_consumption);
-
-	const weekdayAll = rec(rec(rec(st.combined_plays_charts).by_weekday).all);
-	const labels = arr(weekdayAll.labels).map(String);
-	const values = arr(arr(weekdayAll.datasets)[0] ? rec(arr(weekdayAll.datasets)[0]).data : []);
-
-	/* Monthly hours, per type. combined_plays_charts.by_month.<type>.datasets[0]
-	   is labelled "Hours" (verified live) — distinct from tv_consumption's own
-	   by_month, which is episode plays. Rounded to whole hours for the chart. */
-	const byMonth = rec(rec(st.combined_plays_charts).by_month);
-	const monthSeries = (type: string): { labels: string[]; data: number[] } => {
-		const m = rec(byMonth[type]);
-		const first = arr(m.datasets)[0];
-		return {
-			labels: arr(m.labels).map(String),
-			data: arr(first ? rec(first).data : []).map((v) => Math.round(num(v)))
-		};
-	};
-	const mAll = monthSeries('all');
-
-	return {
-		rangeLabel: str(rec(res.range).range_name) ?? label,
-		hours: Math.round(num(rec(consumption.primary).total)),
-		plays: Math.round(num(rec(consumption.secondary).total)),
-		minutes: num(summary.total_minutes),
-		counts: {
-			tv: num(counts.tv),
-			movie: num(counts.movie),
-			anime: num(counts.anime),
-			total: num(counts.total)
-		},
-		completed: num(summary.completed),
-		currentStreak: num(summary.current_streak),
-		longestStreak: num(summary.longest_streak),
-		mostActiveDay: str(summary.most_active_day),
-		mostActiveDayPct: typeof summary.most_active_day_percentage === 'number'
-			? summary.most_active_day_percentage
-			: null,
-		weekday: labels.map((l, i) => ({ label: l, hours: num(values[i]) })),
-		monthly: {
-			labels: mAll.labels,
-			all: mAll.data,
-			tv: monthSeries('tv').data,
-			movie: monthSeries('movie').data
-		},
-		topGenres: arr(tv.top_genres)
-			.slice(0, 6)
-			.map((g) => {
-				const r = rec(g);
-				return { name: str(r.name) ?? '', duration: groupHours(str(r.formatted_duration) ?? '') };
-			})
-			.filter((g) => g.name),
-		topTitles: arr(rec(st.top_played).tv)
-			.slice(0, 5)
-			.map((t): TopTitle | null => {
-				const r = rec(t);
-				const item = rec(rec(r.media).item);
-				const mediaId = str(item.media_id);
-				if (!mediaId) return null;
-				return {
-					title: str(item.title) ?? 'Untitled',
-					poster: str(item.image),
-					mediaId,
-					source: str(item.source) ?? 'tmdb',
-					duration: groupHours(str(r.formatted_duration) ?? ''),
-					plays: typeof r.episode_count === 'number' ? r.episode_count : null
-				};
-			})
-			.filter((t): t is TopTitle => t !== null),
-		topRated: arr(st.top_rated)
-			.slice(0, 8)
-			.map((raw): RatedTitle | null => {
-				const r = rec(raw);
-				const item = rec(r.item);
-				const mediaId = str(item.media_id);
-				// Floppy sends the score as a string here — "9.0", not 9.0 — while
-				// the list endpoint sends a number for the same field.
-				const score = Number(r.score);
-				if (!mediaId || !Number.isFinite(score)) return null;
-				return {
-					title: str(item.title) ?? 'Untitled',
-					poster: str(item.image),
-					mediaId,
-					source: str(item.source) ?? 'tmdb',
-					mediaType: str(item.media_type) === 'movie' ? 'movie' : 'tv',
-					score
-				};
-			})
-			.filter((t): t is RatedTitle => t !== null),
-		topStudios: arr(rec(st.top_talent).top_studios)
-			.slice(0, 5)
-			.map((s) => {
-				const r = rec(s);
-				return {
-					name: str(r.name) ?? '',
-					watched: groupHours(str(r.watched_time) ?? ''),
-					shows: num(r.unique_shows)
-				};
-			})
-			.filter((s) => s.name)
-	};
+	const me = currentUser();
+	if (!me) throw new Error('getStats needs a person');
+	return seekStats(me.id, me.householdId, key);
 }
 
 /* ── Collection counts (§7.2) ──────────────────────────────────────────── */
@@ -218,35 +83,9 @@ export type CollectionCounts = { tv: number; movie: number; anime: number };
 export const COUNTS_KEY = 'collection:counts';
 export const COUNTS_TTL = 5 * 60 * 1000;
 
-/**
- * Totals for the Collection rows. Cheap per call — limit=1 and read the
- * pagination total — but it is two round trips against a Floppy that may be busy,
- * which measured ~4.8s cold and landed on the first Profile visit every time.
- * Lives here rather than inline in the route so the boot warmup can prime the
- * same cache key.
- */
 export async function getCollectionCounts(): Promise<CollectionCounts> {
-	/* A failed fetch must NOT resolve to 0 — memo would then cache that 0 for the
-	   whole TTL, which is the "count reads 0 but the list is full" bug. Let it
-	   throw instead: memo serves the previous good value or the page shows its
-	   loading/blank state, and the next read retries. A real empty library still
-	   returns a true 0 from the pagination total. */
-	const one = async (mediaType: string, extra?: Record<string, string>) => {
-		const res = await floppy<{ pagination?: { total?: number } }>(
-			`/api/v1/media/${mediaType}/`,
-			{ query: { status: ['all'], limit: 1, ...extra }, timeoutMs: 30_000 }
-		);
-		return res.pagination?.total ?? 0;
-	};
-
-	// "Anime" is tv?tag=anime and "Shows" is the inverse — the same split the
-	// library uses (anime-sync.ts keeps the tag).
-	const [tv, movie, anime] = await Promise.all([
-		one('tv', { tag: ANIME_TAG, tag_mode: 'not' }),
-		one('movie'),
-		one('tv', { tag: ANIME_TAG })
-	]);
-	return { tv, movie, anime };
+	const me = currentUser();
+	return me ? seekCollectionCounts(me.id, me.householdId) : { tv: 0, movie: 0, anime: 0 };
 }
 
 /* ── Diary (§7.3) ──────────────────────────────────────────────────────── */
@@ -262,7 +101,7 @@ export type DiaryEntry = {
 	/** Which detail page this row belongs to — the diary holds films as well as
 	 *  episodes, and they live on different routes. */
 	mediaType: 'tv' | 'movie';
-	/** Preformatted by Floppy, e.g. "S06E14". */
+	/** e.g. "S06E14". */
 	code: string | null;
 	/** Local wall-clock with offset, e.g. 2026-08-23T21:09:00-04:00. */
 	playedAt: string | null;
@@ -276,48 +115,7 @@ export type DiaryDay = {
 	entries: DiaryEntry[];
 };
 
-export async function getDiary(
-	offset = 0,
-	limit = 20
-): Promise<{ days: DiaryDay[]; hasMore: boolean; total: number }> {
-	const res = rec(await floppy('/api/v1/history/', { query: { limit, offset } }));
-
-	const days = arr(res.results).map((raw): DiaryDay => {
-		const d = rec(raw);
-		return {
-			date: str(d.date) ?? '',
-			label: str(d.date_display) ?? str(d.date) ?? '',
-			total: str(d.total_runtime_display),
-			// Everything useful sits at the ENTRY level, not under `item` — the
-			// nested item carries the episode's title and the show's media_id,
-			// while `show`, `poster`, `episode_code` and `played_at_local` are
-			// siblings of it.
-			entries: arr(d.entries).map((e): DiaryEntry => {
-				const entry = rec(e);
-				const item = rec(entry.item);
-				const show = rec(entry.show);
-				return {
-					showTitle: str(show.title) ?? str(entry.display_title) ?? 'Untitled',
-					episodeTitle: str(entry.title),
-					poster: str(entry.poster) ?? str(show.image),
-					// §12.2: on an episode row this is the SHOW's id, which is what
-					// the link needs.
-					mediaId: str(item.media_id),
-					source: str(item.source),
-					mediaType: str(item.media_type) === 'movie' ? 'movie' : 'tv',
-					code: str(entry.episode_code),
-					playedAt: str(entry.played_at_local),
-					runtime: str(entry.runtime_display)
-				};
-			})
-		};
-	});
-
-	const pagination = rec(res.pagination);
-	return {
-		days,
-		hasMore: Boolean(pagination.next),
-		// Days with activity, not plays — what the pager counts through.
-		total: typeof pagination.total === 'number' ? pagination.total : days.length
-	};
+export async function getDiary(offset = 0, limit = 20): Promise<{ days: DiaryDay[]; hasMore: boolean; total: number }> {
+	const me = currentUser();
+	return me ? seekDiary(me.id, me.householdId, offset, limit) : { days: [], hasMore: false, total: 0 };
 }

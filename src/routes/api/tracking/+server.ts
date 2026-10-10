@@ -1,11 +1,10 @@
 import { json, error } from '@sveltejs/kit';
-import { setTracking, SCORE_MIN, SCORE_MAX, trackingKey } from '$lib/server/tracking';
-import { FloppyError, FloppyUnreachable } from '$lib/server/floppy';
+import { SCORE_MIN, SCORE_MAX, trackingKey } from '$lib/server/tracking';
 import { expire, invalidate } from '$lib/server/memo';
 import { Status } from '$lib/types';
 import type { MediaType } from '$lib/types';
 import { currentUser } from '$lib/server/userctx';
-import { mirror, recordPlay, setTracked, Status as Tracked, tmdbIdOf } from '$lib/server/tracking/write';
+import { recordPlay, setTracked, Status as Tracked, tmdbIdOf } from '$lib/server/tracking/write';
 import { db } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
@@ -19,17 +18,18 @@ type Body = {
 
 const VALID_STATUS = new Set<number>(Object.values(Status));
 
-/** Set a show's status and/or your score for it. */
+/** Set a title's status and/or your score for it. */
 export const PATCH: RequestHandler = async ({ request }) => {
 	const body = (await request.json().catch(() => null)) as Body | null;
 	if (!body) error(400, 'Body must be JSON.');
 
 	const { mediaType = 'tv', source = 'tmdb', mediaId, status, score } = body;
 	if (!mediaId) error(400, 'mediaId is required');
+	const tmdbId = tmdbIdOf(source, mediaId);
+	if (tmdbId === null) error(400, 'Only TMDB titles can be tracked');
+	const me = currentUser();
+	if (!me) error(401);
 
-	/* Checked here rather than left to Floppy. Floppy answers an out-of-range
-	   score with a bare 400 "Invalid" that says nothing useful, and an
-	   unrecognised status would otherwise be written as-is. */
 	if (status !== undefined && !VALID_STATUS.has(status)) error(400, `Unknown status ${status}.`);
 	if (score !== undefined && score !== null) {
 		if (typeof score !== 'number' || Number.isNaN(score)) error(400, 'score must be a number.');
@@ -38,38 +38,22 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		}
 	}
 
-	try {
-		await setTracking(mediaType, source, mediaId, { status, score });
-	} catch (err) {
-		if (err instanceof FloppyUnreachable) error(503, 'Floppy unreachable; nothing was changed.');
-		if (err instanceof FloppyError) error(502, err.message);
-		throw err;
+	const kind = mediaType === 'movie' ? 'movie' : 'tv';
+	setTracked(me.id, kind, tmdbId, { status, score });
+	// A film set Completed has been watched: it gets a play if it has none.
+	if (kind === 'movie' && status === Tracked.Completed) {
+		const has = db().prepare("SELECT 1 FROM plays WHERE user_id = ? AND media_type = 'movie' AND tmdb_id = ?").get(me.id, tmdbId);
+		if (!has) recordPlay(me.id, 'movie', tmdbId, null, null);
 	}
 
-	// Seek's own record. Floppy records a play when a film is set Completed; so does Seek.
-	const me = currentUser();
-	const tmdbId = tmdbIdOf(source, mediaId);
-	if (me && tmdbId) {
-		const kind = mediaType === 'movie' ? 'movie' : 'tv';
-		mirror('a status change', () => {
-			setTracked(me.id, kind, tmdbId, { status, score });
-			if (kind === 'movie' && status === Tracked.Completed) {
-				const has = db().prepare("SELECT 1 FROM plays WHERE user_id = ? AND media_type = 'movie' AND tmdb_id = ?").get(me.id, tmdbId);
-				if (!has) recordPlay(me.id, 'movie', tmdbId, null, null);
-			}
-		});
-	}
-
-	/* Status decides which watchlist filter a show falls under, so the lists
-	   move with it. Invalidated rather than expired: a stale read here shows the
-	   status you just changed away from, which is the whole point of changing it. */
+	/* Status decides which watchlist filter a title falls under, so the lists
+	   move with it. */
 	invalidate(trackingKey(mediaType, source, mediaId));
-	/* Both detail caches are keyed by type. The movie one matters more than it
-	   looks: setting Completed makes Floppy record a play, and the film page
-	   reads its watched state from the cached `progress`, so leaving this key
-	   alone left the page insisting the film had never been watched. */
-	invalidate(`${mediaType === 'movie' ? 'movie' : 'show'}:${source}:${mediaId}`);
+	invalidate(`${kind === 'movie' ? 'movie' : 'show'}:${source}:${mediaId}`);
 	expire('watchlist:');
+	expire('library:');
+	expire('collection:');
+	expire('stats:');
 
 	return json({ ok: true });
 };
