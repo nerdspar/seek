@@ -2,6 +2,7 @@
 	import { setSegment } from '$lib/segment';
 	import SearchField from '$lib/components/SearchField.svelte';
 	import SearchFab from '$lib/components/SearchFab.svelte';
+	import DiscoverTabs from '$lib/components/DiscoverTabs.svelte';
 	import NotLinked from '$lib/components/NotLinked.svelte';
 	import { notLinkedOf } from '$lib/notLinked';
 	import { goto } from '$app/navigation';
@@ -279,29 +280,18 @@
 </script>
 
 <div class="app">
-	<header>
-		<div class="segments" role="tablist">
-			{#each [{ id: 'tv' as const, label: 'TV Shows' }, { id: 'movie' as const, label: 'Movies' }].filter((seg) => data.media[seg.id]) as seg (seg.id)}
-				<button
-					role="tab"
-					aria-selected={data.mediaType === seg.id}
-					class:on={data.mediaType === seg.id}
-					onclick={() => { clearMood(); goto(`/discover?type=${seg.id}`, { noScroll: true }); }}
-				>{seg.label}</button>
-			{/each}
-			<!-- Books discovery is its own page (Hardcover, not TMDB). -->
-			{#if data.books}
-				<button role="tab" aria-selected="false" onclick={() => goto('/discover/books', { noScroll: true })}>Books</button>
-			{/if}
-		</div>
+	<DiscoverTabs
+		active={data.mediaType === 'movie' ? 'movie' : 'tv'}
+		media={data.media}
+		books={data.books}
+		onnav={(href) => { clearMood(); goto(href, { noScroll: true }); }}
+	>
 		{#if data.onServer}
-			<div class="actions">
-				<button onclick={() => goto(`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`)} aria-label="On the server">
-					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
-				</button>
-			</div>
+			<button onclick={() => goto(`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`)} aria-label="On the server">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+			</button>
 		{/if}
-	</header>
+	</DiscoverTabs>
 
 <!-- Every slow path shows the same breathing shelves rather than a line of text,
      so a tap always produces something that reads as work in progress. -->

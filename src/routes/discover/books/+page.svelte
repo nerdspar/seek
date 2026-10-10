@@ -1,4 +1,5 @@
 <script lang="ts">
+	import DiscoverTabs from '$lib/components/DiscoverTabs.svelte';
 	import { setSegment } from '$lib/segment';
 	import SearchField from '$lib/components/SearchField.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -111,23 +112,16 @@
 </script>
 
 <div class="app">
-	<header>
-		<div class="segments" role="tablist">
-			{#if data.media.tv}<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=tv', { noScroll: true })}>TV</button>{/if}
-			{#if data.media.movie}<button role="tab" aria-selected="false" onclick={() => goto('/discover?type=movie', { noScroll: true })}>Movies</button>{/if}
-			<button role="tab" aria-selected="true" class="on">Books</button>
-		</div>
+	<DiscoverTabs active="books" media={data.media} books={true}>
 		{#if data.canUpload}
-			<div class="actions">
-				<button onclick={() => (uploading = true)} aria-label="Upload books">
-					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
-				</button>
-				<button onclick={() => goto('/discover/books/library')} aria-label="In my library">
-					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
-				</button>
-			</div>
+			<button onclick={() => (uploading = true)} aria-label="Upload books">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
+			</button>
+			<button onclick={() => goto('/discover/books/library')} aria-label="In my library">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+			</button>
 		{/if}
-	</header>
+	</DiscoverTabs>
 
 	<main use:tabReselect={{ tab: 'discover' }}>
 		<div class="search">
