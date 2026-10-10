@@ -8,9 +8,12 @@
 		oninput?: () => void;
 		onclear?: () => void;
 		onsubmit?: () => void;
+		onblur?: () => void;
+		/** The input itself, for a page that must focus it inside a tap (iOS only
+		 *  raises the keyboard for a focus made during the tap). */
+		input?: HTMLInputElement;
 	};
-	let { value = $bindable(''), placeholder = 'Search', oninput, onclear, onsubmit }: Props = $props();
-	let input: HTMLInputElement | undefined = $state();
+	let { value = $bindable(''), placeholder = 'Search', oninput, onclear, onsubmit, onblur, input = $bindable() }: Props = $props();
 
 	function clear() {
 		value = '';
@@ -34,6 +37,7 @@
 		type="search"
 		{placeholder}
 		{oninput}
+		{onblur}
 		autocapitalize="off"
 		autocorrect="off"
 		enterkeyhint="search"
