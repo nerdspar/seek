@@ -81,6 +81,8 @@
 	function watched(at?: string) {
 		const when = at ? ` on ${new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ' again';
 		if (isSeason) {
+			// A play for every episode is a lot to add by accident.
+			if (!confirm(`Mark every aired episode of ${title} watched${when}?`)) return;
 			void send('/api/season', 'POST', { source, mediaId, season, rewatch: true, ...(at ? { at } : {}) }, `${title} watched${when}`);
 		} else {
 			void send('/api/watch', 'POST', { source, mediaId, mediaType: 'tv', season, episode, ...(at ? { at } : {}) }, `${title} watched${when}`);
@@ -90,16 +92,21 @@
 	const removeLast = () =>
 		send('/api/watch', 'DELETE', { source, mediaId, mediaType: 'tv', season, episode }, 'Last play removed');
 	const removeOne = (id: number) => send('/api/plays', 'DELETE', { id }, 'Play removed');
+	/** A season's plays from one day — how a whole-season "watched again" is undone. */
+	function removeDay(d: string, ids: number[]) {
+		if (!confirm(`Remove the ${ids.length} play${ids.length === 1 ? '' : 's'} of ${title} from ${d}?`)) return;
+		void send('/api/plays', 'DELETE', { ids }, `Removed ${ids.length} play${ids.length === 1 ? '' : 's'}`);
+	}
 
 	const when = (iso: string) =>
 		new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-	/** A season's plays by day: "Oct 1, 2026 · 10 episodes". */
+	/** A season's plays by day: "Oct 1, 2026 · 10 episodes", with their ids. */
 	const days = $derived.by(() => {
-		const m = new Map<string, number>();
+		const m = new Map<string, number[]>();
 		for (const p of plays ?? []) {
 			const d = new Date(p.watchedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-			m.set(d, (m.get(d) ?? 0) + 1);
+			m.set(d, [...(m.get(d) ?? []), p.id]);
 		}
 		return [...m];
 	});
@@ -142,8 +149,12 @@
 			<p class="dim">Loading…</p>
 		{:else if isSeason}
 			<ul class="history">
-				{#each days as [d, n] (d)}
-					<li><span>{d}</span><span class="dim">{n} episode{n === 1 ? '' : 's'}</span></li>
+				{#each days as [d, ids] (d)}
+					<li>
+						<span>{d}</span>
+						<span class="dim">{ids.length} episode{ids.length === 1 ? '' : 's'}</span>
+						<button class="x" disabled={busy} aria-label={`Remove the plays from ${d}`} onclick={() => removeDay(d, ids)}>×</button>
+					</li>
 				{/each}
 			</ul>
 		{:else}

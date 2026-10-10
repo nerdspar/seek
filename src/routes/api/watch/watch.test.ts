@@ -105,6 +105,16 @@ describe('rewatches', () => {
 		expect((await get('mediaId=10&season=1')).plays).toHaveLength(4);
 	});
 
+	it('undoes a whole-season "watched again" by removing that day\'s plays at once', async () => {
+		await call(POST, { mediaId: '10', season: 1, episode: 1, at: '2026-02-01T20:00:00Z' });
+		await call(fillSeason, { mediaId: '10', season: 1, rewatch: true, at: '2026-10-01T20:00:00Z' });
+		const { plays } = await get('mediaId=10&season=1');
+		const thatDay = plays.filter((p: { watchedAt: string }) => p.watchedAt.startsWith('2026-10-01')).map((p: { id: number }) => p.id);
+		expect(await (await call(removeOne, { ids: thatDay })).json()).toEqual({ ok: true, removed: 3 });
+		expect(playsOf(1)).toEqual(['S1E1']);
+		await expect(call(removeOne, { ids: [] })).rejects.toMatchObject({ status: 400 });
+	});
+
 	it('refuses a season date in the future, and someone else\'s play', async () => {
 		await expect(call(fillSeason, { mediaId: '10', season: 1, rewatch: true, at: '2999-01-01' })).rejects.toMatchObject({ status: 400 });
 		db().exec("INSERT INTO plays (user_id, media_type, tmdb_id, season, episode, watched_at, source, created_at) VALUES (2, 'tv', 10, 1, 1, 'x', 'seek', 'x')");

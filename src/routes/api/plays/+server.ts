@@ -20,18 +20,21 @@ export const GET: RequestHandler = async ({ url }) => {
 	return json({ plays: playsOf(me.id, kind, tmdbId, kind === 'tv' ? season : null, kind === 'tv' ? episode : null) });
 };
 
-/** Remove one play from the history: `{ id }`. Yours only. */
+/** Remove plays from the history: `{ id }`, or `{ ids }` (a season's plays
+ *  from one day — undoing a whole-season "watched again"). Yours only. */
 export const DELETE: RequestHandler = async ({ request }) => {
 	const me = currentUser();
 	if (!me) error(401);
-	const { id } = await request.json().catch(() => ({}));
-	if (!Number.isInteger(id)) error(400, 'id is required');
-	const gone = removePlay(me.id, id);
-	if (!gone) error(404, 'No such play');
+	const body = await request.json().catch(() => ({}));
+	const ids: unknown[] = Array.isArray(body.ids) ? body.ids : [body.id];
+	if (!ids.length || ids.length > 500 || !ids.every((i) => Number.isInteger(i))) error(400, 'id or ids is required');
+	const removed = (ids as number[]).map((i) => removePlay(me.id, i)).filter((g) => g !== null);
+	if (!removed.length) error(404, 'No such play');
+	const gone = removed[0];
 	expire('watchlist:');
 	expire('library:');
 	expire('stats:');
 	expire('collection:');
 	invalidate(`tracking:${gone.kind}:tmdb:${gone.tmdbId}`);
-	return json({ ok: true });
+	return json({ ok: true, removed: removed.length });
 };
