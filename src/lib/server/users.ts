@@ -467,6 +467,23 @@ export function jellyfinToken(userId: number): string {
 	return token;
 }
 
+/** This person's private Upcoming feed token, created on first ask. Read-only,
+ *  and separate from the webhook's: the URL is the credential. */
+export function feedToken(userId: number): string {
+	const have = db().prepare('SELECT feed_token FROM users WHERE id = ?').get(userId) as { feed_token: string | null } | undefined;
+	if (have?.feed_token) return have.feed_token;
+	const { token } = newOpaqueToken();
+	db().prepare('UPDATE users SET feed_token = ? WHERE id = ?').run(token, userId);
+	return token;
+}
+
+/** Whose feed this is, or null. */
+export function userByFeedToken(token: string): User | null {
+	if (!token || token.length < 20) return null;
+	const r = db().prepare('SELECT id FROM users WHERE feed_token = ?').get(token) as { id: number } | undefined;
+	return r ? getUser(r.id) : null;
+}
+
 /** Whose webhook this is, or null. */
 export function userByJellyfinToken(token: string): User | null {
 	if (!token || token.length < 20) return null;

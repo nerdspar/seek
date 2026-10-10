@@ -104,12 +104,12 @@
 		notifications: 'Notifications'
 	};
 	/* Old links used #accounts / #services anchors on the one long page. */
-	let copied = $state(false);
+	let copied = $state<string | null>(null);
 	async function copyWebhook(text: string) {
 		try {
 			await navigator.clipboard.writeText(text);
-			copied = true;
-			setTimeout(() => (copied = false), 2000);
+			copied = text;
+			setTimeout(() => (copied = null), 2000);
 		} catch {
 			/* the address is on screen to copy by hand */
 		}
@@ -453,7 +453,7 @@
 		</p>
 		<div class="jfurl">
 			<code>{data.account.jellyfin.url}</code>
-			<button class="copy" onclick={() => copyWebhook(data.account.jellyfin.url)}>{copied ? 'Copied' : 'Copy'}</button>
+			<button class="copy" onclick={() => copyWebhook(data.account.jellyfin.url)}>{copied === data.account.jellyfin.url ? 'Copied' : 'Copy'}</button>
 		</div>
 		{#if data.account.jellyfin.unmatched.length}
 			<p class="hint jf">Plays Seek couldn't match (they weren't recorded):</p>
@@ -463,6 +463,17 @@
 				{/each}
 			</ul>
 		{/if}
+	</section>
+	<section>
+		<h3>Upcoming feed</h3>
+		<p class="hint jf">
+			What's coming up for you, as a private read-only address — for the MagicMirror module
+			(MMM-seek's <code>feedUrl</code>) or anything else that can't sign in.
+		</p>
+		<div class="jfurl">
+			<code>{data.account.feedUrl}</code>
+			<button class="copy" onclick={() => copyWebhook(data.account.feedUrl)}>{copied === data.account.feedUrl ? 'Copied' : 'Copy'}</button>
+		</div>
 	</section>
 
 	{:else if section === 'services' && data.services}

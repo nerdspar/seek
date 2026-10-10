@@ -360,6 +360,13 @@ export const MIGRATIONS: Migration[] = [
 	ALTER TABLE titles ADD COLUMN certification TEXT;
 	ALTER TABLE titles ADD COLUMN collection_json TEXT;
 	UPDATE titles SET refresh_after = '1970-01-01T00:00:00.000Z';
+	`,
+	// v17 — a private read-only URL per person for what's coming up (the
+	// MagicMirror module reads it). Separate from the Jellyfin token, which can
+	// write: leaking one must not hand out the other.
+	`
+	ALTER TABLE users ADD COLUMN feed_token TEXT;
+	CREATE UNIQUE INDEX users_feed_token ON users (feed_token) WHERE feed_token IS NOT NULL;
 	`
 ];
 

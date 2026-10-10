@@ -30,7 +30,7 @@ void warmEveryone().catch((err) => console.warn('[seek] warmup failed:', err));
    - the account pages: signing in, first-run setup, redeeming an emailed link. */
 const PUBLIC_EXACT = new Set(['/login', '/setup', '/forgot', '/api/health']);
 // /webhook/: Jellyfin posts without a session; the token in the URL is the credential.
-const PUBLIC_PREFIX = ['/invite/', '/reset/', '/verify/', '/webhook/'];
+const PUBLIC_PREFIX = ['/invite/', '/reset/', '/verify/', '/webhook/', '/feed/'];
 const isPublic = (path: string) => PUBLIC_EXACT.has(path) || PUBLIC_PREFIX.some((p) => path.startsWith(p));
 
 /* Once anyone has an account it never goes back to zero (the owner can't be

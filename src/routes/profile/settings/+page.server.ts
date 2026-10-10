@@ -3,7 +3,7 @@ import { error } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
 import { TMDB_API_KEY } from '$lib/server/env';
 import { DEFAULT_PRESET_LABELS } from '$lib/server/tmdb';
-import { householdName, jellyfinToken, linkedStatus, listMembers, listPendingInvites } from '$lib/server/users';
+import { feedToken, householdName, jellyfinToken, linkedStatus, listMembers, listPendingInvites } from '$lib/server/users';
 import { recentUnmatched } from '$lib/server/tracking/jellyfin';
 import { mailConfigured } from '$lib/server/mail';
 import { settingsForDisplay } from '$lib/server/services';
@@ -39,7 +39,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			jellyfin: {
 				url: `${url.origin}/webhook/jellyfin/${jellyfinToken(me.id)}`,
 				unmatched: recentUnmatched(me.id)
-			}
+			},
+			// Your private Upcoming feed (MagicMirror).
+			feedUrl: `${url.origin}/feed/${feedToken(me.id)}/upcoming.json`
 		},
 		// The household's service settings — owner only (keys never leave the server).
 		services: me.role === 'owner' ? settingsForDisplay() : null,
