@@ -6,7 +6,7 @@ shape as books: one home per fact, Seek is the only app you use.
 
 **Status:** done (2026-10-09). Floppy is gone from the code: Jellyfin points at Seek, the
 copy, the Floppy client, its settings and the MCP server are removed. This document is kept as the
-record of how the switch was made. Rewatch menu next.
+record of how the switch was made.
 
 ## Why
 
@@ -165,7 +165,9 @@ always the freshest copy.
 7. **Floppy removed** *(done)*: Jellyfin's webhook points at Seek for both of you; the client,
    the catch-up copy, Floppy linking and service settings, the calendar parser and the Floppy MCP
    server are deleted. The users table keeps its two Floppy token columns, unused.
-8. **Next:** the long-press rewatch menu (the watch API already takes a date for *Watched on…*).
+8. **Rewatch menu** *(done)*: hold an episode or season row for Watched again, Watched on…,
+   Remove last play and the play history (each play removable). MagicMirror reads Seek's own
+   per-person Upcoming feed (`/feed/{token}/upcoming.json`).
 
 Each step is its own release with tests; you can stop after any of them and lose nothing.
 
