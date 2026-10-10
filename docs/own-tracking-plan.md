@@ -4,7 +4,8 @@
 and movie information straight from TMDB, and receives Jellyfin's "watched" webhook itself. Same
 shape as books: one home per fact, Seek is the only app you use.
 
-**Status:** agreed 2026-10-09 (decisions below). Steps 1–4 built; step 5 (reads) next.
+**Status:** agreed 2026-10-09 (decisions below). Steps 1–6 built: Seek is the record; Floppy is read
+only by the catch-up copy, and only while someone still has it linked. Rewatch menu next.
 
 ## Why
 
@@ -148,10 +149,20 @@ always the freshest copy.
    MASHLE…), and one genuine question (Demon Slayer: are your July 2024 plays Swordsmith Village or
    Hashira Training?). Six plays sit on two-part episodes TMDB lists as one (House, Grey's) and are
    on the review list.
-5. **Read from Seek:** watchlist, show/season/movie pages, library, Upcoming, Profile stats, one at
-   a time, each checked against Floppy first. The long-press rewatch menu lands here.
-6. **Remove Floppy:** stop passing changes on, delete the Floppy client, the mirroring job, the
-   next-up corrections and anime-bucket handling; take Floppy out of the server setup.
+5. **Read from Seek** *(done)*: watchlist, show/season/movie pages, library, Upcoming, Profile
+   stats, diary, search (TMDB + your list), Discover (TMDB rows; your genres from Seek's stats).
+6. **Floppy out of the loop** *(done)* — *revised: one release with 5, since keeping Floppy in step
+   was no longer wanted.* Every change writes Seek only; a shared title writes both plays at once,
+   so the mirroring timer is gone (sharing still catches each of you up once). The anime tag job is
+   gone: the Shows/Anime split is Seek's rule plus household overrides, worked out as lists are
+   read. The webhook no longer forwards. Health checks Seek's database, not Floppy. An ended show
+   fully watched becomes Completed; unmarking reopens it.
+   **The copy became a catch-up:** add-only (never removes, never changes a status Seek holds),
+   reading Floppy's history back only to a day before its last run, 10 minutes after boot and
+   nightly — so Jellyfin marks that reach Floppy before its webhook URL is swapped still arrive.
+   It stops when Floppy is unlinked in Settings; after that Floppy can be shut down.
+7. **Next:** the long-press rewatch menu (the watch API already takes a date for *Watched on…*),
+   then delete the Floppy client and its settings once nobody has it linked.
 
 Each step is its own release with tests; you can stop after any of them and lose nothing.
 
