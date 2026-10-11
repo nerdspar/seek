@@ -595,6 +595,15 @@
 	</section>
 
 	<section>
+		<h3>Search results</h3>
+		<div class="chips">
+			<button class:on={(local.searchView ?? 'list') === 'list'} onclick={() => patch({ searchView: 'list' })}>List</button>
+			<button class:on={local.searchView === 'grid'} onclick={() => patch({ searchView: 'grid' })}>Grid</button>
+		</div>
+		<p class="hint">How shows, movies and books list when you search.</p>
+	</section>
+
+	<section>
 		<h3>Show page</h3>
 		<button
 			class="row"

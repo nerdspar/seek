@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import Skeleton from './Skeleton.svelte';
-	import Poster from './Poster.svelte';
 	import BookShelf from './BookShelf.svelte';
 	import BookSheet from './BookSheet.svelte';
 	import DownloadSheet from './DownloadSheet.svelte';
-	import BookTileButtons from './BookTileButtons.svelte';
-	import { coverThumb, cardBadge, type BookReadStatus, type DiscoveryCard } from '$lib/books';
+	import BookResults from './BookResults.svelte';
+	import { type BookReadStatus, type DiscoveryCard } from '$lib/books';
 	import { booksView } from '$lib/booksBrowse';
 	import { bookFilterQuery, type BookFilter } from '$lib/bookFilter';
 
@@ -18,7 +17,7 @@
 	 */
 	type Card = DiscoveryCard;
 	type Rail = { key: string; title: string; subtitle: string; books: Card[] };
-	let { query, filter, canUpload }: { query: string; filter: BookFilter | null; canUpload: boolean } = $props();
+	let { query, filter, canUpload, resultView }: { query: string; filter: BookFilter | null; canUpload: boolean; resultView: 'list' | 'grid' } = $props();
 
 	let open = $state<Card | null>(null);
 	let downloading = $state<Card | null>(null);
@@ -136,27 +135,7 @@
 		return () => clearTimeout(timer);
 	});
 
-	const card = (b: Card): Card => (added[b.hardcoverId] ? { ...b, mine: added[b.hardcoverId] } : b);
 </script>
-
-{#snippet grid(books: Card[])}
-	<ul class="grid">
-		{#each books as b (b.hardcoverId)}
-			{@const c = card(b)}
-			<li>
-				<div class="cover">
-					<button class="tile" onclick={() => (open = c)}>
-						<Poster src={coverThumb(c.coverUrl, 110)} width={110} height={165} radius={8} />
-						{#if cardBadge(c)}<span class="owned">{cardBadge(c)}</span>{/if}
-					</button>
-					<BookTileButtons card={c} canDownload={canUpload} onadd={quickAdd} ondownload={(x) => (downloading = x)} />
-				</div>
-				<span class="cap">{b.title}</span>
-				<span class="sub">{[b.author, b.year].filter(Boolean).join(' · ')}</span>
-			</li>
-		{/each}
-	</ul>
-{/snippet}
 
 {#snippet skeletonGrid()}
 	<ul class="grid">
@@ -172,7 +151,7 @@
 	{:else if !results.length}
 		<p class="msg">No books match “{query.trim()}”.</p>
 	{:else}
-		{@render grid(results)}
+		<BookResults books={results} view={resultView} canDownload={canUpload} onchange={() => refreshKey++} />
 	{/if}
 {:else if view === 'filter'}
 	{#if filterError}
@@ -182,7 +161,8 @@
 	{:else if !filterResults.length}
 		<p class="msg">No books match those filters. Loosen one.</p>
 	{:else}
-		{@render grid(filterResults)}
+		<!-- Browse is always a poster grid; the list/grid preference is for search. -->
+		<BookResults books={filterResults} view="grid" canDownload={canUpload} onchange={() => refreshKey++} />
 	{/if}
 {:else}
 	<!-- home -->
@@ -233,22 +213,6 @@
 		display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
 		gap: 16px 12px; margin: 0; padding: 0; list-style: none;
 	}
-	.cover { position: relative; width: 110px; }
-	.tile { position: relative; display: block; width: 110px; }
-	.owned {
-		position: absolute; left: 5px; bottom: 5px; max-width: calc(100% - 46px);
-		padding: 3px 7px; border-radius: 6px;
-		background: color-mix(in srgb, var(--bg) 82%, transparent);
-		backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-		font-size: 10.5px; font-weight: 700;
-		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-	}
-	.cap {
-		display: block; margin-top: 6px; font-size: 12.5px; font-weight: 600;
-		line-height: 1.3; overflow: hidden; display: -webkit-box;
-		-webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
-	}
-	.sub { display: block; font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 	.toast {
 		position: fixed; left: var(--gutter); right: var(--gutter);

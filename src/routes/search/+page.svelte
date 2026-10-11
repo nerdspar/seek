@@ -16,6 +16,7 @@
 	import type { DiscoveryCard } from '$lib/books';
 	import DiscoverFilterSheet from '$lib/components/DiscoverFilterSheet.svelte';
 	import BooksBrowse from '$lib/components/BooksBrowse.svelte';
+	import BookResults from '$lib/components/BookResults.svelte';
 	import BookDiscoverSheet from '$lib/components/BookDiscoverSheet.svelte';
 	import { emptyFilter, filterQuery, isActive, ERAS, type DiscoverFilter } from '$lib/discoverFilter';
 	import { emptyBookFilter, bookFilterActive, bookEraId, type BookFilter } from '$lib/bookFilter';
@@ -161,27 +162,9 @@
 		if (bookFilter) applyBookFilter({ ...bookFilter, genres: bookFilter.genres.filter((x) => x !== g) });
 	}
 
-	/* Books come from Hardcover, shown in All and under the Books chip. */
+	/* Books from Hardcover, shown inline under All (BookResults owns the add). */
 	let books = $state<DiscoveryCard[]>([]);
 	let bookSearching = $state(false);
-	let addedBooks = $state<Record<number, boolean>>({});
-	const bookAdded = (c: DiscoveryCard) => addedBooks[c.hardcoverId] || Boolean(c.owned || c.mine);
-	async function addBook(c: DiscoveryCard) {
-		if (bookAdded(c)) return;
-		addedBooks = { ...addedBooks, [c.hardcoverId]: true };
-		try {
-			const res = await fetch('/api/books/mine', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ hardcoverId: c.hardcoverId, status: 'want_to_read' })
-			});
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-		} catch (err) {
-			const { [c.hardcoverId]: _drop, ...rest } = addedBooks;
-			addedBooks = rest;
-			failed = err instanceof Error ? err.message : String(err);
-		}
-	}
 
 	$effect(() => {
 		input?.focus();
@@ -332,6 +315,49 @@
 	{/snippet}
 </PageHeader>
 
+<!-- One title result, as a list row or a poster-grid tile per the search-view
+     preference. `r` present means it's addable (TMDB), so it carries + and the
+     arr button; absent means it's already on your list. -->
+{#snippet titleCard(d: { mediaType: string; source: string; mediaId: string; title: string; poster: string | null; year: number | null; sub: string }, r: SearchResult | null)}
+	{#if data.searchView === 'grid'}
+		<li>
+			<button onclick={() => goto(detail(d.mediaType, d.source, d.mediaId))}>
+				<Poster src={d.poster} width={104} height={156} radius={9} />
+				<span class="cap">{d.title}</span>
+				{#if d.year}<span class="sub tnum">{d.year}</span>{/if}
+			</button>
+			{#if r}
+				<span class="gridadd">
+					<button class="add sm" class:on={isAdded(r)} disabled={busy.has(key(r))} aria-label={isAdded(r) ? `Remove ${r.title}` : `Add ${r.title}`} onclick={() => toggleAdd(r)}>
+						{#if isAdded(r)}<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>{:else}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>{/if}
+					</button>
+				</span>
+				<span class="gridarradd">
+					<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={30} />
+				</span>
+			{/if}
+		</li>
+	{:else}
+		<li>
+			<a class="body" href={detail(d.mediaType, d.source, d.mediaId)}>
+				<Poster src={d.poster} width={46} height={69} radius={7} />
+				<span class="meta">
+					<span class="title">{d.title}</span>
+					<span class="sub tnum">{d.sub}</span>
+				</span>
+			</a>
+			{#if r}
+				<button class="add" class:on={isAdded(r)} disabled={busy.has(key(r))} aria-label={isAdded(r) ? `Remove ${r.title}` : `Add ${r.title}`} onclick={() => toggleAdd(r)}>
+					{#if isAdded(r)}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>{:else}<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>{/if}
+				</button>
+				<span class="rowarr">
+					<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={34} />
+				</span>
+			{/if}
+		</li>
+	{/if}
+{/snippet}
+
 <main>
 	<div class="field">
 		<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -401,7 +427,7 @@
 	{/if}
 
 	{#if scope === 'books'}
-		<BooksBrowse {query} filter={bookBrowsing ? bookFilter : null} canUpload={data.canUpload} />
+		<BooksBrowse {query} filter={bookBrowsing ? bookFilter : null} canUpload={data.canUpload} resultView={data.searchView as 'list' | 'grid'} />
 	{:else if browsing}
 		{#if filterBusy && !filterResults.length}
 			<p class="msg">Finding…</p>
@@ -452,82 +478,31 @@
 	{:else}
 		{#if sections.showOnList}
 			<h2 class="eyebrow">On your list</h2>
-				<ul class="results">
-					{#each onList as t (t.mediaType + t.mediaId)}
-						<li>
-							<a class="body" href={detail(t.mediaType, 'tmdb', t.mediaId)}>
-								<Poster src={t.poster} width={46} height={69} radius={7} />
-								<span class="meta">
-									<span class="title">{t.title}</span>
-									<span class="sub tnum">{t.mediaType === 'movie' ? 'Film' : 'Show'}{t.year ? ` · ${t.year}` : ''}{statusLabel(t.status) ? ` · ${statusLabel(t.status)}` : ''}</span>
-								</span>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+			<ul class={data.searchView === 'grid' ? 'grid' : 'results'}>
+				{#each onList as t (t.mediaType + t.mediaId)}
+					{@render titleCard(
+						{ mediaType: t.mediaType, source: 'tmdb', mediaId: t.mediaId, title: t.title, poster: t.poster, year: t.year, sub: `${t.mediaType === 'movie' ? 'Movie' : 'TV'}${t.year ? ` · ${t.year}` : ''}${statusLabel(t.status) ? ` · ${statusLabel(t.status)}` : ''}` },
+						null
+					)}
+				{/each}
+			</ul>
+		{/if}
 
-			{#if sections.showFresh}
-				<h2 class="eyebrow">{sections.showOnList ? 'Add something new' : 'From TMDB'}</h2>
-				<ul class="results">
-					{#each fresh as r (key(r))}
-						<li>
-							<a class="body" href={detail(r.mediaType, r.source, r.mediaId)}>
-								<Poster src={r.poster} width={46} height={69} radius={7} />
-								<span class="meta">
-									<span class="title">{r.title}</span>
-									<span class="sub tnum">{r.mediaType === 'tv' ? 'Show' : 'Film'}{r.year ? ` · ${r.year}` : ''}</span>
-								</span>
-							</a>
-							<button
-								class="add"
-								class:on={isAdded(r)}
-								disabled={busy.has(key(r))}
-								aria-label={isAdded(r) ? `Remove ${r.title}` : `Add ${r.title}`}
-								onclick={() => toggleAdd(r)}
-							>
-								{#if isAdded(r)}
-									<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-								{:else}
-									<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
-								{/if}
-							</button>
-							<span class="rowarr">
-								<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={34} />
-							</span>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+		{#if sections.showFresh}
+			<h2 class="eyebrow">{sections.showOnList ? 'Add something new' : 'From TMDB'}</h2>
+			<ul class={data.searchView === 'grid' ? 'grid' : 'results'}>
+				{#each fresh as r (key(r))}
+					{@render titleCard(
+						{ mediaType: r.mediaType, source: r.source, mediaId: r.mediaId, title: r.title, poster: r.poster, year: r.year, sub: `${r.mediaType === 'tv' ? 'TV' : 'Movie'}${r.year ? ` · ${r.year}` : ''}` },
+						r
+					)}
+				{/each}
+			</ul>
+		{/if}
 
 		{#if sections.showBooks}
 			<h2 class="eyebrow">Books</h2>
-			<ul class="results">
-				{#each books as b (b.hardcoverId)}
-					<li>
-						<a class="body" href="/books">
-							<Poster src={b.coverUrl} width={46} height={69} radius={7} />
-							<span class="meta">
-								<span class="title">{b.title}</span>
-								<span class="sub">Book{b.author ? ` · ${b.author}` : ''}{b.year ? ` · ${b.year}` : ''}</span>
-							</span>
-						</a>
-						<button
-							class="add"
-							class:on={bookAdded(b)}
-							disabled={bookAdded(b)}
-							aria-label={bookAdded(b) ? `${b.title} is on your shelf` : `Add ${b.title} to want to read`}
-							onclick={() => addBook(b)}
-						>
-							{#if bookAdded(b)}
-								<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7" /></svg>
-							{:else}
-								<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
-							{/if}
-						</button>
-					</li>
-				{/each}
-			</ul>
+			<BookResults books={books} view={data.searchView as 'list' | 'grid'} canDownload={data.canUpload} />
 		{/if}
 
 		{#if sections.showSearching}
@@ -717,5 +692,12 @@
 	}
 	.add:disabled {
 		opacity: 0.5;
+	}
+	/* The grid tile's corner + is smaller than a row's. */
+	.add.sm {
+		width: 30px;
+		height: 30px;
+		margin: 0;
+		box-shadow: var(--shadow-sm);
 	}
 </style>

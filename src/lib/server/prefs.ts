@@ -45,6 +45,9 @@ export type Prefs = {
 	 *  filling a season. Marking an episode always speaks, because undo lives
 	 *  in that toast. */
 	confirmToasts: boolean;
+	/** How search results (titles and books) list — compact rows or a poster
+	 *  grid. One choice across every category so search reads the same way. */
+	searchView: 'list' | 'grid';
 	/** Dark, light, or whatever the phone is set to. */
 	appearance: Appearance;
 	/** The gradient. Independent of appearance — each accent works on both. */
@@ -110,6 +113,7 @@ export const DEFAULTS: Prefs = {
 	seasonArtwork: false,
 	companyTracking: true,
 	confirmToasts: true,
+	searchView: 'list',
 	appearance: 'system',
 	accent: 'violet',
 	services: [],

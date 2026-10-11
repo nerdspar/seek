@@ -35,12 +35,14 @@ async function trendingFor(type: 'tv' | 'movie'): Promise<TrendItem[]> {
 }
 
 export const load: PageServerLoad = async () => {
-	const books = mediaOn((await getPrefs().catch(() => null)) ?? {}, bookorbitConfigured() || hardcoverConfigured()).book;
+	const prefs = await getPrefs().catch(() => null);
+	const books = mediaOn(prefs ?? {}, bookorbitConfigured() || hardcoverConfigured()).book;
 	// The Books scope browses too, not just searches: its genre chips and whether
 	// uploading is offered. Only meaningful when books are on.
 	const bookGenres = books ? BOOK_GENRES : [];
 	const canUpload = books ? bookorbitLinked() : false;
+	const searchView = prefs?.searchView === 'grid' ? 'grid' : 'list';
 	// Trending for the empty state, per media type so the Movies chip shows films.
 	const [trending, trendingMovie] = await Promise.all([trendingFor('tv'), trendingFor('movie')]);
-	return { books, bookGenres, canUpload, trending, trendingMovie };
+	return { books, bookGenres, canUpload, searchView, trending, trendingMovie };
 };
