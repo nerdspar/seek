@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { setSegment } from '$lib/segment';
-	import SearchField from '$lib/components/SearchField.svelte';
 	import SearchFab from '$lib/components/SearchFab.svelte';
 	import DiscoverTabs from '$lib/components/DiscoverTabs.svelte';
 	import NotLinked from '$lib/components/NotLinked.svelte';
@@ -15,7 +14,6 @@
 	import ArrAddSheet from '$lib/components/ArrAddSheet.svelte';
 	import { loadArrStatus } from '$lib/arr.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
-	import type { TmdbResult } from '$lib/types';
 	import type { Snapshot } from '@sveltejs/kit';
 	import type { PageData } from './$types';
 
@@ -24,128 +22,15 @@
 	$effect(() => setSegment(data.mediaType === 'movie' ? 'movie' : 'tv'));
 
 	let note = $state<string | null>(null);
-
-	/** The title whose Sonarr/Radarr add sheet is open, if any. One sheet for the
-	 *  whole page — a dialog cannot live inside a tile's own <button>. */
+	/** The title whose Sonarr/Radarr add sheet is open. One sheet for the page. */
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
 	onMount(() => void loadArrStatus());
 
-	/* ── Mood and theme search (§6.2) ──────────────────────────────────────
-	   The distinguishing feature: "I want a heist show", not a trending grid.
-	   Chips carry no keyword ids — the server owns those — so the client cannot
-	   construct TMDB queries of its own. */
-	/* ── Browse by streaming service (§6.3) ────────────────────────────────
-	   "What's new on Netflix" is a different question from a mood, so it gets
-	   its own row and replaces the shelves the same way a mood search does. */
-	type Platform = { id: number; name: string; logo: string | null };
-	let platform = $state<Platform | null>(null);
-	let platformRows = $state<{ mode: string; items: TmdbResult[] }[] | null>(null);
-	let platformBusy = $state(false);
-
-	async function pickPlatform(p: Platform) {
-		if (platform?.id === p.id) {
-			platform = null;
-			platformRows = null;
-			return;
-		}
-		platform = p;
-		platformRows = null;
-		clearMood();
-		resetRails();
-		platformBusy = true;
-		try {
-			const res = await fetch(`/api/platform?id=${p.id}&type=${data.mediaType}`);
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-			platformRows = (await res.json()).rows;
-		} catch (err) {
-			note = err instanceof Error ? err.message : String(err);
-			platform = null;
-		} finally {
-			platformBusy = false;
-		}
-	}
-
-	const MODE_LABEL: Record<string, string> = { trending: 'Trending on', new: 'New on' };
-
-	type Section = { kind: string; title: string; why: string | null; items: TmdbResult[] };
-
-	let mood = $state<string | null>(null);
-	let freeText = $state('');
-
-	/* Run a query handed over in the URL, and re-run it when the URL changes so
-	   arriving from a second cast member actually searches again rather than
-	   leaving the first result on screen. Seeding freeText here rather than in
-	   its initialiser keeps a single path for both first load and navigation. */
-	let ranQuery = $state<string | null>(null);
-	$effect(() => {
-		const q = (data.query ?? '').trim();
-		if (!q || q === ranQuery) return;
-		ranQuery = q;
-		freeText = q;
-		runSearch(q);
-	});
-	let moodResults = $state<TmdbResult[] | null>(null);
-	let sections = $state<Section[] | null>(null);
-	let moodBusy = $state(false);
-
-	/* How a mood grid (Heist, True crime…) is ordered. Sticky across presets so
-	   "show me the newest" keeps meaning that as you hop between chips. */
-	type Sort = 'recommended' | 'newest' | 'top';
-	const SORT_OPTIONS = [
-		{ id: 'recommended', label: 'Recommended' },
-		{ id: 'newest', label: 'Newest' },
-		{ id: 'top', label: 'Highest rated' }
-	] as const;
-	let sort = $state<Sort>('recommended');
-
-	function setSort(next: Sort) {
-		if (next === sort) return;
-		sort = next;
-		resetRails();
-		if (mood) runMood(new URLSearchParams({ preset: mood }));
-	}
-
-	/* Discover's filter — a mood chip, a typed search, or a platform — lives only
-	   in component state, so opening a show and pressing back used to drop it and
-	   dump you back on the default shelves. A snapshot restores the whole
-	   selection, and its already-fetched results, on back/forward — which is what
-	   SvelteKit snapshots are for. */
-	type Captured = {
-		mood: string | null;
-		freeText: string;
-		ranQuery: string | null;
-		sort: Sort;
-		platform: Platform | null;
-		platformRows: { mode: string; items: TmdbResult[] }[] | null;
-		moodResults: TmdbResult[] | null;
-		sections: Section[] | null;
-		/** How far each horizontal rail was scrolled, keyed by rail id. */
-		rails: Record<string, number>;
-	};
-
-	/** SvelteKit restores window scroll on back, but never a rail's own horizontal
-	 *  scroll — so a row you'd scrolled through snapped back to the start.
-	 *  `railScroll` holds each rail's offset (kept current by the action below and
-	 *  carried across the back navigation by the snapshot). The action reapplies it
-	 *  the moment the rail mounts, which is the reliable hook: the feed streams in,
-	 *  so the row does not exist yet when `restore()` runs, and re-rendering the
-	 *  row simply re-runs the action on the new element. */
-	// Never reassigned — every action closure and the snapshot share this one
-	// object, so a restore that mutates it is seen no matter the timing.
+	/* Finding something specific — a title, an actor, a mood, a tag — is the
+	   unified search's job now (the floating button). Discover is the curated
+	   shelves; its only state is each rail's scroll, kept across a back nav. */
 	const railScroll: Record<string, number> = {};
-	/* Live rail nodes, so a filter change can snap them back to the start. */
 	const railNodes = new Set<HTMLElement>();
-
-	/** Changing the provider/theme/sort replaces a rail's contents in place (the
-	 *  key is stable), so the row would keep whatever offset it was left at —
-	 *  stranded at the end, hiding the new data. Reset every rail to the start and
-	 *  drop the saved offsets. User-initiated only; never called on back-nav, so
-	 *  the snapshot restore still works. */
-	function resetRails() {
-		for (const key of Object.keys(railScroll)) delete railScroll[key];
-		for (const node of railNodes) node.scrollLeft = 0;
-	}
-
 	function keepRailScroll(node: HTMLElement, key: string) {
 		let k = key;
 		railNodes.add(node);
@@ -176,107 +61,16 @@
 			}
 		};
 	}
-
-	export const snapshot: Snapshot<Captured> = {
-		capture: () => ({
-			mood,
-			freeText,
-			ranQuery,
-			sort,
-			platform,
-			platformRows,
-			moodResults,
-			sections,
-			rails: { ...railScroll }
-		}),
+	export const snapshot: Snapshot<Record<string, number>> = {
+		capture: () => ({ ...railScroll }),
 		restore: (v) => {
-			mood = v.mood;
-			freeText = v.freeText;
-			ranQuery = v.ranQuery;
-			sort = v.sort;
-			platform = v.platform;
-			platformRows = v.platformRows;
-			moodResults = v.moodResults;
-			sections = v.sections;
-			// Mutate the shared object in place (see railScroll) so the rails'
-			// actions read the restored offsets whenever they mount.
 			for (const key of Object.keys(railScroll)) delete railScroll[key];
-			Object.assign(railScroll, v.rails ?? {});
+			Object.assign(railScroll, v ?? {});
 		}
 	};
 
-	async function runMood(params: URLSearchParams) {
-		moodBusy = true;
-		sections = null;
-		try {
-			params.set('type', data.mediaType);
-			params.set('sort', sort);
-			const res = await fetch(`/api/mood?${params}`);
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-			moodResults = (await res.json()).results;
-		} catch (err) {
-			note = err instanceof Error ? err.message : String(err);
-			moodResults = null;
-		} finally {
-			moodBusy = false;
-		}
-	}
-
-	/** The search box answers whatever the query happens to mean. */
-	async function runSearch(q: string) {
-		moodBusy = true;
-		moodResults = null;
-		sections = null;
-		resetRails();
-		try {
-			const res = await fetch(`/api/explore?q=${encodeURIComponent(q)}&type=${data.mediaType}`);
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-			sections = (await res.json()).sections;
-		} catch (err) {
-			note = err instanceof Error ? err.message : String(err);
-		} finally {
-			moodBusy = false;
-		}
-	}
-
-	function pickPreset(label: string) {
-		platform = null;
-		platformRows = null;
-		if (mood === label) {
-			mood = null;
-			moodResults = null;
-			return;
-		}
-		mood = label;
-		freeText = '';
-		resetRails();
-		runMood(new URLSearchParams({ preset: label }));
-	}
-
-	function submitFreeText() {
-		const q = freeText.trim();
-		if (!q) return;
-		submitFreeTextClearsPlatform();
-		mood = null;
-		runSearch(q);
-	}
-
-	function clearMood() {
-		mood = null;
-		freeText = '';
-		moodResults = null;
-		sections = null;
-	}
-
-	function submitFreeTextClearsPlatform() {
-		platform = null;
-		platformRows = null;
-	}
-
-	const open = (mediaType: string, source: string, mediaId: string) => {
-		// Films have their own page now; this used to silently do nothing for them.
+	const open = (mediaType: string, source: string, mediaId: string) =>
 		goto(`/${mediaType === 'movie' ? 'movie' : 'show'}/${source}/${mediaId}`);
-	};
 </script>
 
 <div class="app">
@@ -284,7 +78,6 @@
 		active={data.mediaType === 'movie' ? 'movie' : 'tv'}
 		media={data.media}
 		books={data.books}
-		onnav={(href) => { clearMood(); goto(href, { noScroll: true }); }}
 	>
 		{#if data.onServer}
 			<button onclick={() => goto(`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`)} aria-label="On the server">
@@ -309,83 +102,18 @@
 {/snippet}
 
 	<main use:tabReselect={{ tab: 'discover' }}>
-		{#if data.moodAvailable}
-			<section class="mood">
-				<div class="moodfield">
-					<SearchField
-						bind:value={freeText}
-						placeholder="Mood, genre, actor, service…"
-						onsubmit={submitFreeText}
-						onclear={clearMood}
-					/>
-				</div>
-				<div class="chips">
-					{#each data.presets as preset (preset)}
-						<button class:on={mood === preset} onclick={() => pickPreset(preset)}>{preset}</button>
-					{/each}
-				</div>
-			</section>
-		{/if}
-
-		{#await data.platforms then platforms}
-			{#if platforms.length}
-				<section class="platforms">
-					<div class="chips">
-						{#each platforms as p (p.id)}
-							<button class="platform" class:on={platform?.id === p.id} onclick={() => pickPlatform(p)}>
-								{#if p.logo}<img src={p.logo} alt="" />{/if}
-								{p.name}
-							</button>
-						{/each}
-					</div>
-				</section>
-			{/if}
-		{/await}
-
-		{#if platformBusy}
-			{@render skeletonShelves(2)}
-		{:else if platformRows}
-			<div class="moodhead">
-				<h2>{platform?.name}</h2>
-				<button class="clear" onclick={() => { platform = null; platformRows = null; }}>Clear</button>
-			</div>
-			{#each platformRows.filter((r) => r.items.length) as row (row.mode)}
-				<section class="shelf">
-					<h2>{MODE_LABEL[row.mode] ?? row.mode} {platform?.name}</h2>
-					<ul class="rail" use:keepRailScroll={'pf:' + row.mode}>
-						{#each row.items as item (item.mediaId)}
-							<li>
-								<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
-									<Poster src={item.poster} width={110} height={165} radius={10} />
-									<span class="add"><AddButton mediaType={item.mediaType} source={item.source} mediaId={item.mediaId} title={item.title} onerror={(m) => (note = m)} /></span>
-									<span class="arradd"><ArrButton mediaType={item.mediaType} tmdbId={item.mediaId} title={item.title} onadd={(i) => (arrRequest = i)} compact size={30} /></span>
-								</button>
-								<span class="cap">{item.title}</span>
-								<span class="sub tnum">{[item.year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join(' · ')}</span>
-							</li>
-						{/each}
-					</ul>
-				</section>
-			{/each}
-			{#if !platformRows.some((r) => r.items.length)}
-				<p class="msg">Nothing found on {platform?.name}.</p>
-			{/if}
-		{:else if moodBusy}
-			{@render skeletonShelves(2)}
-		{:else if sections}
-			<div class="moodhead">
-				<h2>“{freeText.trim()}”</h2>
-				<button class="clear" onclick={clearMood}>Clear</button>
-			</div>
-			{#if !sections.length}
-				<p class="msg">Nothing matched that — try an actor, a title, a genre or a service.</p>
+		{#await data.rows}
+			{@render skeletonShelves(3)}
+		{:then rows}
+			{#if !rows.length}
+				<div class="empty"><h2>Nothing to suggest yet</h2><p>These rows come from TMDB and what you watch. Check the TMDB key under Settings → Services.</p></div>
 			{:else}
-				{#each sections as section (section.kind + section.title)}
+				{#each rows as row (row.key)}
 					<section class="shelf">
-						<h2>{section.title}</h2>
-						{#if section.why}<p class="why">{section.why}</p>{/if}
-						<ul class="rail" use:keepRailScroll={'sec:' + section.kind + ':' + section.title}>
-							{#each section.items as item (item.mediaId)}
+						<h2>{row.title}</h2>
+						{#if row.why}<p class="why">{row.why}</p>{/if}
+						<ul class="rail" use:keepRailScroll={'row:' + row.key}>
+							{#each row.items as item (item.mediaId)}
 								<li>
 									<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
 										<Poster src={item.poster} width={110} height={165} radius={10} />
@@ -400,67 +128,10 @@
 					</section>
 				{/each}
 			{/if}
-		{:else if moodResults}
-			<div class="moodhead">
-				<h2>{mood ?? `“${freeText.trim()}”`}</h2>
-				<button class="clear" onclick={clearMood}>Clear</button>
-			</div>
-			{#if mood && (moodResults.length || moodBusy)}
-				<div class="sortrow" role="tablist" aria-label="Sort">
-					{#each SORT_OPTIONS as opt (opt.id)}
-						<button role="tab" aria-selected={sort === opt.id} class="sortchip" class:on={sort === opt.id} disabled={moodBusy} onclick={() => setSort(opt.id)}>{opt.label}</button>
-					{/each}
-				</div>
-			{/if}
-			{#if !moodResults.length}
-				<p class="msg">{moodBusy ? '' : 'Nothing matched that. Try a different word.'}</p>
-			{:else}
-				<ul class="grid">
-					{#each moodResults as r (r.mediaId)}
-						<li>
-							<button class="tile" onclick={() => open(r.mediaType, r.source, r.mediaId)}>
-								<Poster src={r.poster} width={110} height={165} radius={10} />
-								<span class="add"><AddButton mediaType={r.mediaType} source={r.source} mediaId={r.mediaId} title={r.title} onerror={(m) => (note = m)} /></span>
-								<span class="arradd"><ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={30} /></span>
-							</button>
-							<span class="cap">{r.title}</span>
-							<span class="sub tnum">{[r.year, r.rating ? `★ ${r.rating}` : null].filter(Boolean).join(' · ')}</span>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		{:else}
-			{#await data.rows}
-				{@render skeletonShelves(3)}
-			{:then rows}
-				{#if !rows.length}
-					<div class="empty"><h2>Nothing to suggest yet</h2><p>These rows come from TMDB and what you watch. Check the TMDB key under Settings → Services.</p></div>
-				{:else}
-				{#each rows as row (row.key)}
-				<section class="shelf">
-					<h2>{row.title}</h2>
-					{#if row.why}<p class="why">{row.why}</p>{/if}
-					<ul class="rail" use:keepRailScroll={'row:' + row.key}>
-						{#each row.items as item (item.mediaId)}
-							<li>
-								<button class="tile" onclick={() => open(item.mediaType, item.source, item.mediaId)}>
-									<Poster src={item.poster} width={110} height={165} radius={10} />
-									<span class="add"><AddButton mediaType={item.mediaType} source={item.source} mediaId={item.mediaId} title={item.title} added={item.tracked ?? false} onerror={(m) => (note = m)} /></span>
-									<span class="arradd"><ArrButton mediaType={item.mediaType} tmdbId={item.mediaId} title={item.title} onadd={(i) => (arrRequest = i)} compact size={30} /></span>
-								</button>
-								<span class="cap">{item.title}</span>
-								<span class="sub tnum">{[item.year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join(' · ')}</span>
-							</li>
-						{/each}
-					</ul>
-				</section>
-				{/each}
-				{/if}
-			{:catch err}
-				{@const missing = notLinkedOf(err)}
-				{#if missing}<NotLinked service={missing} />{:else}<div class="empty"><h2>Can't load Discover</h2><p>{err.message}</p></div>{/if}
-			{/await}
-		{/if}
+		{:catch err}
+			{@const missing = notLinkedOf(err)}
+			{#if missing}<NotLinked service={missing} />{:else}<div class="empty"><h2>Can't load Discover</h2><p>{err.message}</p></div>{/if}
+		{/await}
 	</main>
 
 	<SearchFab />
@@ -484,50 +155,7 @@
 
 	main { padding: 6px 0 calc(var(--tabbar-footprint) + 24px); }
 
-	.platforms { margin-bottom: 14px; }
-	.platform {
-		display: flex; align-items: center; gap: 7px;
-		flex: none; min-height: 38px; padding: 0 13px 0 5px; border-radius: 10px;
-		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text);
-	}
-	.platform img { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; }
-	.platform.on { background: var(--signal); color: #fff; }
 
-	/* The gutter belongs on the children, not here: this page is full-bleed
-	   (main has no horizontal padding) so that scrolling rows can run past the
-	   screen edge. Insetting the section would clip the chips short of it. */
-	.mood { margin-bottom: 18px; }
-	.moodfield { padding: 0 var(--gutter); }
-
-	/* Padding inside the scroller, never margin around it — chips then sit level
-	   with the headings at rest but still scroll to the screen edge, matching
-	   .rail and the platform row. */
-	.chips { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding: 0 var(--gutter) 2px; }
-	.chips button {
-		flex: none; min-height: 34px; padding: 0 13px; border-radius: 9px;
-		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
-	}
-	.chips button.on { background: var(--signal); color: #fff; }
-
-	.moodhead {
-		display: flex; align-items: baseline; justify-content: space-between;
-		gap: 12px; padding: 0 var(--gutter); margin-bottom: 10px;
-	}
-	.moodhead h2 { margin: 0; font-size: 17px; font-weight: 600; }
-	.clear { font-size: 13px; font-weight: 600; color: var(--signal-solid); }
-	.sortrow { display: flex; gap: 6px; margin: 4px 0 2px; overflow-x: auto; }
-	.sortchip {
-		flex: none;
-		min-height: 30px;
-		padding: 0 12px;
-		border-radius: 9px;
-		background: var(--surface);
-		font-size: 12.5px;
-		font-weight: 600;
-		color: var(--text-dim);
-	}
-	.sortchip.on { background: var(--surface-raised); color: var(--text); }
-	.sortchip:disabled { opacity: 0.6; }
 
 	.shelf { margin-bottom: 26px; }
 	.skhead { display: flex; flex-direction: column; gap: 6px; padding: 0 var(--gutter); }
@@ -535,7 +163,7 @@
 	.shelf h2 { margin: 0 var(--gutter) 2px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
 	.why { margin: 0 var(--gutter) 8px; font-size: 12.5px; color: var(--text-dim); }
 
-	.rail, .grid { margin: 8px 0 0; padding: 0; list-style: none; }
+	.rail { margin: 8px 0 0; padding: 0; list-style: none; }
 	.rail {
 		display: flex; gap: 12px; overflow-x: auto;
 		padding: 0 var(--gutter) 4px;
@@ -546,10 +174,6 @@
 		scroll-padding-left: var(--gutter);
 	}
 	.rail li { flex: none; width: 110px; scroll-snap-align: start; }
-	.grid {
-		display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-		gap: 16px 12px; padding: 0 var(--gutter);
-	}
 
 	.tile { position: relative; display: block; width: 110px; }
 	.add { position: absolute; right: 5px; bottom: 5px; }
@@ -562,7 +186,6 @@
 	}
 	.sub { display: block; font-size: 11px; color: var(--text-dim); }
 
-	.msg { margin: 40px 0; text-align: center; font-size: 14px; color: var(--text-dim); }
 	.empty { margin-top: 20vh; text-align: center; padding: 0 var(--gutter); }
 	.empty h2 { margin: 0 0 8px; font-size: 17px; }
 	.empty p { margin: 0; font-size: 14px; color: var(--text-dim); }

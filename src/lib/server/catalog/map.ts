@@ -30,6 +30,7 @@ function castOf(d: Record<string, unknown>): CastMember[] {
 		const r = c as Record<string, unknown>;
 		const roles = Array.isArray(r.roles) ? r.roles : [];
 		return {
+			id: num(r.id),
 			name: str(r.name) ?? '',
 			role: str(r.character) ?? str((roles[0] as Record<string, unknown> | undefined)?.character),
 			image: img(r.profile_path, 'w185')
@@ -91,7 +92,7 @@ export type TitleRow = {
 	collection: { id: number; name: string } | null;
 };
 
-export type CastMember = { name: string; role: string | null; image: string | null };
+export type CastMember = { id: number | null; name: string; role: string | null; image: string | null };
 export type SeasonInfo = { number: number; name: string | null; poster: string | null; count: number };
 
 export type EpisodeRow = {

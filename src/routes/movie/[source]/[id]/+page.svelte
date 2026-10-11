@@ -411,7 +411,7 @@
 				<ul class="cast">
 					{#each movie.cast as person (person.name + (person.role ?? ''))}
 						<li>
-							<button onclick={() => goto(`/discover?q=${encodeURIComponent(person.name)}&type=movie`)}>
+							<button onclick={() => goto(person.id ? `/search?type=movie&people=${person.id}&pname=${encodeURIComponent(person.name)}` : `/search?type=movie&person=${encodeURIComponent(person.name)}`)}>
 								<Poster src={person.image} width={78} height={78} radius={39} />
 								<span class="pname">{person.name}</span>
 								{#if person.role}<span class="prole">{person.role}</span>{/if}

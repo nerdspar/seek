@@ -80,7 +80,7 @@ export type MovieDetail = {
 	studios: string[];
 	runtime: number | null;
 	certification: string | null;
-	cast: { name: string; role: string | null; image: string | null }[];
+	cast: { id: number | null; name: string; role: string | null; image: string | null }[];
 	/** The franchise this film belongs to, if any — "Toy Story Collection". */
 	collection: {
 		name: string;
@@ -107,7 +107,7 @@ export type ShowDetail = {
 	lastAirDate: string | null;
 	studios: string[];
 	runtime: number | null;
-	cast: { name: string; role: string | null; image: string | null }[];
+	cast: { id: number | null; name: string; role: string | null; image: string | null }[];
 	seasons: SeasonSummary[];
 };
 

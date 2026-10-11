@@ -29,6 +29,27 @@
 			.catch(() => {});
 	});
 
+	// Tapping an actor on a show/film lands here filtered to them (by id, or by
+	// name while cast ids are still backfilling).
+	onMount(() => {
+		const sp = page.url.searchParams;
+		const type = sp.get('type') === 'movie' ? 'movie' : 'tv';
+		const pid = Number(sp.get('people'));
+		const pname = sp.get('pname');
+		const personName = sp.get('person');
+		if (pid && pname) {
+			applyFilter({ ...emptyFilter(type), people: [{ id: pid, name: pname }] });
+		} else if (personName) {
+			fetch(`/api/discover/suggest?q=${encodeURIComponent(personName)}`)
+				.then((r) => (r.ok ? r.json() : { people: [] }))
+				.then((b) => {
+					const top = (b.people ?? [])[0];
+					if (top) applyFilter({ ...emptyFilter(type), people: [{ id: top.id, name: top.name }] });
+				})
+				.catch(() => {});
+		}
+	});
+
 	let { data }: { data: PageData } = $props();
 
 	/* All / Shows / Films, with Books when it's on. */

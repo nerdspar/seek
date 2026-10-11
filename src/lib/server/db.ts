@@ -416,7 +416,13 @@ export const MIGRATIONS: Migration[] = [
 			if (viewed) drop.run(p.id);
 			else move.run(p.episode - 1, p.id);
 		}
-	}
+	},
+	// v21 — person ids on cast (own-tracking): tapping an actor opens the unified
+	// search filtered to them, which needs the id, not just the name. Reset
+	// refresh_after so every title re-fetches and captures ids over the next cycle.
+	`
+	UPDATE titles SET refresh_after = '1970-01-01T00:00:00.000Z';
+	`
 ];
 
 /** Open (creating if needed) and migrate a database. ':memory:' for tests. */
