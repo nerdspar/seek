@@ -11,11 +11,12 @@ import { seekStats } from './tracking/stats';
 import { dedupe, tmdbConfigured, tmdbDiscover, tmdbGenres, tmdbTrending, type DiscoverParams } from './tmdb';
 import type { MediaType, TmdbResult } from '$lib/types';
 
-/** Two TMDB pages concatenated, so a row still fills up after the library and
- *  cross-row duplicates are filtered out. */
+/** Three TMDB pages concatenated, so a row still fills to PER_ROW after the
+ *  library and cross-row duplicates are filtered out — later genre rows overlap
+ *  heavily with earlier ones, so they need the extra depth to backfill. */
 const deepDiscover = (p: Omit<DiscoverParams, 'page'>): Promise<TmdbResult[]> =>
-	Promise.all([tmdbDiscover({ ...p, page: 1 }), tmdbDiscover({ ...p, page: 2 })]).then(([a, b]) =>
-		dedupe([...a, ...b])
+	Promise.all([tmdbDiscover({ ...p, page: 1 }), tmdbDiscover({ ...p, page: 2 }), tmdbDiscover({ ...p, page: 3 })]).then(
+		(pages) => dedupe(pages.flat())
 	);
 
 export type DiscoverItem = {
@@ -38,6 +39,9 @@ export type DiscoverRow = {
 };
 
 const PER_ROW = 20;
+/** Hide a row that can't fill at least this much — a half-empty shelf next to
+ *  full ones reads as broken, so a thin one is dropped rather than shown. */
+const MIN_ROW = 14;
 const YEAR = new Date().getFullYear();
 const untrackedItems = (list: TmdbResult[], tracked: Set<string>): DiscoverItem[] =>
 	list.filter((i) => !tracked.has(i.mediaId)).map((i) => ({ ...i, tracked: false }));
@@ -116,7 +120,8 @@ export async function getDiscoverRows(mediaType: MediaType): Promise<DiscoverRow
 	for (const row of candidates) {
 		if (!row) continue;
 		const items = row.items.filter((i) => !seen.has(i.mediaId)).slice(0, PER_ROW);
-		if (!items.length) continue;
+		// Too thin to show — leave its titles unclaimed so a later row can use them.
+		if (items.length < MIN_ROW) continue;
 		for (const i of items) seen.add(i.mediaId);
 		out.push({ ...row, items });
 	}

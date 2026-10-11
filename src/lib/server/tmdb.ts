@@ -230,8 +230,13 @@ export async function tmdbTrending(mediaType: 'tv' | 'movie'): Promise<TmdbResul
 	const cacheKey = `trend:${mediaType}`;
 	const hit = discoverCache.get(cacheKey);
 	if (hit) return hit;
-	const data = await tmdb<{ results?: DiscoverRaw[] }>(`/trending/${mediaType}/week`, {});
-	const cleaned = (data.results ?? []).filter(
+	// Two pages so the row still fills to 20 after noise, dedupe and the library
+	// are stripped out (one page left it around a dozen).
+	const [p1, p2] = await Promise.all([
+		tmdb<{ results?: DiscoverRaw[] }>(`/trending/${mediaType}/week`, { page: '1' }),
+		tmdb<{ results?: DiscoverRaw[] }>(`/trending/${mediaType}/week`, { page: '2' })
+	]);
+	const cleaned = [...(p1.results ?? []), ...(p2.results ?? [])].filter(
 		(r) => !(r.genre_ids ?? []).some((g) => NOISE_GENRE_IDS.includes(g))
 	);
 	const out = dedupe(cleaned.map((r) => mapDiscoverRow(r, mediaType)));

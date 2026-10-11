@@ -61,11 +61,12 @@ export async function hcAs<T>(token: string, query: string, variables?: Record<s
 /* Depth ≤ 3: cached_contributors is JSON (no depth), image { url } is depth 2. */
 const BOOK_FIELDS = 'id title rating release_year release_date users_count cached_contributors image { url }';
 
+// Over-fetch (covers get dropped by clean()) so each shelf still fills to 20.
 const RAILS_QUERY = `query Rails($year: Int!, $ago: date!, $today: date!, $ahead: date!) {
-  thisYear: books(where: {release_year: {_eq: $year}}, order_by: {users_count: desc}, limit: 20) { ${BOOK_FIELDS} }
-  newest: books(where: {release_date: {_gte: $ago, _lte: $today}, users_count: {_gte: 30}}, order_by: {release_date: desc}, limit: 20) { ${BOOK_FIELDS} }
-  soon: books(where: {release_date: {_gt: $today, _lte: $ahead}}, order_by: {users_count: desc}, limit: 20) { ${BOOK_FIELDS} }
-  classics: books(order_by: {users_count: desc}, limit: 20) { ${BOOK_FIELDS} }
+  thisYear: books(where: {release_year: {_eq: $year}}, order_by: {users_count: desc}, limit: 40) { ${BOOK_FIELDS} }
+  newest: books(where: {release_date: {_gte: $ago, _lte: $today}, users_count: {_gte: 30}}, order_by: {release_date: desc}, limit: 40) { ${BOOK_FIELDS} }
+  soon: books(where: {release_date: {_gt: $today, _lte: $ahead}}, order_by: {users_count: desc}, limit: 40) { ${BOOK_FIELDS} }
+  classics: books(order_by: {users_count: desc}, limit: 40) { ${BOOK_FIELDS} }
 }`;
 
 /* Shelves in display order. `soon` stops six months out: Hardcover carries
@@ -108,7 +109,7 @@ export async function discoverRails(now = new Date()): Promise<BookRail[]> {
 		key: r.key,
 		title: r.title(now.getFullYear()),
 		subtitle: r.subtitle,
-		books: clean((data[r.key] ?? []).map(mapHardcoverBook))
+		books: clean((data[r.key] ?? []).map(mapHardcoverBook)).slice(0, 20)
 	})).filter((r) => r.books.length);
 	railsCache.set(today, rails);
 	return rails;
