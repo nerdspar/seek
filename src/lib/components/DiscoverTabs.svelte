@@ -4,18 +4,19 @@
 	import type { MediaOn } from '$lib/media';
 
 	/**
-	 * The Discover header: the TV / Movies switch (books are discovered in the
-	 * unified search, not here). Trailing slot = whatever actions the page passes.
+	 * The Discover header: the TV / Movies / Books switch, so each kind's curated
+	 * shelves read the same way. Trailing slot = whatever actions the page passes.
 	 *
-	 * `onnav` lets the page clear its mood filter before navigating.
+	 * `onnav` lets the TV/Movies page clear its mood filter before navigating.
 	 */
-	type Active = 'tv' | 'movie';
+	type Active = 'tv' | 'movie' | 'books';
 	let {
 		active,
 		media,
+		books,
 		onnav = (href: string) => goto(href, { noScroll: true }),
 		children
-	}: { active: Active; media: MediaOn; onnav?: (href: string) => void; children?: Snippet } = $props();
+	}: { active: Active; media: MediaOn; books: boolean; onnav?: (href: string) => void; children?: Snippet } = $props();
 </script>
 
 <header>
@@ -25,6 +26,9 @@
 		{/if}
 		{#if media.movie}
 			<button role="tab" aria-selected={active === 'movie'} class:on={active === 'movie'} onclick={() => onnav('/discover?type=movie')}>Movies</button>
+		{/if}
+		{#if books}
+			<button role="tab" aria-selected={active === 'books'} class:on={active === 'books'} onclick={() => onnav('/discover/books')}>Books</button>
 		{/if}
 	</div>
 	{#if children}

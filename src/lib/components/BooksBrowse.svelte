@@ -1,54 +1,38 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import Skeleton from './Skeleton.svelte';
-	import BookShelf from './BookShelf.svelte';
-	import BookSheet from './BookSheet.svelte';
-	import DownloadSheet from './DownloadSheet.svelte';
 	import BookResults from './BookResults.svelte';
-	import { type BookReadStatus, type DiscoveryCard } from '$lib/books';
+	import { type DiscoveryCard } from '$lib/books';
 	import { booksView } from '$lib/booksBrowse';
 	import { bookFilterQuery, type BookFilter } from '$lib/bookFilter';
 
 	/**
-	 * The whole Books finding surface — search, facet filter and the home
-	 * shelves — as one component so the unified search's Books scope is exactly
-	 * what Discover → Books used to be. The query and the filter are driven from
-	 * outside (the one search field and the filter sheet); everything else it owns.
+	 * The Books scope of the unified search — search and the facet filter, with a
+	 * "Popular now" empty state, exactly like shows and movies. Browsing the
+	 * curated shelves is Discover → Books; this is for finding a specific book.
 	 */
 	type Card = DiscoveryCard;
-	type Rail = { key: string; title: string; subtitle: string; books: Card[] };
 	let { query, filter, canUpload, resultView }: { query: string; filter: BookFilter | null; canUpload: boolean; resultView: 'list' | 'grid' } = $props();
-
-	let open = $state<Card | null>(null);
-	let downloading = $state<Card | null>(null);
-	let tileNote = $state<string | null>(null);
 
 	const view = $derived(booksView(query, filter !== null));
 
-	/* ── Home shelves: the standard discovery rails and the personal ones ───── */
-	let homeRails = $state<Rail[] | null>(null);
-	let personalRails = $state<Rail[]>([]);
-	let homeError = $state<string | null>(null);
-	let homeLoaded = false;
+	/* ── Popular books for the empty state (parallel to shows/movies trending) ── */
+	let popular = $state<Card[] | null>(null);
+	let popularLoaded = false;
 	$effect(() => {
-		// Load once, the first time the home view is actually shown.
-		if (homeLoaded || view !== 'home') return;
-		homeLoaded = true;
+		if (popularLoaded || view !== 'home') return;
+		popularLoaded = true;
 		fetch('/api/books/discover')
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-			.then((b: { rails: Rail[]; personal: Rail[] }) => {
-				homeRails = b.rails ?? [];
-				personalRails = b.personal ?? [];
+			.then((b: { rails: { books: Card[] }[] }) => {
+				popular = (b.rails?.[0]?.books ?? []).slice(0, 18);
 			})
-			.catch((e) => {
-				homeError = (e as Error).message;
-				homeRails = [];
+			.catch(() => {
+				popular = [];
 			});
 	});
 
 	/* ── Facet filter (genre / decade / sort) → a flat grid ──────────────────── */
 	let filterResults = $state<Card[] | null>(null);
-	let filterTotal = $state(0);
 	let filterBusy = $state(false);
 	let filterError = $state<string | null>(null);
 	let filterSeq = 0;
@@ -63,7 +47,6 @@
 			.then((b: { results: Card[]; total: number }) => {
 				if (mine !== filterSeq) return;
 				filterResults = b.results ?? [];
-				filterTotal = b.total ?? 0;
 				filterError = null;
 			})
 			.catch((e) => {
@@ -74,33 +57,7 @@
 			});
 	});
 
-	/* + on a cover: put it on your want-to-read list. One you already have opens
-	   its sheet instead, to change it. */
-	let added = $state<Record<number, BookReadStatus>>({});
-	async function quickAdd(c: Card) {
-		if (c.owned || c.mine || added[c.hardcoverId]) {
-			open = c;
-			return;
-		}
-		added = { ...added, [c.hardcoverId]: 'want_to_read' };
-		try {
-			const res = await fetch('/api/books/mine', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ hardcoverId: c.hardcoverId, status: 'want_to_read' })
-			});
-			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
-			tileNote = `Added “${c.title}” to Want to read`;
-		} catch (e) {
-			const { [c.hardcoverId]: _, ...rest } = added;
-			added = rest;
-			tileNote = `Couldn't add “${c.title}” — ${(e as Error).message}`;
-		}
-		setTimeout(() => (tileNote = null), 2500);
-	}
-
-	/* ── Search the whole catalog, driven by the shared query. Debounced; a
-	   newer query cancels the older. ──────────────────────────────────────── */
+	/* ── Search the whole catalog, driven by the shared query. ───────────────── */
 	let results = $state<Card[] | null>(null);
 	let searching = $state(false);
 	let searchError = $state<string | null>(null);
@@ -134,7 +91,6 @@
 		}, 300);
 		return () => clearTimeout(timer);
 	});
-
 </script>
 
 {#snippet skeletonGrid()}
@@ -165,60 +121,26 @@
 		<BookResults books={filterResults} view="grid" canDownload={canUpload} onchange={() => refreshKey++} />
 	{/if}
 {:else}
-	<!-- home -->
-	{#each personalRails as r (r.key)}
-		<BookShelf title={r.title} subtitle={r.subtitle} books={r.books} overrides={added} canDownload={canUpload} onopen={(b) => (open = b)} onadd={quickAdd} ondownload={(b) => (downloading = b)} />
-	{/each}
-	{#if homeRails === null}
-		{#each Array(3) as _, g (g)}
-			<section class="skshelf">
-				<Skeleton width="46%" height="16px" />
-				<div class="skrail">{#each Array(4) as _, i (i)}<Skeleton height="165px" radius={8} />{/each}</div>
-			</section>
-		{/each}
-	{:else if homeError}
-		<p class="msg">Can't reach Hardcover — {homeError}</p>
+	<!-- home: popular, like shows/movies "Trending now" -->
+	{#if popular === null}
+		{@render skeletonGrid()}
+	{:else if popular.length}
+		<h2 class="eyebrow">Popular now</h2>
+		<BookResults books={popular} view="grid" canDownload={canUpload} />
 	{:else}
-		{#each homeRails as r (r.key)}
-			<BookShelf title={r.title} subtitle={r.subtitle} books={r.books} overrides={added} canDownload={canUpload} onopen={(b) => (open = b)} onadd={quickAdd} ondownload={(b) => (downloading = b)} />
-		{/each}
-		{#if !homeRails.length && !personalRails.length}<p class="msg">Hardcover returned no shelves right now.</p>{/if}
+		<p class="msg">Search for a book, or browse the shelves in Discover → Books.</p>
 	{/if}
 {/if}
 
-{#if open}
-	<BookSheet
-		card={open}
-		onclose={() => (open = null)}
-		onchange={() => {
-			void invalidateAll();
-			refreshKey++; // re-fetch search results so the changed book's badge updates
-		}}
-	/>
-{/if}
-
-{#if downloading}
-	{#key downloading.hardcoverId}
-		<DownloadSheet book={downloading} kind="ebook" onclose={() => (downloading = null)} onchange={() => invalidateAll()} />
-	{/key}
-{/if}
-
-{#if tileNote}<p class="toast" role="status">{tileNote}</p>{/if}
-
 <style>
-	.skshelf { display: flex; flex-direction: column; gap: 10px; margin-bottom: 26px; }
-	.skrail { display: grid; grid-template-columns: repeat(4, 110px); gap: 12px; overflow: hidden; }
-
 	.grid {
 		display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
 		gap: 16px 12px; margin: 0; padding: 0; list-style: none;
 	}
-
-	.toast {
-		position: fixed; left: var(--gutter); right: var(--gutter);
-		bottom: calc(var(--tabbar-h, 0px) + var(--safe-b) + 12px); z-index: 60;
-		margin: 0; padding: 12px 14px; border-radius: 12px;
-		background: var(--surface-raised); box-shadow: var(--shadow-sm); font-size: 14px;
+	.eyebrow {
+		margin: 16px 0 10px; font-size: 12.5px; font-weight: 700;
+		text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim);
 	}
+	.eyebrow:first-child { margin-top: 4px; }
 	.msg { margin: 40px 0; text-align: center; font-size: 14px; color: var(--text-dim); }
 </style>
