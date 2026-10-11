@@ -13,6 +13,7 @@
 import Database from 'better-sqlite3';
 import { env } from '$env/dynamic/private';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import v23Plays from './migrations/v23-duplicate-plays.json';
 import { dirname, join } from 'node:path';
 
 export type DB = Database.Database;
@@ -434,8 +435,38 @@ export const MIGRATIONS: Migration[] = [
 		if (removed.length && db.name !== ':memory:') {
 			writeFileSync(join(dirname(db.name), `removed-plays-v22-${new Date().toISOString().slice(0, 10)}.json`), JSON.stringify(removed));
 		}
+	},
+	// v23 — the rest of the double-logged history, reviewed by Scott on
+	// 2026-10-11 from his export: whole runs logged twice as one batch on an
+	// import day (The Flash, Game of Thrones, Fairy Tail…), repeats of a single
+	// episode 1–7 days apart, and Bake Off S1 E2–10 marked twice on Oct 10.
+	// Exactly those rows of his (user 1), each matched on every field, so a row
+	// that has changed since is left alone. Removed rows are written to /data.
+	(db) => {
+		const removed = removeListedPlays(db, 1, v23Plays as ListedPlay[]);
+		if (removed.length && db.name !== ':memory:') {
+			writeFileSync(join(dirname(db.name), `removed-plays-v23-${new Date().toISOString().slice(0, 10)}.json`), JSON.stringify(removed));
+		}
 	}
 ];
+
+export type ListedPlay = { id: number; mediaType: string; tmdbId: number; season: number | null; episode: number | null; watchedAt: string };
+
+/** Delete one person's listed plays, only where every field still matches. */
+export function removeListedPlays(db: DB, userId: number, list: ListedPlay[]): PlayRow[] {
+	const get = db.prepare(
+		'SELECT id, user_id, media_type, tmdb_id, season, episode, watched_at, source FROM plays WHERE id = ? AND user_id = ? AND media_type = ? AND tmdb_id = ? AND season IS ? AND episode IS ? AND watched_at = ?'
+	);
+	const drop = db.prepare('DELETE FROM plays WHERE id = ?');
+	const removed: PlayRow[] = [];
+	for (const p of list) {
+		const row = get.get(p.id, userId, p.mediaType, p.tmdbId, p.season, p.episode, p.watchedAt) as PlayRow | undefined;
+		if (!row) continue;
+		drop.run(row.id);
+		removed.push(row);
+	}
+	return removed;
+}
 
 export type PlayRow = { id: number; user_id: number; media_type: string; tmdb_id: number; season: number | null; episode: number | null; watched_at: string; source: string };
 

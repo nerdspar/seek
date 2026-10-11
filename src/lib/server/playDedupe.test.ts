@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { mkdtempSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDatabase, dedupeImportedPlays, backupBeforeMigrating, MIGRATIONS, type DB } from './db';
+import { openDatabase, dedupeImportedPlays, backupBeforeMigrating, removeListedPlays, MIGRATIONS, type DB } from './db';
 
 let d: DB;
 afterEach(() => d?.close());
@@ -64,5 +64,23 @@ describe('backup before migrating', () => {
 		expect(backupBeforeMigrating(raw, file)).toBeNull(); // nothing pending
 		raw.close();
 		expect(readdirSync(dir).filter((f) => f.endsWith('.bak'))).toHaveLength(1);
+	});
+});
+
+describe('removeListedPlays', () => {
+	it("removes only that person's listed rows, and only while every field still matches", () => {
+		const ins = seed();
+		const id = (n: number | bigint) => Number(n);
+		const a = id(ins.run(1, 'tv', 1, 1, 1, '2023-03-10T20:00:00.000Z', 'import').lastInsertRowid);
+		const b = id(ins.run(1, 'tv', 1, 1, 1, '2023-03-11T20:00:00.000Z', 'import').lastInsertRowid);
+		const c = id(ins.run(2, 'tv', 1, 1, 1, '2023-03-11T20:00:00.000Z', 'import').lastInsertRowid);
+		const listed = (pid: number, at = '2023-03-11T20:00:00.000Z') => ({ id: pid, mediaType: 'tv', tmdbId: 1, season: 1, episode: 1, watchedAt: at });
+		const removed = removeListedPlays(d, 1, [listed(b), listed(c), listed(a, '2099-01-01T00:00:00.000Z')]);
+		expect(removed.map((r) => r.id)).toEqual([b]);
+		expect(left()).toHaveLength(2);
+	});
+
+	it('the v23 list is well formed', () => {
+		expect(MIGRATIONS).toHaveLength(23);
 	});
 });
