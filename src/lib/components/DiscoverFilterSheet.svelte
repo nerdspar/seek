@@ -7,7 +7,10 @@
 	 * services, era and sort — all visible at once, no horizontal scroller. The
 	 * button shows a live result count so you see the combination narrowing.
 	 */
-	let { filter, onapply, onclose }: { filter: DiscoverFilter; onapply: (f: DiscoverFilter) => void; onclose: () => void } = $props();
+	// `allowType`: show the TV/Movies switch. Only the "All" scope needs it — when
+	// the scope is already Shows or Films, the media type is fixed by the chip, so
+	// the switch is hidden to avoid two controls that can disagree.
+	let { filter, onapply, onclose, allowType = true }: { filter: DiscoverFilter; onapply: (f: DiscoverFilter) => void; onclose: () => void; allowType?: boolean } = $props();
 
 	// Seed once from the incoming filter (the sheet remounts each open), then own it.
 	let draft = $state<DiscoverFilter>(emptyFilter('tv'));
@@ -111,10 +114,12 @@
 
 <Sheet label="Filter Discover" {onclose} scrollable>
 	<div class="pad">
-		<div class="seg type">
-			<button class:on={draft.type === 'tv'} onclick={() => setType('tv')}>TV Shows</button>
-			<button class:on={draft.type === 'movie'} onclick={() => setType('movie')}>Movies</button>
-		</div>
+		{#if allowType}
+			<div class="seg type">
+				<button class:on={draft.type === 'tv'} onclick={() => setType('tv')}>TV Shows</button>
+				<button class:on={draft.type === 'movie'} onclick={() => setType('movie')}>Movies</button>
+			</div>
+		{/if}
 
 		<h3>Tags &amp; people</h3>
 		<input class="tagin" bind:value={term} placeholder="Type a tag or a name — “heist”, “Nick Offerman”" autocapitalize="off" autocorrect="off" spellcheck="false" />

@@ -104,7 +104,22 @@
 		filter = isActive(f) ? f : null;
 		filterSheet = false;
 		query = '';
+		// The scope chip and the filter's media type are one choice — keep them in
+		// step, so browsing from "All" lands you on Shows or Films.
+		if (filter) scope = filter.type === 'movie' ? 'movie' : 'tv';
 		if (filter) void runFilter(filter);
+	}
+
+	/* Switching the scope chip re-types any active browse (genres and services are
+	   per-type, so they reset); the people/era/sort carry over. A genre-only
+	   browse just clears, since a genre can't cross media types. */
+	function setScope(s: Scope) {
+		if (s === scope) return;
+		const active = filter;
+		scope = s;
+		if (active && (s === 'tv' || s === 'movie') && active.type !== s) {
+			applyFilter({ ...active, type: s, genres: [], providers: [] });
+		}
 	}
 	const filterTokens = $derived(
 		filter
@@ -301,12 +316,12 @@
 
 	<div class="chips" role="tablist">
 		{#each CHIPS as chip (chip.id)}
-			<button role="tab" aria-selected={scope === chip.id} class:on={scope === chip.id} onclick={() => (scope = chip.id)}>
+			<button role="tab" aria-selected={scope === chip.id} class:on={scope === chip.id} onclick={() => setScope(chip.id)}>
 				{chip.label}
 			</button>
 		{/each}
 		{#if data.books}
-			<button role="tab" aria-selected={scope === 'books'} class:on={scope === 'books'} onclick={() => (scope = 'books')}>Books</button>
+			<button role="tab" aria-selected={scope === 'books'} class:on={scope === 'books'} onclick={() => setScope('books')}>Books</button>
 		{/if}
 		{#if scope !== 'books'}
 			<button class="filterbtn" class:on={browsing} aria-label="Filter" onclick={() => { filter ??= emptyFilter(scope === 'movie' ? 'movie' : 'tv'); filterSheet = true; }}>
@@ -472,7 +487,7 @@
 {/if}
 
 {#if filterSheet && filter}
-	<DiscoverFilterSheet {filter} onapply={applyFilter} onclose={() => (filterSheet = false)} />
+	<DiscoverFilterSheet {filter} allowType={scope === 'best'} onapply={applyFilter} onclose={() => (filterSheet = false)} />
 {/if}
 
 <style>
