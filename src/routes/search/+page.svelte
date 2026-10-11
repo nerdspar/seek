@@ -73,8 +73,19 @@
 	let scope = $state<Scope>(
 		urlScope === 'books' ? (untrack(() => data.books) ? 'books' : 'best') : urlScope === 'tv' || urlScope === 'movie' ? urlScope : 'best'
 	);
-	// Trending for the empty state follows the chip: Movies shows films, else TV.
-	const trending = $derived(scope === 'movie' ? data.trendingMovie : data.trending);
+	// Trending for the empty state follows the chip: TV, Movies, or — under All —
+	// the two interleaved so neither buries the other (as the results are).
+	const trending = $derived.by(() => {
+		if (scope === 'tv') return data.trending;
+		if (scope === 'movie') return data.trendingMovie;
+		const mixed: typeof data.trending = [];
+		const max = Math.max(data.trending.length, data.trendingMovie.length);
+		for (let i = 0; i < max; i++) {
+			if (data.trending[i]) mixed.push(data.trending[i]);
+			if (data.trendingMovie[i]) mixed.push(data.trendingMovie[i]);
+		}
+		return mixed.slice(0, 12);
+	});
 	let results = $state<SearchResult[]>([]);
 	let searching = $state(false);
 	let failed = $state<string | null>(null);
