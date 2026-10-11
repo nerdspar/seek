@@ -3,6 +3,7 @@ import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
 import { bookorbitConfigured, bookorbitLinked } from '$lib/server/books/bookorbit';
 import { hardcoverConfigured, BOOK_GENRES } from '$lib/server/books/hardcover';
+import { configured } from '$lib/server/arr';
 import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
 
@@ -41,8 +42,12 @@ export const load: PageServerLoad = async () => {
 	// uploading is offered. Only meaningful when books are on.
 	const bookGenres = books ? BOOK_GENRES : [];
 	const canUpload = books ? bookorbitLinked() : false;
-	const searchView = prefs?.searchView === 'grid' ? 'grid' : 'list';
+	// Grid by default; only an explicit 'list' preference opts out.
+	const searchView = prefs?.searchView === 'list' ? 'list' : 'grid';
+	// Whether a "library" (On the server) view is worth offering per media type.
+	const onServerTv = configured('sonarr');
+	const onServerMovie = configured('radarr');
 	// Trending for the empty state, per media type so the Movies chip shows films.
 	const [trending, trendingMovie] = await Promise.all([trendingFor('tv'), trendingFor('movie')]);
-	return { books, bookGenres, canUpload, searchView, trending, trendingMovie };
+	return { books, bookGenres, canUpload, searchView, onServerTv, onServerMovie, trending, trendingMovie };
 };

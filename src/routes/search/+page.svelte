@@ -301,20 +301,28 @@
 	const detail = (mt: string, src: string, id: string) => `/${mt === 'movie' ? 'movie' : 'show'}/${src}/${id}`;
 </script>
 
+{#snippet libraryBtn(href: string, label: string)}
+	<button onclick={() => goto(href)} aria-label={label}>
+		<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+	</button>
+{/snippet}
+
 <PageHeader title="Search" onback={() => history.back()}>
 	{#snippet action()}
-		{#if scope === 'books'}
-			<div class="hdracts">
-				<button onclick={() => goto('/discover/books/library')} aria-label="In my library">
-					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
-				</button>
+		<div class="hdracts">
+			{#if scope === 'books'}
+				{@render libraryBtn('/discover/books/library', 'In my library')}
 				{#if data.canUpload}
 					<button onclick={() => (uploading = true)} aria-label="Upload books">
 						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
 					</button>
 				{/if}
-			</div>
-		{/if}
+			{:else if scope === 'tv' && data.onServerTv}
+				{@render libraryBtn('/discover/server/tv', 'On the server')}
+			{:else if scope === 'movie' && data.onServerMovie}
+				{@render libraryBtn('/discover/server/movie', 'On the server')}
+			{/if}
+		</div>
 	{/snippet}
 </PageHeader>
 
@@ -370,7 +378,7 @@
 			bind:this={input}
 			bind:value={query}
 			type="search"
-			placeholder="Search your library and TMDB"
+			placeholder="Search your library and beyond"
 			autocapitalize="off"
 			autocorrect="off"
 			spellcheck="false"
@@ -476,7 +484,7 @@
 				{/each}
 			</ul>
 		{:else}
-			<p class="msg">Search your library, or all of TMDB to add something new.</p>
+			<p class="msg">Search your library, or the whole catalogue to add something new.</p>
 		{/if}
 	{:else}
 		{#if sections.showOnList}
@@ -492,7 +500,7 @@
 		{/if}
 
 		{#if sections.showFresh}
-			<h2 class="eyebrow">{sections.showOnList ? 'Add something new' : 'From TMDB'}</h2>
+			<h2 class="eyebrow">Add something new</h2>
 			<ul class={data.searchView === 'grid' ? 'grid' : 'results'}>
 				{#each fresh as r (key(r))}
 					{@render titleCard(
@@ -504,7 +512,7 @@
 		{/if}
 
 		{#if sections.showBooks}
-			<h2 class="eyebrow">Books</h2>
+			<h2 class="eyebrow">Matching books</h2>
 			<BookResults books={books} view={data.searchView as 'list' | 'grid'} canDownload={data.canUpload} />
 		{/if}
 

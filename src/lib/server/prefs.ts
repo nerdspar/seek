@@ -113,7 +113,7 @@ export const DEFAULTS: Prefs = {
 	seasonArtwork: false,
 	companyTracking: true,
 	confirmToasts: true,
-	searchView: 'list',
+	searchView: 'grid',
 	appearance: 'system',
 	accent: 'violet',
 	services: [],
