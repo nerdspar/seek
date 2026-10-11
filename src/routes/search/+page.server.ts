@@ -12,33 +12,35 @@ import type { PageServerLoad } from './$types';
  * calling TMDB again — it is already built, already cached, and already reflects what
  * the household is likely to recognise.
  */
+type TrendItem = { mediaId: string; source: string; mediaType: 'tv' | 'movie'; title: string; poster: string | null; year: number | null; tracked: boolean };
+
+/** The trending shelf for one media type, for the empty-state suggestions. */
+async function trendingFor(type: 'tv' | 'movie'): Promise<TrendItem[]> {
+	try {
+		const rows = await memo(`discover:${type}`, 30 * 60 * 1000, () => getDiscoverRows(type));
+		const row = rows.find((r) => r.key === 'trending_right_now') ?? rows.find((r) => r.items.length);
+		return (row?.items ?? []).slice(0, 12).map((i) => ({
+			mediaId: i.mediaId,
+			source: i.source,
+			mediaType: i.mediaType,
+			title: i.title,
+			poster: i.poster,
+			year: i.year,
+			tracked: false
+		}));
+	} catch {
+		// An empty state without suggestions is still a working search box.
+		return [];
+	}
+}
+
 export const load: PageServerLoad = async () => {
 	const books = mediaOn((await getPrefs().catch(() => null)) ?? {}, bookorbitConfigured() || hardcoverConfigured()).book;
 	// The Books scope browses too, not just searches: its genre chips and whether
 	// uploading is offered. Only meaningful when books are on.
 	const bookGenres = books ? BOOK_GENRES : [];
 	const canUpload = books ? bookorbitLinked() : false;
-	try {
-		const rows = await memo('discover:tv', 30 * 60 * 1000, () => getDiscoverRows('tv'));
-		const trending =
-			rows.find((r) => r.key === 'trending_right_now') ?? rows.find((r) => r.items.length);
-
-		return {
-			books,
-			bookGenres,
-			canUpload,
-			trending: (trending?.items ?? []).slice(0, 12).map((i) => ({
-				mediaId: i.mediaId,
-				source: i.source,
-				mediaType: i.mediaType,
-				title: i.title,
-				poster: i.poster,
-				year: i.year,
-				tracked: false
-			}))
-		};
-	} catch {
-		// An empty state without suggestions is still a working search box.
-		return { books, bookGenres, canUpload, trending: [] };
-	}
+	// Trending for the empty state, per media type so the Movies chip shows films.
+	const [trending, trendingMovie] = await Promise.all([trendingFor('tv'), trendingFor('movie')]);
+	return { books, bookGenres, canUpload, trending, trendingMovie };
 };

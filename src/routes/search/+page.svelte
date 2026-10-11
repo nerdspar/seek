@@ -56,12 +56,12 @@
 
 	let { data }: { data: PageData } = $props();
 
-	/* All / Shows / Films, with Books when it's on. */
+	/* All / TV Shows / Movies, with Books when it's on. */
 	type Scope = 'best' | 'tv' | 'movie' | 'books';
 	const CHIPS: { id: Scope; label: string }[] = [
 		{ id: 'best', label: 'All' },
-		{ id: 'tv', label: 'Shows' },
-		{ id: 'movie', label: 'Films' }
+		{ id: 'tv', label: 'TV Shows' },
+		{ id: 'movie', label: 'Movies' }
 	];
 
 	let query = $state(page.url.searchParams.get('q') ?? '');
@@ -70,6 +70,8 @@
 	let scope = $state<Scope>(
 		urlScope === 'books' ? (untrack(() => data.books) ? 'books' : 'best') : urlScope === 'tv' || urlScope === 'movie' ? urlScope : 'best'
 	);
+	// Trending for the empty state follows the chip: Movies shows films, else TV.
+	const trending = $derived(scope === 'movie' ? data.trendingMovie : data.trending);
 	let results = $state<SearchResult[]>([]);
 	let searching = $state(false);
 	let failed = $state<string | null>(null);
@@ -408,10 +410,10 @@
 			<p class="msg">Nothing matches those filters. Loosen one.</p>
 		{/if}
 	{:else if !query.trim()}
-		{#if data.trending.length}
+		{#if trending.length}
 			<h2 class="eyebrow">Trending now</h2>
 			<ul class="grid">
-				{#each data.trending as r (r.mediaId)}
+				{#each trending as r (r.mediaId)}
 					<li>
 						<button onclick={() => goto(detail(r.mediaType, r.source, r.mediaId))}>
 							<Poster src={r.poster} width={104} height={156} radius={9} />
@@ -482,7 +484,7 @@
 			{/if}
 
 		{#if sections.showBooks}
-			<h2 class="eyebrow">From your books shelf</h2>
+			<h2 class="eyebrow">Books</h2>
 			<ul class="results">
 				{#each books as b (b.hardcoverId)}
 					<li>
