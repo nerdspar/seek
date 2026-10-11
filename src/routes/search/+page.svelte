@@ -13,7 +13,9 @@
 	import { searchLibrary, type LibraryTitle } from '$lib/librarySearch';
 	import { statusLabel } from '$lib/tracking';
 	import type { DiscoveryCard } from '$lib/books';
-	import type { SearchResult } from '$lib/types';
+	import DiscoverFilterSheet from '$lib/components/DiscoverFilterSheet.svelte';
+	import { emptyFilter, filterQuery, isActive, type DiscoverFilter } from '$lib/discoverFilter';
+	import type { SearchResult, TmdbResult } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
@@ -46,6 +48,53 @@
 	let input: HTMLInputElement | undefined = $state();
 
 	const key = (r: SearchResult) => `${r.mediaType}:${r.source}:${r.mediaId}`;
+
+	/* Browse by facets (genre, tags, people, service, era) — the filter sheet
+	   builds it, the grid shows it. A set filter and a typed query are separate
+	   modes: typing searches, an empty box with a filter browses. */
+	let filter = $state<DiscoverFilter | null>(null);
+	let filterSheet = $state(false);
+	let filterResults = $state<(TmdbResult & { tracked?: boolean })[]>([]);
+	let filterTotal = $state(0);
+	let filterBusy = $state(false);
+	const browsing = $derived(!query.trim() && filter !== null && isActive(filter));
+	async function runFilter(f: DiscoverFilter) {
+		filterBusy = true;
+		try {
+			const res = await fetch(`/api/discover/filter?${filterQuery(f)}&page=1`);
+			if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? `HTTP ${res.status}`);
+			const b = await res.json();
+			filterResults = b.results;
+			filterTotal = b.total;
+			failed = null;
+		} catch (err) {
+			failed = err instanceof Error ? err.message : String(err);
+		} finally {
+			filterBusy = false;
+		}
+	}
+	function applyFilter(f: DiscoverFilter) {
+		filter = isActive(f) ? f : null;
+		filterSheet = false;
+		query = '';
+		if (filter) void runFilter(filter);
+	}
+	const filterTokens = $derived(
+		filter
+			? [
+					...filter.people.map((t) => ({ kind: 'person' as const, id: t.id, label: t.name })),
+					...filter.keywords.map((t) => ({ kind: 'keyword' as const, id: t.id, label: t.name }))
+				]
+			: []
+	);
+	function removeToken(tk: { kind: 'person' | 'keyword'; id: number }) {
+		if (!filter) return;
+		const next =
+			tk.kind === 'person'
+				? { ...filter, people: filter.people.filter((p) => p.id !== tk.id) }
+				: { ...filter, keywords: filter.keywords.filter((k) => k.id !== tk.id) };
+		applyFilter(next);
+	}
 
 	/* Books come from Hardcover, shown in All and under the Books chip. */
 	let books = $state<DiscoveryCard[]>([]);
@@ -213,10 +262,49 @@
 		{#if data.books}
 			<button role="tab" aria-selected={scope === 'books'} class:on={scope === 'books'} onclick={() => (scope = 'books')}>Books</button>
 		{/if}
+		{#if scope !== 'books'}
+			<button class="filterbtn" class:on={browsing} aria-label="Filter" onclick={() => { filter ??= emptyFilter(scope === 'movie' ? 'movie' : 'tv'); filterSheet = true; }}>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+			</button>
+		{/if}
 	</div>
+
+	{#if browsing && filter}
+		<div class="tokenbar">
+			<button class="editf" onclick={() => (filterSheet = true)}>{filter.type === 'movie' ? 'Films' : 'Shows'} · {filter.sort === 'top' ? 'Top rated' : filter.sort === 'newest' ? 'Newest' : 'Recommended'}</button>
+			{#each filterTokens as tk (tk.kind + tk.id)}
+				<button class="ftok" onclick={() => removeToken(tk)}>{tk.label} ✕</button>
+			{/each}
+			<button class="clearf" onclick={() => (filter = null)}>Clear</button>
+		</div>
+	{/if}
 
 	{#if failed}
 		<p class="msg error">{failed}</p>
+	{:else if browsing}
+		{#if filterBusy && !filterResults.length}
+			<p class="msg">Finding…</p>
+		{:else if filterResults.length}
+			<ul class="grid">
+				{#each filterResults as r (r.mediaType + r.mediaId)}
+					<li>
+						<button onclick={() => goto(detail(r.mediaType, r.source, r.mediaId))}>
+							<Poster src={r.poster} width={104} height={156} radius={9} />
+							<span class="cap">{r.title}</span>
+							{#if r.year}<span class="sub tnum">{r.year}</span>{/if}
+						</button>
+						<span class="gridadd">
+							<AddButton mediaType={r.mediaType} source={r.source} mediaId={r.mediaId} title={r.title} onerror={(m) => (failed = m)} />
+						</span>
+						<span class="gridarradd">
+							<ArrButton mediaType={r.mediaType} tmdbId={r.mediaId} title={r.title} onadd={(i) => (arrRequest = i)} compact size={30} />
+						</span>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="msg">Nothing matches those filters. Loosen one.</p>
+		{/if}
 	{:else if !query.trim()}
 		{#if data.trending.length}
 			<h2 class="eyebrow">Trending now</h2>
@@ -337,6 +425,10 @@
 	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
 {/if}
 
+{#if filterSheet && filter}
+	<DiscoverFilterSheet {filter} onapply={applyFilter} onclose={() => (filterSheet = false)} />
+{/if}
+
 <style>
 	main {
 		padding: 4px var(--gutter) calc(var(--safe-b) + 32px);
@@ -395,6 +487,17 @@
 		background: var(--surface-raised);
 		color: var(--text);
 	}
+	.filterbtn {
+		flex: none; margin-left: auto; display: grid; place-items: center;
+		width: 34px; min-height: 34px; border-radius: 9px;
+		background: var(--surface); color: var(--text-dim);
+	}
+	.filterbtn.on { background: var(--signal); color: #fff; }
+	.tokenbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+	.tokenbar button { min-height: 32px; padding: 0 11px; border-radius: 9px; font-size: 12.5px; font-weight: 600; }
+	.editf { background: var(--surface-raised); color: var(--text); }
+	.ftok { background: var(--signal); color: #fff; }
+	.clearf { background: none; color: var(--text-dim); margin-left: auto; }
 
 	.msg {
 		margin: 40px 0;
