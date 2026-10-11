@@ -15,6 +15,7 @@
 	import type { DiscoveryCard } from '$lib/books';
 	import DiscoverFilterSheet from '$lib/components/DiscoverFilterSheet.svelte';
 	import { emptyFilter, filterQuery, isActive, type DiscoverFilter } from '$lib/discoverFilter';
+	import { searchSections } from '$lib/searchView';
 	import type { SearchResult, TmdbResult } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -156,6 +157,20 @@
 	/* New to you: the TMDB hits you don't already track (those are shown above). */
 	const fresh = $derived(results.filter((r) => !onListIds.has(`${r.mediaType}:${r.mediaId}`)));
 
+	/* Which result sections render — a pure decision so a TMDB error can't hide
+	   books that loaded fine (they're independent sources). */
+	const sections = $derived(
+		searchSections({
+			scope,
+			onListCount: onList.length,
+			freshCount: fresh.length,
+			booksCount: books.length,
+			searching,
+			bookSearching,
+			failed: failed !== null
+		})
+	);
+
 	/* §6.4: live search, firing 1s after typing stops. */
 	let seq = 0;
 	$effect(() => {
@@ -180,7 +195,10 @@
 				results = body.results;
 				failed = null;
 			} catch (err) {
-				if (mine === seq) failed = err instanceof Error ? err.message : String(err);
+				if (mine === seq) {
+					results = []; // don't leave stale titles under the new query
+					failed = err instanceof Error ? err.message : String(err);
+				}
 			} finally {
 				if (mine === seq) searching = false;
 			}
@@ -302,7 +320,9 @@
 
 	{#if failed}
 		<p class="msg error">{failed}</p>
-	{:else if browsing}
+	{/if}
+
+	{#if browsing}
 		{#if filterBusy && !filterResults.length}
 			<p class="msg">Finding…</p>
 		{:else if filterResults.length}
@@ -323,7 +343,7 @@
 					</li>
 				{/each}
 			</ul>
-		{:else}
+		{:else if !failed}
 			<p class="msg">Nothing matches those filters. Loosen one.</p>
 		{/if}
 	{:else if !query.trim()}
@@ -351,7 +371,7 @@
 		{/if}
 	{:else}
 		{#if scope !== 'books'}
-			{#if onList.length}
+			{#if sections.showOnList}
 				<h2 class="eyebrow">On your list</h2>
 				<ul class="results">
 					{#each onList as t (t.mediaType + t.mediaId)}
@@ -368,8 +388,8 @@
 				</ul>
 			{/if}
 
-			{#if fresh.length}
-				<h2 class="eyebrow">{onList.length ? 'Add something new' : 'From TMDB'}</h2>
+			{#if sections.showFresh}
+				<h2 class="eyebrow">{sections.showOnList ? 'Add something new' : 'From TMDB'}</h2>
 				<ul class="results">
 					{#each fresh as r (key(r))}
 						<li>
@@ -402,7 +422,7 @@
 			{/if}
 		{/if}
 
-		{#if books.length}
+		{#if sections.showBooks}
 			<h2 class="eyebrow">{scope === 'books' ? 'Books' : 'From your books shelf'}</h2>
 			<ul class="results">
 				{#each books as b (b.hardcoverId)}
@@ -432,12 +452,10 @@
 			</ul>
 		{/if}
 
-		{#if !onList.length && !fresh.length && !books.length}
-			{#if searching || bookSearching}
-				<p class="msg">Searching…</p>
-			{:else}
-				<p class="msg">Nothing found for “{query.trim()}”.</p>
-			{/if}
+		{#if sections.showSearching}
+			<p class="msg">Searching…</p>
+		{:else if sections.showEmpty}
+			<p class="msg">Nothing found for “{query.trim()}”.</p>
 		{/if}
 	{/if}
 </main>
