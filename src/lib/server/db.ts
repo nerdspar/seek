@@ -12,7 +12,7 @@
  */
 import Database from 'better-sqlite3';
 import { env } from '$env/dynamic/private';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 export type DB = Database.Database;
@@ -422,8 +422,52 @@ export const MIGRATIONS: Migration[] = [
 	// refresh_after so every title re-fetches and captures ids over the next cycle.
 	`
 	UPDATE titles SET refresh_after = '1970-01-01T00:00:00.000Z';
-	`
+	`,
+	// v22 — the Floppy-era history logged many viewings twice: once around the
+	// start and again around the end (E10 at 19:12 and 19:38, E11 at 19:38 and
+	// 20:03), plus some next-day repeats. Per person and episode (or film), the
+	// first play stands; an imported play within 24 hours of the play kept
+	// before it is the same viewing and goes. Plays made in Seek or sent by
+	// Jellyfin are never removed. What goes is written to /data first.
+	(db) => {
+		const removed = dedupeImportedPlays(db, 24 * 60 * 60 * 1000);
+		if (removed.length && db.name !== ':memory:') {
+			writeFileSync(join(dirname(db.name), `removed-plays-v22-${new Date().toISOString().slice(0, 10)}.json`), JSON.stringify(removed));
+		}
+	}
 ];
+
+export type PlayRow = { id: number; user_id: number; media_type: string; tmdb_id: number; season: number | null; episode: number | null; watched_at: string; source: string };
+
+/**
+ * Remove imported plays that repeat the play before them within `windowMs`
+ * (same person, same episode or film). Returns the removed rows.
+ */
+export function dedupeImportedPlays(db: DB, windowMs: number): PlayRow[] {
+	const rows = db
+		.prepare('SELECT id, user_id, media_type, tmdb_id, season, episode, watched_at, source FROM plays ORDER BY user_id, media_type, tmdb_id, season, episode, watched_at, id')
+		.all() as PlayRow[];
+	const drop = db.prepare('DELETE FROM plays WHERE id = ?');
+	const removed: PlayRow[] = [];
+	let key = '';
+	let kept = 0;
+	for (const r of rows) {
+		const k = `${r.user_id}:${r.media_type}:${r.tmdb_id}:${r.season}:${r.episode}`;
+		const at = Date.parse(r.watched_at);
+		if (k !== key) {
+			key = k;
+			kept = at;
+			continue;
+		}
+		if (r.source === 'import' && at - kept <= windowMs) {
+			drop.run(r.id);
+			removed.push(r);
+		} else {
+			kept = at;
+		}
+	}
+	return removed;
+}
 
 /** Open (creating if needed) and migrate a database. ':memory:' for tests. */
 export function openDatabase(file: string): DB {
@@ -431,8 +475,20 @@ export function openDatabase(file: string): DB {
 	const db = new Database(file);
 	db.pragma('journal_mode = WAL');
 	db.pragma('foreign_keys = ON');
+	if (file !== ':memory:') backupBeforeMigrating(db, file);
 	migrate(db);
 	return db;
+}
+
+/** A full copy next to the database before any pending migration changes it,
+ *  e.g. `seek.db.before-v22-2026-10-11.bak`. Skipped for a brand-new file. */
+export function backupBeforeMigrating(db: DB, file: string): string | null {
+	const current = db.pragma('user_version', { simple: true }) as number;
+	if (current === 0 || current >= MIGRATIONS.length) return null;
+	const to = `${file}.before-v${MIGRATIONS.length}-${new Date().toISOString().slice(0, 10)}.bak`;
+	if (existsSync(to)) return to;
+	db.exec(`VACUUM INTO '${to.replace(/'/g, "''")}'`);
+	return to;
 }
 
 export function migrate(db: DB): void {
