@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount, untrack } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import UploadSheet from '$lib/components/UploadSheet.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import AddButton from '$lib/components/AddButton.svelte';
 	import ArrButton from '$lib/components/ArrButton.svelte';
@@ -23,6 +24,7 @@
 	import type { PageData } from './$types';
 
 	let arrRequest = $state<{ mediaType: string; tmdbId: string; title: string } | null>(null);
+	let uploading = $state(false);
 	let library = $state<LibraryTitle[]>([]);
 	onMount(() => {
 		void loadArrStatus();
@@ -313,7 +315,22 @@
 	const detail = (mt: string, src: string, id: string) => `/${mt === 'movie' ? 'movie' : 'show'}/${src}/${id}`;
 </script>
 
-<PageHeader title="Search" onback={() => history.back()} />
+<PageHeader title="Search" onback={() => history.back()}>
+	{#snippet action()}
+		{#if scope === 'books'}
+			<div class="hdracts">
+				<button onclick={() => goto('/discover/books/library')} aria-label="In my library">
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+				</button>
+				{#if data.canUpload}
+					<button onclick={() => (uploading = true)} aria-label="Upload books">
+						<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
+					</button>
+				{/if}
+			</div>
+		{/if}
+	{/snippet}
+</PageHeader>
 
 <main>
 	<div class="field">
@@ -525,6 +542,10 @@
 	<ArrAddSheet item={arrRequest} onclose={() => (arrRequest = null)} />
 {/if}
 
+{#if uploading}
+	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
+{/if}
+
 {#if filterSheet && filter}
 	<DiscoverFilterSheet {filter} allowType={scope === 'best'} onapply={applyFilter} onclose={() => (filterSheet = false)} />
 {/if}
@@ -534,6 +555,9 @@
 {/if}
 
 <style>
+	.hdracts { display: flex; gap: 2px; }
+	.hdracts button { display: grid; place-items: center; width: var(--tap); height: var(--tap); border-radius: 50%; color: var(--text); }
+
 	main {
 		padding: 4px var(--gutter) calc(var(--safe-b) + 32px);
 	}

@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 	import Skeleton from './Skeleton.svelte';
 	import Poster from './Poster.svelte';
 	import BookShelf from './BookShelf.svelte';
 	import BookSheet from './BookSheet.svelte';
-	import UploadSheet from './UploadSheet.svelte';
 	import DownloadSheet from './DownloadSheet.svelte';
 	import BookTileButtons from './BookTileButtons.svelte';
 	import { coverThumb, cardBadge, type BookReadStatus, type DiscoveryCard } from '$lib/books';
@@ -22,7 +21,6 @@
 	let { query, filter, canUpload }: { query: string; filter: BookFilter | null; canUpload: boolean } = $props();
 
 	let open = $state<Card | null>(null);
-	let uploading = $state(false);
 	let downloading = $state<Card | null>(null);
 	let tileNote = $state<string | null>(null);
 
@@ -188,18 +186,6 @@
 	{/if}
 {:else}
 	<!-- home -->
-	<div class="toolbar">
-		<button class="act" onclick={() => goto('/discover/books/library')}>
-			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
-			In my library
-		</button>
-		{#if canUpload}
-			<button class="act" onclick={() => (uploading = true)}>
-				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
-				Upload
-			</button>
-		{/if}
-	</div>
 	{#each personalRails as r (r.key)}
 		<BookShelf title={r.title} subtitle={r.subtitle} books={r.books} overrides={added} canDownload={canUpload} onopen={(b) => (open = b)} onadd={quickAdd} ondownload={(b) => (downloading = b)} />
 	{/each}
@@ -239,17 +225,7 @@
 
 {#if tileNote}<p class="toast" role="status">{tileNote}</p>{/if}
 
-{#if uploading}
-	<UploadSheet onclose={() => (uploading = false)} ondone={() => invalidateAll()} />
-{/if}
-
 <style>
-	.toolbar { display: flex; gap: 8px; margin: 0 0 18px; }
-	.act {
-		display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 13px;
-		border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
-	}
-
 	.skshelf { display: flex; flex-direction: column; gap: 10px; margin-bottom: 26px; }
 	.skrail { display: grid; grid-template-columns: repeat(4, 110px); gap: 12px; overflow: hidden; }
 
