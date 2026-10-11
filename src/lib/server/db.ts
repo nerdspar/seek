@@ -447,8 +447,41 @@ export const MIGRATIONS: Migration[] = [
 		if (removed.length && db.name !== ':memory:') {
 			writeFileSync(join(dirname(db.name), `removed-plays-v23-${new Date().toISOString().slice(0, 10)}.json`), JSON.stringify(removed));
 		}
+	},
+	// v24 — Scott and Jenny have only ever watched one show twice, the original
+	// Gossip Girl (TMDB tv 1395). Every other repeat in the history is a
+	// duplicate from the import days, so per person and episode (or film) the
+	// earliest play stays and the rest go. Removed rows are written to /data.
+	(db) => {
+		const removed = keepFirstPlays(db, [{ mediaType: 'tv', tmdbId: 1395 }]);
+		if (removed.length && db.name !== ':memory:') {
+			writeFileSync(join(dirname(db.name), `removed-plays-v24-${new Date().toISOString().slice(0, 10)}.json`), JSON.stringify(removed));
+		}
 	}
 ];
+
+/** Keep only each person's earliest play of every episode or film, except on
+ *  the titles listed as really rewatched. Returns the removed rows. */
+export function keepFirstPlays(db: DB, rewatched: { mediaType: string; tmdbId: number }[]): PlayRow[] {
+	const skip = new Set(rewatched.map((r) => `${r.mediaType}:${r.tmdbId}`));
+	const rows = db
+		.prepare('SELECT id, user_id, media_type, tmdb_id, season, episode, watched_at, source FROM plays ORDER BY user_id, media_type, tmdb_id, season, episode, watched_at, id')
+		.all() as PlayRow[];
+	const drop = db.prepare('DELETE FROM plays WHERE id = ?');
+	const removed: PlayRow[] = [];
+	let key = '';
+	for (const r of rows) {
+		const k = `${r.user_id}:${r.media_type}:${r.tmdb_id}:${r.season}:${r.episode}`;
+		if (k !== key) {
+			key = k;
+			continue;
+		}
+		if (skip.has(`${r.media_type}:${r.tmdb_id}`)) continue;
+		drop.run(r.id);
+		removed.push(r);
+	}
+	return removed;
+}
 
 export type ListedPlay = { id: number; mediaType: string; tmdbId: number; season: number | null; episode: number | null; watchedAt: string };
 

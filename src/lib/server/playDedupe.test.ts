@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { mkdtempSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDatabase, dedupeImportedPlays, backupBeforeMigrating, removeListedPlays, MIGRATIONS, type DB } from './db';
+import { openDatabase, dedupeImportedPlays, backupBeforeMigrating, removeListedPlays, keepFirstPlays, MIGRATIONS, type DB } from './db';
 
 let d: DB;
 afterEach(() => d?.close());
@@ -81,6 +81,27 @@ describe('removeListedPlays', () => {
 	});
 
 	it('the v23 list is well formed', () => {
-		expect(MIGRATIONS).toHaveLength(23);
+		expect(MIGRATIONS.length).toBeGreaterThanOrEqual(23);
+	});
+});
+
+describe('keepFirstPlays', () => {
+	it("keeps each person's earliest play of an episode or film, whatever the source, except a real rewatch", () => {
+		const ins = seed();
+		ins.run(1, 'tv', 10, 1, 1, '2024-01-11T04:18:00.000Z', 'import');
+		ins.run(1, 'tv', 10, 1, 1, '2023-07-09T20:00:00.000Z', 'import'); // earlier: this one stays
+		ins.run(1, 'tv', 10, 1, 1, '2026-05-01T20:00:00.000Z', 'seek');
+		ins.run(2, 'tv', 10, 1, 1, '2024-01-11T04:18:00.000Z', 'import'); // the other person's own first play
+		ins.run(1, 'movie', 603, null, null, '2023-09-18T20:00:00.000Z', 'import');
+		ins.run(1, 'movie', 603, null, null, '2024-02-04T20:00:00.000Z', 'import');
+		ins.run(2, 'tv', 1395, 1, 1, '2022-01-01T20:00:00.000Z', 'import'); // Gossip Girl, watched twice
+		ins.run(2, 'tv', 1395, 1, 1, '2024-06-01T20:00:00.000Z', 'seek');
+		const removed = keepFirstPlays(d, [{ mediaType: 'tv', tmdbId: 1395 }]);
+		expect(removed.map((r) => [r.user_id, r.tmdb_id, r.watched_at.slice(0, 10)])).toEqual([
+			[1, 603, '2024-02-04'],
+			[1, 10, '2024-01-11'],
+			[1, 10, '2026-05-01']
+		]);
+		expect(left()).toHaveLength(5);
 	});
 });
