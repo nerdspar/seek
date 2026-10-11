@@ -114,6 +114,10 @@ export type DiscoverParams = {
 	minRating?: number;
 	/** Only titles first released in this year or later. */
 	yearGte?: number;
+	/** Only titles first released in this year or earlier (with yearGte, a decade). */
+	yearLte?: number;
+	/** TMDB person ids the title must feature (cast or crew). */
+	people?: number[];
 	/** Drop Talk/News/Soap. */
 	excludeNoise?: boolean;
 	/** Exclude anything not yet released (date after today). */
@@ -130,8 +134,7 @@ export type DiscoverParams = {
  * so a lone 10/10 rating can't win, and `newest` caps the date at today so
  * unaired placeholders don't lead the list.
  */
-export async function tmdbDiscover(p: DiscoverParams): Promise<TmdbResult[]> {
-	if (!TMDB_API_KEY()) return [];
+export function discoverParams(p: DiscoverParams): Record<string, string | number> {
 	const dateField = p.mediaType === 'tv' ? 'first_air_date' : 'primary_release_date';
 	const sort = p.sort ?? 'recommended';
 	const sortBy =
@@ -145,12 +148,14 @@ export async function tmdbDiscover(p: DiscoverParams): Promise<TmdbResult[]> {
 	if (p.minRating) params['vote_average.gte'] = p.minRating;
 	if (p.genres?.length) params.with_genres = p.genres.join(','); // AND
 	if (p.keywords?.length) params.with_keywords = p.keywords.join('|'); // OR — widen synonyms
+	if (p.people?.length) params.with_cast = p.people.join(','); // AND — all must appear
 	if (p.providers?.length) {
 		params.with_watch_providers = p.providers.join('|');
 		params.watch_region = 'US';
 	}
 	if (p.excludeNoise) params.without_genres = NOISE_GENRE_IDS.join(',');
 	if (p.yearGte) params[`${dateField}.gte`] = `${p.yearGte}-01-01`;
+	if (p.yearLte) params[`${dateField}.lte`] = `${p.yearLte}-12-31`;
 	if (p.upcomingDays) {
 		const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 		params[`${dateField}.gte`] = day(1);
@@ -159,7 +164,12 @@ export async function tmdbDiscover(p: DiscoverParams): Promise<TmdbResult[]> {
 	if (sort === 'newest' || p.notFuture)
 		params[`${dateField}.lte`] = new Date().toISOString().slice(0, 10);
 	if (p.page && p.page > 1) params.page = p.page;
+	return params;
+}
 
+export async function tmdbDiscover(p: DiscoverParams): Promise<TmdbResult[]> {
+	if (!TMDB_API_KEY()) return [];
+	const params = discoverParams(p);
 	const cacheKey = `disc:${p.mediaType}:${JSON.stringify(params)}`;
 	const hit = discoverCache.get(cacheKey);
 	if (hit) return hit;
@@ -167,6 +177,50 @@ export async function tmdbDiscover(p: DiscoverParams): Promise<TmdbResult[]> {
 	const out = dedupe((data.results ?? []).map((r) => mapDiscoverRow(r, p.mediaType)));
 	discoverCache.set(cacheKey, out);
 	return out;
+}
+
+/** One page of discover, with the total count — for the filter's "Show N results". */
+export async function tmdbDiscoverPage(p: DiscoverParams): Promise<{ results: TmdbResult[]; total: number }> {
+	if (!TMDB_API_KEY()) return { results: [], total: 0 };
+	const params = discoverParams(p);
+	const data = await tmdb<{ results?: DiscoverRaw[]; total_results?: number }>(`/discover/${p.mediaType}`, params);
+	return {
+		results: dedupe((data.results ?? []).map((r) => mapDiscoverRow(r, p.mediaType))),
+		total: data.total_results ?? 0
+	};
+}
+
+/** Genres as id + display name, for the filter sheet's chips. */
+const genreListCache = new TTLCache<{ id: number; name: string }[]>(7 * 24 * 60 * 60 * 1000, 4);
+export async function genreList(mediaType: 'tv' | 'movie'): Promise<{ id: number; name: string }[]> {
+	const hit = genreListCache.get(mediaType);
+	if (hit) return hit;
+	if (!TMDB_API_KEY()) return [];
+	const data = await tmdb<{ genres?: { id: number; name: string }[] }>(`/genre/${mediaType}/list`, {});
+	const list = (data.genres ?? []).filter((g) => !NOISE_GENRE_IDS.includes(g.id));
+	genreListCache.set(mediaType, list);
+	return list;
+}
+
+/** Keyword suggestions (tags) for the filter's tag field. */
+export async function searchKeywords(query: string, limit = 8): Promise<{ id: number; name: string }[]> {
+	const q = query.trim();
+	if (!q || !TMDB_API_KEY()) return [];
+	const data = await tmdb<{ results?: { id: number; name: string }[] }>('/search/keyword', { query: q });
+	return (data.results ?? []).slice(0, limit);
+}
+
+/** People suggestions (actors/directors) for the filter's tag field. */
+export async function searchPeople(query: string, limit = 6): Promise<{ id: number; name: string; known_for: string | null }[]> {
+	const q = query.trim();
+	if (!q || !TMDB_API_KEY()) return [];
+	const data = await tmdb<{ results?: { id: number; name: string; known_for_department?: string; known_for?: { title?: string; name?: string }[] }[] }>(
+		'/search/person',
+		{ query: q, include_adult: 'false' }
+	);
+	return (data.results ?? [])
+		.slice(0, limit)
+		.map((r) => ({ id: r.id, name: r.name, known_for: r.known_for?.map((k) => k.title || k.name).filter(Boolean)[0] ?? null }));
 }
 
 /** This week's trending, with the daily-format noise filtered out by genre.
