@@ -19,7 +19,7 @@
 	import BookResults from '$lib/components/BookResults.svelte';
 	import BookDiscoverSheet from '$lib/components/BookDiscoverSheet.svelte';
 	import { emptyFilter, filterQuery, isActive, ERAS, type DiscoverFilter } from '$lib/discoverFilter';
-	import { emptyBookFilter, bookFilterActive, bookEraId, type BookFilter } from '$lib/bookFilter';
+	import { emptyBookFilter, bookFilterActive, type BookFilter } from '$lib/bookFilter';
 	import { searchSections } from '$lib/searchView';
 	import type { SearchResult, TmdbResult } from '$lib/types';
 	import type { PageData } from './$types';
@@ -157,9 +157,12 @@
 	// A seeded-but-untouched filter (just opening the sheet) isn't a browse yet.
 	const bookBrowsing = $derived(bookFilter !== null && bookFilterActive(bookFilter));
 	const BOOK_SORT_LABEL: Record<BookFilter['sort'], string> = { popular: 'Most read', new: 'Newest', rating: 'Top rated' };
-	const bookEra = $derived(bookFilter ? (ERAS.find((e) => e.id === bookEraId(bookFilter!))?.label ?? null) : null);
+	const bookEras = $derived(bookFilter ? ERAS.filter((e) => bookFilter!.eras.includes(e.id)) : []);
 	function removeBookGenre(g: string) {
 		if (bookFilter) applyBookFilter({ ...bookFilter, genres: bookFilter.genres.filter((x) => x !== g) });
+	}
+	function removeBookEra(id: string) {
+		if (bookFilter) applyBookFilter({ ...bookFilter, eras: bookFilter.eras.filter((x) => x !== id) });
 	}
 
 	/* Books from Hardcover, shown inline under All (BookResults owns the add). */
@@ -415,9 +418,9 @@
 			{#each bf.genres as g (g)}
 				<button class="ftok" onclick={() => removeBookGenre(g)}>{g} ✕</button>
 			{/each}
-			{#if bookEra}
-				<button class="ftok" onclick={() => applyBookFilter({ ...bf, yearGte: null, yearLte: null })}>{bookEra} ✕</button>
-			{/if}
+			{#each bookEras as e (e.id)}
+				<button class="ftok" onclick={() => removeBookEra(e.id)}>{e.label} ✕</button>
+			{/each}
 			<button class="clearf" onclick={() => (bookFilter = null)}>Clear</button>
 		</div>
 	{/if}

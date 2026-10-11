@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Sheet from './Sheet.svelte';
-	import { ERAS } from '$lib/discoverFilter';
-	import { emptyBookFilter, bookEraId, toggleGenre, bookFilterQuery, type BookFilter, type BookDiscoverSort } from '$lib/bookFilter';
+	import { ERAS, toggleEra } from '$lib/discoverFilter';
+	import { emptyBookFilter, toggleGenre, bookFilterQuery, type BookFilter, type BookDiscoverSort } from '$lib/bookFilter';
 
 	/**
 	 * Build a Books filter: genre(s), a decade and a sort — the book parallel to
@@ -16,7 +16,7 @@
 	$effect(() => {
 		if (seeded) return;
 		seeded = true;
-		draft = { ...filter, genres: [...filter.genres] };
+		draft = { ...filter, genres: [...filter.genres], eras: [...filter.eras] };
 	});
 
 	const SORTS: { id: BookDiscoverSort; label: string }[] = [
@@ -24,13 +24,6 @@
 		{ id: 'new', label: 'Newest' },
 		{ id: 'rating', label: 'Top rated' }
 	];
-
-	function setEra(id: string) {
-		const e = ERAS.find((x) => x.id === id);
-		if (!e) return;
-		if (bookEraId(draft) === id) draft = { ...draft, yearGte: null, yearLte: null };
-		else draft = { ...draft, yearGte: e.gte, yearLte: e.lte };
-	}
 
 	/* Live count for the button. */
 	let count = $state<number | null>(null);
@@ -67,7 +60,7 @@
 		<h3>Era</h3>
 		<div class="wrap">
 			{#each ERAS as e (e.id)}
-				<button class="chip" class:on={bookEraId(draft) === e.id} onclick={() => setEra(e.id)}>{e.label}</button>
+				<button class="chip" class:on={draft.eras.includes(e.id)} onclick={() => (draft = { ...draft, eras: toggleEra(draft.eras, e.id) })}>{e.label}</button>
 			{/each}
 		</div>
 

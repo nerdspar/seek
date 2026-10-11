@@ -12,9 +12,8 @@ export type DiscoverFilter = {
 	keywords: Token[];
 	people: Token[];
 	providers: number[];
-	/** A decade window, or open-ended. */
-	yearGte: number | null;
-	yearLte: number | null;
+	/** Decade chips chosen (ERAS ids). Multiple select the span between them. */
+	eras: string[];
 	sort: DiscoverSort;
 };
 
@@ -24,8 +23,7 @@ export const emptyFilter = (type: 'tv' | 'movie'): DiscoverFilter => ({
 	keywords: [],
 	people: [],
 	providers: [],
-	yearGte: null,
-	yearLte: null,
+	eras: [],
 	sort: 'recommended'
 });
 
@@ -38,13 +36,27 @@ export const ERAS: { id: string; label: string; gte: number | null; lte: number 
 	{ id: 'older', label: 'Older', gte: null, lte: 1989 }
 ];
 
-export const eraId = (f: DiscoverFilter): string | null =>
-	ERAS.find((e) => e.gte === f.yearGte && e.lte === f.yearLte)?.id ?? null;
+export const toggleEra = (eras: string[], id: string): string[] =>
+	eras.includes(id) ? eras.filter((x) => x !== id) : [...eras, id];
+
+/**
+ * The year window the chosen decades span. Multiple decades become their
+ * bounding range (earliest lower bound to latest upper bound) — a date-range
+ * API can't express disjoint windows, so adjacent decades are exact and a gap
+ * is filled in. An open-ended chip ("2020s", "Older") opens that end.
+ */
+export function eraBounds(eras: string[]): { gte: number | null; lte: number | null } {
+	const chosen = ERAS.filter((e) => eras.includes(e.id));
+	if (!chosen.length) return { gte: null, lte: null };
+	const gte = chosen.some((e) => e.gte === null) ? null : Math.min(...chosen.map((e) => e.gte as number));
+	const lte = chosen.some((e) => e.lte === null) ? null : Math.max(...chosen.map((e) => e.lte as number));
+	return { gte, lte };
+}
 
 /** Anything chosen beyond the defaults? Drives whether the page browses or searches. */
 export function isActive(f: DiscoverFilter): boolean {
 	return Boolean(
-		f.genres.length || f.keywords.length || f.people.length || f.providers.length || f.yearGte || f.yearLte || f.sort !== 'recommended'
+		f.genres.length || f.keywords.length || f.people.length || f.providers.length || f.eras.length || f.sort !== 'recommended'
 	);
 }
 
@@ -55,7 +67,8 @@ export function filterQuery(f: DiscoverFilter): string {
 	if (f.keywords.length) q.set('keywords', f.keywords.map((t) => t.id).join(','));
 	if (f.people.length) q.set('people', f.people.map((t) => t.id).join(','));
 	if (f.providers.length) q.set('providers', f.providers.join(','));
-	if (f.yearGte) q.set('yearGte', String(f.yearGte));
-	if (f.yearLte) q.set('yearLte', String(f.yearLte));
+	const { gte, lte } = eraBounds(f.eras);
+	if (gte) q.set('yearGte', String(gte));
+	if (lte) q.set('yearLte', String(lte));
 	return q.toString();
 }

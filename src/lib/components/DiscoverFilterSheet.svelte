@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Sheet from './Sheet.svelte';
-	import { ERAS, eraId, emptyFilter, filterQuery, type DiscoverFilter, type DiscoverSort, type Token } from '$lib/discoverFilter';
+	import { ERAS, toggleEra, emptyFilter, filterQuery, type DiscoverFilter, type DiscoverSort, type Token } from '$lib/discoverFilter';
 
 	/**
 	 * Build a Discover filter: genres, tags and people (typed, autocompleted),
@@ -18,7 +18,7 @@
 	$effect(() => {
 		if (seeded) return;
 		seeded = true;
-		draft = { ...filter, genres: [...filter.genres], keywords: [...filter.keywords], people: [...filter.people], providers: [...filter.providers] };
+		draft = { ...filter, genres: [...filter.genres], keywords: [...filter.keywords], people: [...filter.people], providers: [...filter.providers], eras: [...filter.eras] };
 	});
 
 	let genres = $state<Token[]>([]);
@@ -44,12 +44,6 @@
 		if (t === draft.type) return;
 		// Genres and services are per-type; a decade/sort/tag/person carries over.
 		draft = { ...draft, type: t, genres: [], providers: [] };
-	}
-	function setEra(id: string) {
-		const e = ERAS.find((x) => x.id === id);
-		if (!e) return;
-		if (eraId(draft) === id) draft = { ...draft, yearGte: null, yearLte: null };
-		else draft = { ...draft, yearGte: e.gte, yearLte: e.lte };
 	}
 
 	/* Tag & people autocomplete. */
@@ -165,7 +159,7 @@
 		<h3>Era</h3>
 		<div class="wrap">
 			{#each ERAS as e (e.id)}
-				<button class="chip" class:on={eraId(draft) === e.id} onclick={() => setEra(e.id)}>{e.label}</button>
+				<button class="chip" class:on={draft.eras.includes(e.id)} onclick={() => (draft = { ...draft, eras: toggleEra(draft.eras, e.id) })}>{e.label}</button>
 			{/each}
 		</div>
 

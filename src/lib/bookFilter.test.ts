@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emptyBookFilter, bookFilterActive, bookEraId, toggleGenre, bookFilterQuery } from './bookFilter';
+import { emptyBookFilter, bookFilterActive, toggleGenre, bookFilterQuery } from './bookFilter';
 
 describe('bookFilter', () => {
 	it('is inactive at its defaults', () => {
@@ -8,15 +8,9 @@ describe('bookFilter', () => {
 
 	it('is active once a genre, a decade or a non-default sort is set', () => {
 		expect(bookFilterActive({ ...emptyBookFilter(), genres: ['Fantasy'] })).toBe(true);
-		expect(bookFilterActive({ ...emptyBookFilter(), yearGte: 2010, yearLte: 2019 })).toBe(true);
+		expect(bookFilterActive({ ...emptyBookFilter(), eras: ['2010s'] })).toBe(true);
 		expect(bookFilterActive({ ...emptyBookFilter(), sort: 'new' })).toBe(true);
 		expect(bookFilterActive({ ...emptyBookFilter(), sort: 'popular' })).toBe(false);
-	});
-
-	it('maps a decade window to an era id', () => {
-		expect(bookEraId({ ...emptyBookFilter(), yearGte: 2010, yearLte: 2019 })).toBe('2010s');
-		expect(bookEraId({ ...emptyBookFilter(), yearGte: null, yearLte: 1989 })).toBe('older');
-		expect(bookEraId(emptyBookFilter())).toBe(null);
 	});
 
 	it('toggles a genre in and out', () => {
@@ -24,10 +18,13 @@ describe('bookFilter', () => {
 		expect(toggleGenre(['Fantasy', 'Horror'], 'Fantasy')).toEqual(['Horror']);
 	});
 
-	it('serialises only what is set', () => {
+	it('serialises only what is set, spanning the chosen decades', () => {
 		expect(bookFilterQuery(emptyBookFilter())).toBe('sort=popular');
-		expect(bookFilterQuery({ genres: ['Fantasy', 'Horror'], yearGte: 2020, yearLte: null, sort: 'new' })).toBe(
-			'sort=new&genres=Fantasy%2CHorror&yearGte=2020'
-		);
+		const q = new URLSearchParams(bookFilterQuery({ genres: ['Fantasy', 'Horror'], eras: ['2010s', '2020s'], sort: 'new' }));
+		expect(q.get('sort')).toBe('new');
+		expect(q.get('genres')).toBe('Fantasy,Horror');
+		expect(q.get('yearGte')).toBe('2010');
+		// 2020s is open-ended above, so no upper bound.
+		expect(q.get('yearLte')).toBe(null);
 	});
 });
