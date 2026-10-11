@@ -284,7 +284,7 @@
 		<GoalSheet goal={editingGoal === 'new' ? null : editingGoal} onclose={() => (editingGoal = null)} onsaved={goalsChanged} />
 	{/if}
 
-	<button class="fab" onclick={() => goto('/books/search')} aria-label="Add a book">
+	<button class="fab" onclick={() => goto('/search?scope=books')} aria-label="Add a book">
 		<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg>
 	</button>
 
