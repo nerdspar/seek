@@ -15,7 +15,9 @@
 	import type { DiscoveryCard } from '$lib/books';
 	import DiscoverFilterSheet from '$lib/components/DiscoverFilterSheet.svelte';
 	import BooksBrowse from '$lib/components/BooksBrowse.svelte';
-	import { emptyFilter, filterQuery, isActive, type DiscoverFilter } from '$lib/discoverFilter';
+	import BookDiscoverSheet from '$lib/components/BookDiscoverSheet.svelte';
+	import { emptyFilter, filterQuery, isActive, ERAS, type DiscoverFilter } from '$lib/discoverFilter';
+	import { emptyBookFilter, bookFilterActive, bookEraId, type BookFilter } from '$lib/bookFilter';
 	import { searchSections } from '$lib/searchView';
 	import type { SearchResult, TmdbResult } from '$lib/types';
 	import type { PageData } from './$types';
@@ -136,6 +138,23 @@
 				? { ...filter, people: filter.people.filter((p) => p.id !== tk.id) }
 				: { ...filter, keywords: filter.keywords.filter((k) => k.id !== tk.id) };
 		applyFilter(next);
+	}
+
+	/* The Books scope's own facet filter (genre / decade / sort) — the parallel to
+	   the TV/Movies one, but on Hardcover's smaller set of facets. */
+	let bookFilter = $state<BookFilter | null>(null);
+	let bookFilterSheet = $state(false);
+	function applyBookFilter(f: BookFilter) {
+		bookFilter = bookFilterActive(f) ? f : null;
+		bookFilterSheet = false;
+		query = '';
+	}
+	// A seeded-but-untouched filter (just opening the sheet) isn't a browse yet.
+	const bookBrowsing = $derived(bookFilter !== null && bookFilterActive(bookFilter));
+	const BOOK_SORT_LABEL: Record<BookFilter['sort'], string> = { popular: 'Most read', new: 'Newest', rating: 'Top rated' };
+	const bookEra = $derived(bookFilter ? (ERAS.find((e) => e.id === bookEraId(bookFilter!))?.label ?? null) : null);
+	function removeBookGenre(g: string) {
+		if (bookFilter) applyBookFilter({ ...bookFilter, genres: bookFilter.genres.filter((x) => x !== g) });
 	}
 
 	/* Books come from Hardcover, shown in All and under the Books chip. */
@@ -327,6 +346,10 @@
 			<button class="filterbtn" class:on={browsing} aria-label="Filter" onclick={() => { filter ??= emptyFilter(scope === 'movie' ? 'movie' : 'tv'); filterSheet = true; }}>
 				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
 			</button>
+		{:else}
+			<button class="filterbtn" class:on={bookBrowsing} aria-label="Filter" onclick={() => { bookFilter ??= emptyBookFilter(); bookFilterSheet = true; }}>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+			</button>
 		{/if}
 	</div>
 
@@ -340,12 +363,26 @@
 		</div>
 	{/if}
 
+	{#if scope === 'books' && bookFilter && bookBrowsing && !query.trim()}
+		{@const bf = bookFilter}
+		<div class="tokenbar">
+			<button class="editf" onclick={() => (bookFilterSheet = true)}>Books · {BOOK_SORT_LABEL[bf.sort]}</button>
+			{#each bf.genres as g (g)}
+				<button class="ftok" onclick={() => removeBookGenre(g)}>{g} ✕</button>
+			{/each}
+			{#if bookEra}
+				<button class="ftok" onclick={() => applyBookFilter({ ...bf, yearGte: null, yearLte: null })}>{bookEra} ✕</button>
+			{/if}
+			<button class="clearf" onclick={() => (bookFilter = null)}>Clear</button>
+		</div>
+	{/if}
+
 	{#if failed}
 		<p class="msg error">{failed}</p>
 	{/if}
 
 	{#if scope === 'books'}
-		<BooksBrowse {query} genres={data.bookGenres} canUpload={data.canUpload} />
+		<BooksBrowse {query} filter={bookBrowsing ? bookFilter : null} canUpload={data.canUpload} />
 	{:else if browsing}
 		{#if filterBusy && !filterResults.length}
 			<p class="msg">Finding…</p>
@@ -488,6 +525,10 @@
 
 {#if filterSheet && filter}
 	<DiscoverFilterSheet {filter} allowType={scope === 'best'} onapply={applyFilter} onclose={() => (filterSheet = false)} />
+{/if}
+
+{#if bookFilterSheet && bookFilter}
+	<BookDiscoverSheet filter={bookFilter} genres={data.bookGenres} onapply={applyBookFilter} onclose={() => (bookFilterSheet = false)} />
 {/if}
 
 <style>

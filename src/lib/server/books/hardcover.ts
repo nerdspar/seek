@@ -220,6 +220,56 @@ export async function genreBooks(genre: string, now = new Date()): Promise<{ pop
 	return out;
 }
 
+/* ── Composable discovery filter (genre(s) + decade + sort) ─────────────────
+   The book parallel to TMDB discover. Hasura lets us pass the whole where/order
+   as variables, so the query is static and the conditions are built in TS. */
+export type BookSort = 'popular' | 'new' | 'rating';
+
+const DISCOVER_QUERY = `query DiscoverBooks($where: books_bool_exp!, $order: [books_order_by!]!, $limit: Int!, $offset: Int!) {
+  books(where: $where, order_by: $order, limit: $limit, offset: $offset) { ${BOOK_FIELDS} }
+  books_aggregate(where: $where) { aggregate { count } }
+}`;
+
+const discoverCache = new TTLCache<{ results: BookCard[]; total: number }>(30 * 60 * 1000, 120);
+
+/** Books matching a genre/decade/sort filter, one page at a time, with a total. */
+export async function discoverBooks(
+	f: { genres: string[]; yearGte: number | null; yearLte: number | null; sort: BookSort },
+	page = 1,
+	pageSize = 30,
+	now = new Date()
+): Promise<{ results: BookCard[]; total: number }> {
+	const key = JSON.stringify({ f, page, pageSize, y: now.getFullYear() });
+	const hit = discoverCache.get(key);
+	if (hit) return hit;
+
+	// A readership floor keeps stubs out; ratings need more readers to mean anything.
+	const floor = f.sort === 'rating' ? 50 : 10;
+	const and: Record<string, unknown>[] = [{ users_count: { _gte: floor } }];
+	for (const g of f.genres) and.push({ cached_tags: { _contains: { Genre: [{ tag: g }] } } });
+	if (f.yearGte !== null) and.push({ release_year: { _gte: f.yearGte } });
+	// "Newest" without an upper bound still skips Hardcover's far-future placeholders.
+	const yearLte = f.yearLte ?? (f.sort === 'new' ? now.getFullYear() + 1 : null);
+	if (yearLte !== null) and.push({ release_year: { _lte: yearLte } });
+
+	const order =
+		f.sort === 'new'
+			? [{ release_year: 'desc_nulls_last' }, { users_count: 'desc' }]
+			: f.sort === 'rating'
+				? [{ rating: 'desc_nulls_last' }, { users_count: 'desc' }]
+				: [{ users_count: 'desc' }];
+
+	const data = await hc<{ books: unknown[]; books_aggregate: { aggregate: { count: number } } }>(DISCOVER_QUERY, {
+		where: { _and: and },
+		order,
+		limit: pageSize,
+		offset: Math.max(0, (page - 1) * pageSize)
+	});
+	const out = { results: clean(data.books.map(mapHardcoverBook)), total: data.books_aggregate?.aggregate?.count ?? 0 };
+	discoverCache.set(key, out);
+	return out;
+}
+
 const AUTHOR_QUERY = `query Author($name: String!) {
   books(where: {contributions: {author: {name: {_eq: $name}}}, users_count: {_gt: 10}}, order_by: {users_count: desc}, limit: 25) { ${BOOK_FIELDS} }
 }`;

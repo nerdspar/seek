@@ -9,21 +9,24 @@
 	import BookTileButtons from './BookTileButtons.svelte';
 	import { coverThumb, cardBadge, type BookReadStatus, type DiscoveryCard } from '$lib/books';
 	import { booksView } from '$lib/booksBrowse';
+	import { bookFilterQuery, type BookFilter } from '$lib/bookFilter';
 
 	/**
-	 * The whole Books finding surface — search, genre browse, and the home
+	 * The whole Books finding surface — search, facet filter and the home
 	 * shelves — as one component so the unified search's Books scope is exactly
-	 * what Discover → Books used to be. The query is driven from outside (the one
-	 * search field); everything else it owns.
+	 * what Discover → Books used to be. The query and the filter are driven from
+	 * outside (the one search field and the filter sheet); everything else it owns.
 	 */
 	type Card = DiscoveryCard;
 	type Rail = { key: string; title: string; subtitle: string; books: Card[] };
-	let { query, genres, canUpload }: { query: string; genres: string[]; canUpload: boolean } = $props();
+	let { query, filter, canUpload }: { query: string; filter: BookFilter | null; canUpload: boolean } = $props();
 
 	let open = $state<Card | null>(null);
 	let uploading = $state(false);
 	let downloading = $state<Card | null>(null);
 	let tileNote = $state<string | null>(null);
+
+	const view = $derived(booksView(query, filter !== null));
 
 	/* ── Home shelves: the standard discovery rails and the personal ones ───── */
 	let homeRails = $state<Rail[] | null>(null);
@@ -46,29 +49,33 @@
 			});
 	});
 
-	/* ── Genre chips: tap one for its shelves ─────────────────────────────── */
-	let genre = $state<string | null>(null);
-	let genreRails = $state<Rail[] | null>(null);
-	let genreError = $state<string | null>(null);
-	const view = $derived(booksView(query, genre));
-	async function pickGenre(g: string) {
-		if (genre === g) {
-			genre = null;
-			genreRails = null;
-			return;
-		}
-		genre = g;
-		genreRails = null;
-		genreError = null;
-		try {
-			const res = await fetch(`/api/books/genre?g=${encodeURIComponent(g)}`);
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const body = (await res.json()) as { rails: Rail[] };
-			if (genre === g) genreRails = body.rails;
-		} catch (e) {
-			if (genre === g) genreError = `Couldn't load ${g} — ${(e as Error).message}`;
-		}
-	}
+	/* ── Facet filter (genre / decade / sort) → a flat grid ──────────────────── */
+	let filterResults = $state<Card[] | null>(null);
+	let filterTotal = $state(0);
+	let filterBusy = $state(false);
+	let filterError = $state<string | null>(null);
+	let filterSeq = 0;
+	$effect(() => {
+		if (!filter || query.trim()) return;
+		const q = bookFilterQuery(filter);
+		const mine = ++filterSeq;
+		filterBusy = true;
+		filterResults = null;
+		fetch(`/api/books/filter?${q}&page=1`)
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+			.then((b: { results: Card[]; total: number }) => {
+				if (mine !== filterSeq) return;
+				filterResults = b.results ?? [];
+				filterTotal = b.total ?? 0;
+				filterError = null;
+			})
+			.catch((e) => {
+				if (mine === filterSeq) filterError = (e as Error).message;
+			})
+			.finally(() => {
+				if (mine === filterSeq) filterBusy = false;
+			});
+	});
 
 	/* + on a cover: put it on your want-to-read list. One you already have opens
 	   its sheet instead, to change it. */
@@ -134,72 +141,65 @@
 	const card = (b: Card): Card => (added[b.hardcoverId] ? { ...b, mine: added[b.hardcoverId] } : b);
 </script>
 
-{#if view !== 'search'}
-	<div class="toolbar">
-		<div class="chips" role="group" aria-label="Genres">
-			{#each genres as g (g)}
-				<button class:on={genre === g} aria-pressed={genre === g} onclick={() => pickGenre(g)}>{g}</button>
-			{/each}
-		</div>
-		<div class="acts">
-			<button class="act" onclick={() => goto('/discover/books/library')} aria-label="In my library">
-				<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
-			</button>
-			{#if canUpload}
-				<button class="act" onclick={() => (uploading = true)} aria-label="Upload books">
-					<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
-				</button>
-			{/if}
-		</div>
-	</div>
-{/if}
+{#snippet grid(books: Card[])}
+	<ul class="grid">
+		{#each books as b (b.hardcoverId)}
+			{@const c = card(b)}
+			<li>
+				<div class="cover">
+					<button class="tile" onclick={() => (open = c)}>
+						<Poster src={coverThumb(c.coverUrl, 110)} width={110} height={165} radius={8} />
+						{#if cardBadge(c)}<span class="owned">{cardBadge(c)}</span>{/if}
+					</button>
+					<BookTileButtons card={c} canDownload={canUpload} onadd={quickAdd} ondownload={(x) => (downloading = x)} />
+				</div>
+				<span class="cap">{b.title}</span>
+				<span class="sub">{[b.author, b.year].filter(Boolean).join(' · ')}</span>
+			</li>
+		{/each}
+	</ul>
+{/snippet}
+
+{#snippet skeletonGrid()}
+	<ul class="grid">
+		{#each Array(6) as _, i (i)}<li><Skeleton height="165px" radius={8} /></li>{/each}
+	</ul>
+{/snippet}
 
 {#if view === 'search'}
 	{#if searchError}
 		<p class="msg">{searchError}</p>
 	{:else if results === null || (searching && !results.length)}
-		<ul class="grid">
-			{#each Array(6) as _, i (i)}<li><Skeleton height="165px" radius={8} /></li>{/each}
-		</ul>
+		{@render skeletonGrid()}
 	{:else if !results.length}
 		<p class="msg">No books match “{query.trim()}”.</p>
 	{:else}
-		<ul class="grid">
-			{#each results as b (b.hardcoverId)}
-				{@const c = card(b)}
-				<li>
-					<div class="cover">
-						<button class="tile" onclick={() => (open = c)}>
-							<Poster src={coverThumb(c.coverUrl, 110)} width={110} height={165} radius={8} />
-							{#if cardBadge(c)}<span class="owned">{cardBadge(c)}</span>{/if}
-						</button>
-						<BookTileButtons card={c} canDownload={canUpload} onadd={quickAdd} ondownload={(x) => (downloading = x)} />
-					</div>
-					<span class="cap">{b.title}</span>
-					<span class="sub">{[b.author, b.year].filter(Boolean).join(' · ')}</span>
-				</li>
-			{/each}
-		</ul>
+		{@render grid(results)}
 	{/if}
-{:else if view === 'genre'}
-	{#if genreError}
-		<p class="msg">{genreError}</p>
-	{:else if !genreRails}
-		{#each Array(2) as _, g (g)}
-			<section class="skshelf">
-				<Skeleton width="46%" height="16px" />
-				<div class="skrail">{#each Array(4) as _, i (i)}<Skeleton height="165px" radius={8} />{/each}</div>
-			</section>
-		{/each}
-	{:else if !genreRails.length}
-		<p class="msg">Nothing in {genre} right now.</p>
+{:else if view === 'filter'}
+	{#if filterError}
+		<p class="msg">Couldn't load those filters — {filterError}</p>
+	{:else if filterResults === null || (filterBusy && !filterResults.length)}
+		{@render skeletonGrid()}
+	{:else if !filterResults.length}
+		<p class="msg">No books match those filters. Loosen one.</p>
 	{:else}
-		{#each genreRails as r (r.key)}
-			<BookShelf title={r.title} subtitle={r.subtitle} books={r.books} overrides={added} canDownload={canUpload} onopen={(b) => (open = b)} onadd={quickAdd} ondownload={(b) => (downloading = b)} />
-		{/each}
+		{@render grid(filterResults)}
 	{/if}
 {:else}
 	<!-- home -->
+	<div class="toolbar">
+		<button class="act" onclick={() => goto('/discover/books/library')}>
+			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="6.5" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5" /><path d="M7 7.25h.01M7 16.75h.01" /></svg>
+			In my library
+		</button>
+		{#if canUpload}
+			<button class="act" onclick={() => (uploading = true)}>
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" /></svg>
+				Upload
+			</button>
+		{/if}
+	</div>
 	{#each personalRails as r (r.key)}
 		<BookShelf title={r.title} subtitle={r.subtitle} books={r.books} overrides={added} canDownload={canUpload} onopen={(b) => (open = b)} onadd={quickAdd} ondownload={(b) => (downloading = b)} />
 	{/each}
@@ -244,16 +244,11 @@
 {/if}
 
 <style>
-	.toolbar { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; }
-	.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
-	.chips::-webkit-scrollbar { display: none; }
-	.chips button {
-		flex: none; min-height: 34px; padding: 0 13px; border-radius: 9px;
-		background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
+	.toolbar { display: flex; gap: 8px; margin: 0 0 18px; }
+	.act {
+		display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 13px;
+		border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-dim);
 	}
-	.chips button.on { background: var(--signal); color: #fff; }
-	.acts { display: flex; gap: 4px; flex: none; }
-	.act { display: grid; place-items: center; width: 34px; min-height: 34px; border-radius: 9px; background: var(--surface); color: var(--text-dim); }
 
 	.skshelf { display: flex; flex-direction: column; gap: 10px; margin-bottom: 26px; }
 	.skrail { display: grid; grid-template-columns: repeat(4, 110px); gap: 12px; overflow: hidden; }
