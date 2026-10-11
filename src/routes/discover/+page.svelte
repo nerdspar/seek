@@ -77,7 +77,6 @@
 	<DiscoverTabs
 		active={data.mediaType === 'movie' ? 'movie' : 'tv'}
 		media={data.media}
-		books={data.books}
 	>
 		{#if data.onServer}
 			<button onclick={() => goto(`/discover/server/${data.mediaType === 'movie' ? 'movie' : 'tv'}`)} aria-label="On the server">

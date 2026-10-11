@@ -30,6 +30,8 @@ export function getSegment(): Segment | null {
 /** Where a tab goes for a segment. */
 export function tabHref(tab: 'watchlist' | 'discover', s: Segment | null): string {
 	if (tab === 'watchlist') return s === 'book' ? '/books' : s ? `/?type=${s}` : '/';
-	// Book finding lives in the unified search now; TV/Movies still browse on Discover.
-	return s === 'book' ? '/search?scope=books' : s ? `/discover?type=${s}` : '/discover';
+	// Discover browses TV/Movies shelves; book discovery lives in the unified
+	// search, so Discover never lands on books (a book-only user is redirected
+	// to search server-side when they open /discover).
+	return s === 'tv' || s === 'movie' ? `/discover?type=${s}` : '/discover';
 }
