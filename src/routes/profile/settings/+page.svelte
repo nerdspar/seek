@@ -9,6 +9,7 @@
 	import { setNoticesEnabled } from '$lib/notices.svelte';
 	import { pushStatus, subscribe, unsubscribe, sendTest, type PushStatus } from '$lib/push';
 	import { monitorOptions, defaultMonitor } from '$lib/arr.svelte';
+	import { reorderable } from '$lib/reorder';
 	import type { PageData } from './$types';
 
 	/** Preferences live server-side in /data (§8), so this edits them through the
@@ -202,15 +203,35 @@
 	   screenful, pushing everything after it out of sight. It opens on request. */
 	let editingPresets = $state(false);
 
+	/* Your services are a reorderable list (drag to set the order used in Discover,
+	   the watchlist filter and the search filter). The box below adds from the
+	   whole catalogue — the full list stays reviewable, not a typed-in guess. */
 	let serviceQuery = $state('');
-	const visibleServices = $derived.by(() => {
+	const addable = $derived.by(() => {
 		const q = serviceQuery.trim().toLowerCase();
-		const matched = q ? allServices.filter((s) => s.toLowerCase().includes(q)) : allServices;
-		return [
-			...matched.filter((s) => local.services.includes(s)),
-			...matched.filter((s) => !local.services.includes(s))
-		].slice(0, q ? 20 : 10);
+		return allServices.filter((s) => !local.services.includes(s) && (!q || s.toLowerCase().includes(q)));
 	});
+	function addService(name: string) {
+		if (local.services.includes(name)) return;
+		serviceQuery = '';
+		void patch({ services: [...local.services, name] });
+	}
+	const removeService = (name: string) => patch({ services: local.services.filter((s) => s !== name) });
+	/* Reorder optimistically on every step; persist shortly after the last move
+	   (and immediately on drop) so a save never depends on the drop event alone. */
+	let reorderTimer: ReturnType<typeof setTimeout> | undefined;
+	function reorderServices(from: number, to: number) {
+		const next = [...local.services];
+		const [m] = next.splice(from, 1);
+		next.splice(to, 0, m);
+		edited = { ...local, services: next };
+		clearTimeout(reorderTimer);
+		reorderTimer = setTimeout(saveServices, 400);
+	}
+	function saveServices() {
+		clearTimeout(reorderTimer);
+		void patch({ services: local.services });
+	}
 	let failed = $state<string | null>(null);
 
 	const APPEARANCE_OPTIONS: { id: Appearance; label: string }[] = [
@@ -257,12 +278,17 @@
 	let presetBusy = $state(false);
 	let presetError = $state<string | null>(null);
 
-	function movePreset(index: number, delta: number) {
+	function reorderPresets(from: number, to: number) {
 		const next = [...presets];
-		const to = index + delta;
-		if (to < 0 || to >= next.length) return;
-		[next[index], next[to]] = [next[to], next[index]];
-		patch({ moodPresets: next });
+		const [m] = next.splice(from, 1);
+		next.splice(to, 0, m);
+		edited = { ...local, moodPresets: next };
+		clearTimeout(reorderTimer);
+		reorderTimer = setTimeout(savePresets, 400);
+	}
+	function savePresets() {
+		clearTimeout(reorderTimer);
+		void patch({ moodPresets: presets });
 	}
 
 	const removePreset = (label: string) =>
@@ -625,30 +651,39 @@
 		<section>
 			<h3>Your streaming services</h3>
 			<p class="hint">
-				Sorts the ones you have to the front — in Discover's service row, and in the
-				watchlist's service filter. Nothing is hidden either way.
+				Drag to order them. They sort to the front in Discover and the watchlist
+				filter, and the search filter shows only these.
 			</p>
-			<input
-				bind:value={serviceQuery}
-				type="search"
-				placeholder="Search {allServices.length} services"
-				autocapitalize="off"
-				autocorrect="off"
-				spellcheck="false"
-			/>
-			<div class="chips wrap">
-				{#each visibleServices as name (name)}
-					<button
-						class:on={local.services.includes(name)}
-						onclick={() =>
-							patch({
-								services: local.services.includes(name)
-									? local.services.filter((s) => s !== name)
-									: [...local.services, name]
-							})}
-					>{name}</button>
-				{/each}
+
+			{#if local.services.length}
+				<ul class="reorder" use:reorderable={{ onmove: reorderServices, ondrop: saveServices }}>
+					{#each local.services as name (name)}
+						<li data-reorder>
+							<span class="grip" data-handle aria-hidden="true">
+								<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" /></svg>
+							</span>
+							<span class="rname">{name}</span>
+							<button class="rx" aria-label={`Remove ${name}`} onclick={() => removeService(name)}>×</button>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="hint none">None chosen — every service is shown everywhere.</p>
+			{/if}
+
+			<div class="addwrap">
+				<input bind:value={serviceQuery} type="search" placeholder="Add a service — search {allServices.length}" autocapitalize="off" autocorrect="off" spellcheck="false" />
+				{#if serviceQuery}<button class="clearx" aria-label="Clear" onclick={() => (serviceQuery = '')}>×</button>{/if}
 			</div>
+			{#if addable.length}
+				<div class="addlist">
+					{#each addable as name (name)}
+						<button class="addopt" onclick={() => addService(name)}>{name}</button>
+					{/each}
+				</div>
+			{:else}
+				<p class="hint none">{serviceQuery ? `No services match “${serviceQuery}”.` : 'All your services are added.'}</p>
+			{/if}
 		</section>
 	{/if}
 
@@ -664,23 +699,14 @@
 		</p>
 
 		{#if editingPresets}
-		<ul class="presets">
-			{#each presets as label, i (label)}
-				<li>
+		<ul class="reorder" use:reorderable={{ onmove: reorderPresets, ondrop: savePresets }}>
+			{#each presets as label (label)}
+				<li data-reorder>
+					<span class="grip" data-handle aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" /></svg>
+					</span>
 					<span class="plabel">{label}</span>
-					<button
-						class="ctl"
-						disabled={i === 0}
-						aria-label={`Move ${label} up`}
-						onclick={() => movePreset(i, -1)}
-					>↑</button>
-					<button
-						class="ctl"
-						disabled={i === presets.length - 1}
-						aria-label={`Move ${label} down`}
-						onclick={() => movePreset(i, 1)}
-					>↓</button>
-					<button class="ctl remove" aria-label={`Remove ${label}`} onclick={() => removePreset(label)}>×</button>
+					<button class="rx" aria-label={`Remove ${label}`} onclick={() => removePreset(label)}>×</button>
 				</li>
 			{/each}
 		</ul>
@@ -900,7 +926,6 @@
 	.toggle.on .knob { transform: translateX(18px); }
 
 	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-	.chips.wrap { flex-wrap: wrap; overflow: visible; }
 	.chips button {
 		flex: none; min-height: 36px; padding: 0 13px; border-radius: 9px;
 		background: var(--surface-raised); font-size: 13px; font-weight: 600; color: var(--text-dim);
@@ -919,19 +944,26 @@
 	}
 	input::-webkit-search-cancel-button { display: none; }
 
-	.presets { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-	.presets li {
-		display: grid; grid-template-columns: 1fr auto auto auto;
-		align-items: center; gap: 2px;
+	/* Drag-to-reorder lists — your services and the Discover chips. */
+	.reorder { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+	.reorder li {
+		display: grid; grid-template-columns: auto 1fr auto;
+		align-items: center; gap: 4px;
 		border-radius: var(--radius); background: var(--surface-raised);
+		touch-action: pan-y;
 	}
-	.plabel { padding: 0 4px 0 14px; font-size: 14.5px; font-weight: 600; }
-	.ctl {
-		width: 36px; height: var(--tap);
-		font-size: 17px; color: var(--text-dim);
-	}
-	.ctl:disabled { opacity: 0.25; }
-	.remove { padding-right: 10px; font-size: 21px; }
+	.reorder li:global(.dragging) { background: var(--surface); box-shadow: var(--shadow-sm); opacity: 0.95; }
+	.grip { display: grid; place-items: center; width: 40px; height: var(--tap); color: var(--text-dim); cursor: grab; touch-action: none; }
+	.grip:active { cursor: grabbing; }
+	.rname, .plabel { min-width: 0; padding: 0 4px; font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.rx { width: 40px; height: var(--tap); padding-right: 8px; font-size: 21px; color: var(--text-dim); }
+
+	.addwrap { position: relative; }
+	.addwrap input { margin-bottom: 0; padding-right: 40px; }
+	.clearx { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border-radius: 50%; font-size: 19px; color: var(--text-dim); }
+	.addlist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; max-height: 220px; overflow-y: auto; padding: 2px; }
+	.addopt { flex: none; min-height: 34px; padding: 0 13px; border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text); }
+	.none { margin: 4px 0 0; }
 
 	.addrow { display: flex; gap: 8px; }
 	.addrow input { flex: 1; min-width: 0; margin-bottom: 0; }
