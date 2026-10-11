@@ -1,27 +1,12 @@
 import { redirect } from '@sveltejs/kit';
 import { getPrefs } from '$lib/server/prefs';
-import { BOOK_GENRES, discoverRails, hardcoverConfigured } from '$lib/server/books/hardcover';
-import { personalRails, railsWithOwned } from '$lib/server/books/discovery';
-import { bookorbitLinked } from '$lib/server/books/bookorbit';
-import { mediaOn } from '$lib/media';
+import { hardcoverConfigured } from '$lib/server/books/hardcover';
 import type { PageServerLoad } from './$types';
 
-/** Discover → Books: shelves from Hardcover's catalog, with the books you
- *  already own in BookOrbit badged. Streamed so the header paints at once. */
+/** Book finding now lives in the unified search's Books scope — this page is
+ *  retired and just forwards there (or back to Discover when books are off). */
 export const load: PageServerLoad = async () => {
 	const prefs = await getPrefs();
 	if (!prefs.booksEnabled || !hardcoverConfigured()) redirect(303, '/discover');
-	return {
-		// Which other segments to offer (shows / movies can be switched off).
-		media: mediaOn(prefs, hardcoverConfigured()),
-		rails: discoverRails().then(railsWithOwned),
-		// "Because you read…/like…": its own stream, so the standard shelves never
-		// wait on it; a failure just means no personal shelves this time.
-		personal: personalRails()
-			.then(railsWithOwned)
-			.catch(() => []),
-		genres: BOOK_GENRES,
-		// Uploading goes into BookOrbit as you, so it needs your login there.
-		canUpload: bookorbitLinked()
-	};
+	redirect(303, '/search?scope=books');
 };

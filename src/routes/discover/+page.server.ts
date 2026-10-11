@@ -21,7 +21,7 @@ export const load: PageServerLoad = async ({ url }) => {
 	   book discovery when it's the only one. */
 	const media = mediaOn(prefs, hardcoverConfigured());
 	const kind = landing(requested === 'movie' ? 'movie' : requested === 'tv' ? 'tv' : null, media);
-	if (kind === 'book') redirect(307, '/discover/books');
+	if (kind === 'book') redirect(307, '/search?scope=books');
 	const mediaType: MediaType = kind;
 
 	return {

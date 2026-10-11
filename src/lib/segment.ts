@@ -30,5 +30,6 @@ export function getSegment(): Segment | null {
 /** Where a tab goes for a segment. */
 export function tabHref(tab: 'watchlist' | 'discover', s: Segment | null): string {
 	if (tab === 'watchlist') return s === 'book' ? '/books' : s ? `/?type=${s}` : '/';
-	return s === 'book' ? '/discover/books' : s ? `/discover?type=${s}` : '/discover';
+	// Book finding lives in the unified search now; TV/Movies still browse on Discover.
+	return s === 'book' ? '/search?scope=books' : s ? `/discover?type=${s}` : '/discover';
 }

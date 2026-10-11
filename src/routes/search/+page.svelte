@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Poster from '$lib/components/Poster.svelte';
 	import AddButton from '$lib/components/AddButton.svelte';
@@ -14,6 +14,7 @@
 	import { statusLabel } from '$lib/tracking';
 	import type { DiscoveryCard } from '$lib/books';
 	import DiscoverFilterSheet from '$lib/components/DiscoverFilterSheet.svelte';
+	import BooksBrowse from '$lib/components/BooksBrowse.svelte';
 	import { emptyFilter, filterQuery, isActive, type DiscoverFilter } from '$lib/discoverFilter';
 	import { searchSections } from '$lib/searchView';
 	import type { SearchResult, TmdbResult } from '$lib/types';
@@ -62,7 +63,11 @@
 	];
 
 	let query = $state(page.url.searchParams.get('q') ?? '');
-	let scope = $state<Scope>('best');
+	// Honour ?scope= on entry (Books finding forwards here from the old Discover page).
+	const urlScope = page.url.searchParams.get('scope');
+	let scope = $state<Scope>(
+		urlScope === 'books' ? (untrack(() => data.books) ? 'books' : 'best') : urlScope === 'tv' || urlScope === 'movie' ? urlScope : 'best'
+	);
 	let results = $state<SearchResult[]>([]);
 	let searching = $state(false);
 	let failed = $state<string | null>(null);
@@ -212,7 +217,9 @@
 	$effect(() => {
 		const q = query.trim();
 		const s = scope;
-		if (!data.books || !q || (s !== 'best' && s !== 'books')) {
+		// The Books scope has its own rich browse (BooksBrowse); here we only fetch
+		// the inline "from your books shelf" row that rides along under All.
+		if (!data.books || !q || s !== 'best') {
 			books = [];
 			bookSearching = false;
 			return;
@@ -322,7 +329,9 @@
 		<p class="msg error">{failed}</p>
 	{/if}
 
-	{#if browsing}
+	{#if scope === 'books'}
+		<BooksBrowse {query} genres={data.bookGenres} canUpload={data.canUpload} />
+	{:else if browsing}
 		{#if filterBusy && !filterResults.length}
 			<p class="msg">Finding…</p>
 		{:else if filterResults.length}
@@ -370,9 +379,8 @@
 			<p class="msg">Search your library, or all of TMDB to add something new.</p>
 		{/if}
 	{:else}
-		{#if scope !== 'books'}
-			{#if sections.showOnList}
-				<h2 class="eyebrow">On your list</h2>
+		{#if sections.showOnList}
+			<h2 class="eyebrow">On your list</h2>
 				<ul class="results">
 					{#each onList as t (t.mediaType + t.mediaId)}
 						<li>
@@ -420,10 +428,9 @@
 					{/each}
 				</ul>
 			{/if}
-		{/if}
 
 		{#if sections.showBooks}
-			<h2 class="eyebrow">{scope === 'books' ? 'Books' : 'From your books shelf'}</h2>
+			<h2 class="eyebrow">From your books shelf</h2>
 			<ul class="results">
 				{#each books as b (b.hardcoverId)}
 					<li>

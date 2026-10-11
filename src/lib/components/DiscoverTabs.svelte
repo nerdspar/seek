@@ -30,7 +30,7 @@
 			<button role="tab" aria-selected={active === 'movie'} class:on={active === 'movie'} onclick={() => onnav('/discover?type=movie')}>Movies</button>
 		{/if}
 		{#if books}
-			<button role="tab" aria-selected={active === 'books'} class:on={active === 'books'} onclick={() => onnav('/discover/books')}>Books</button>
+			<button role="tab" aria-selected={active === 'books'} class:on={active === 'books'} onclick={() => onnav('/search?scope=books')}>Books</button>
 		{/if}
 	</div>
 	{#if children}

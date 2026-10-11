@@ -1,8 +1,8 @@
 import { getDiscoverRows } from '$lib/server/discover';
 import { memo } from '$lib/server/memo';
 import { getPrefs } from '$lib/server/prefs';
-import { bookorbitConfigured } from '$lib/server/books/bookorbit';
-import { hardcoverConfigured } from '$lib/server/books/hardcover';
+import { bookorbitConfigured, bookorbitLinked } from '$lib/server/books/bookorbit';
+import { hardcoverConfigured, BOOK_GENRES } from '$lib/server/books/hardcover';
 import { mediaOn } from '$lib/media';
 import type { PageServerLoad } from './$types';
 
@@ -14,6 +14,10 @@ import type { PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async () => {
 	const books = mediaOn((await getPrefs().catch(() => null)) ?? {}, bookorbitConfigured() || hardcoverConfigured()).book;
+	// The Books scope browses too, not just searches: its genre chips and whether
+	// uploading is offered. Only meaningful when books are on.
+	const bookGenres = books ? BOOK_GENRES : [];
+	const canUpload = books ? bookorbitLinked() : false;
 	try {
 		const rows = await memo('discover:tv', 30 * 60 * 1000, () => getDiscoverRows('tv'));
 		const trending =
@@ -21,6 +25,8 @@ export const load: PageServerLoad = async () => {
 
 		return {
 			books,
+			bookGenres,
+			canUpload,
 			trending: (trending?.items ?? []).slice(0, 12).map((i) => ({
 				mediaId: i.mediaId,
 				source: i.source,
@@ -33,6 +39,6 @@ export const load: PageServerLoad = async () => {
 		};
 	} catch {
 		// An empty state without suggestions is still a working search box.
-		return { books, trending: [] };
+		return { books, bookGenres, canUpload, trending: [] };
 	}
 };
