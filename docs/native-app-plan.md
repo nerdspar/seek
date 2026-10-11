@@ -281,8 +281,15 @@ Phases 5–8 can run in any order after 4; books (9) can move earlier if Jenny w
 - **Foundation Models / Visual Intelligence** need Apple Intelligence hardware and their exact
   APIs should be checked against the iOS 26 SDK before phase 7.
 - **One more codebase to maintain** until phase 12; the web app gets bug fixes only from phase 2.
-- **Open:** App name on the home screen ("Seek"?), and whether a public App Store release is a goal
-  (changes how much the bridge-optional path is polished).
+- **Name:** the home-screen name is **Seek** (decided). App Store listing names must be unique and
+  "Seek" is likely taken (Seek by iNaturalist), so a public listing would need something like
+  "Seek: TV & Book Tracker" while the icon still says Seek.
+- **App Store:** a possible later release, not a requirement now (decided 2026-10-11). Keep the
+  bridge optional and the TMDB attribution in, but don't polish the no-bridge path yet.
+- **Paid developer account timing:** a free Apple ID can build to Scott's own devices (7-day
+  signing, no TestFlight) but cannot use iCloud/CloudKit, push notifications or Sign in with Apple.
+  So phase 0 and the UI/catalog/domain-logic parts of phases 1–2 can start free against a
+  local-only store; enroll before turning on CloudKit sync.
 
 ## What Scott needs to do
 

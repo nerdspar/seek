@@ -612,12 +612,14 @@
 		background: var(--surface-raised);
 		color: var(--text);
 	}
-	.filterbtn {
+	/* Scoped under .chips to beat `.chips button { padding: 0 13px }`, which would
+	   otherwise shove the icon off-centre. */
+	.chips .filterbtn {
 		flex: none; margin-left: auto; display: grid; place-items: center;
-		width: 34px; min-height: 34px; border-radius: 9px;
+		width: 34px; min-height: 34px; padding: 0; border-radius: 9px;
 		background: var(--surface); color: var(--text-dim);
 	}
-	.filterbtn.on { background: var(--signal); color: #fff; }
+	.chips .filterbtn.on { background: var(--signal); color: #fff; }
 	.tokenbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
 	.tokenbar button { min-height: 32px; padding: 0 11px; border-radius: 9px; font-size: 12.5px; font-weight: 600; }
 	.editf { background: var(--surface-raised); color: var(--text); }
